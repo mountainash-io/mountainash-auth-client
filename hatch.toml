@@ -1,0 +1,17 @@
+[envs.test]
+dependencies = [
+    "pytest>=8.0",
+    "pytest-cov",
+]
+
+[envs.test.scripts]
+test = "pytest {args}"
+test-target = "pytest {args} -v"
+
+[envs.ruff]
+detached = true
+dependencies = ["ruff"]
+
+[envs.ruff.scripts]
+check = "ruff check src/ tests/"
+fix = "ruff check --fix src/ tests/"
