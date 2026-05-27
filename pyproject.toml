@@ -4,9 +4,26 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mountainash-auth-client"
-version = "26.5.0"
+dynamic = ["version"]
 description = "Client-side authentication for the mountainash ecosystem"
+readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    { name = "Nathaniel Ramm", email = "nathaniel.ramm@discretedatascience.com" },
+]
+keywords = ["authentication", "oauth", "oauth2", "oauth1", "credentials"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2.9.0",
     "httpx>=0.27.0",
@@ -16,14 +33,54 @@ dependencies = [
 [project.optional-dependencies]
 oauth1 = ["authlib>=1.3.0"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/mountainash_auth_client"]
+[project.urls]
+Homepage = "https://github.com/mountainash-io/mountainash-auth-client"
+Issues = "https://github.com/mountainash-io/mountainash-auth-client/issues"
+Source = "https://github.com/mountainash-io/mountainash-auth-client"
+
+#================
+# Tool: Coverage
+#================
+[tool.coverage.run]
+source_pkgs = ["mountainash_auth_client", "tests"]
+branch = true
+parallel = true
+omit = ["src/mountainash_auth_client/__version__.py"]
+
+[tool.coverage.paths]
+mountainash_auth_client = [
+    "src/mountainash_auth_client",
+    "*/mountainash-auth-client/src/mountainash_auth_client",
+]
+tests = ["tests", "*/mountainash-auth-client/tests"]
+
+[tool.coverage.report]
+exclude_lines = ["no cov", "if __name__ == .__main__:", "if TYPE_CHECKING:"]
+
+# ============================================================================
+# Ruff Configuration
+# ============================================================================
 
 [tool.ruff]
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "FA", "TCH"]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "FA",     # flake8-future-annotations
+    "TCH",    # flake8-type-checking
+]
+ignore = [
+    "E501",   # line too long — enforced by formatter, not linter
+]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py files re-export symbols intentionally
+"__init__.py" = ["F401"]
+# Pydantic schema files need type imports at runtime for field definitions
+"src/mountainash_auth_client/schemas/**" = ["TCH001", "TCH002", "TCH003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

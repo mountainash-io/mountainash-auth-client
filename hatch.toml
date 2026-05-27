@@ -1,18 +1,82 @@
+[metadata]
+allow-direct-references = true
+
+[version]
+path = "src/mountainash_auth_client/__version__.py"
+
+[build.targets.wheel]
+packages = ["src/mountainash_auth_client"]
+
+
+#================
+# Env: dev
+#================
+
+[envs.dev]
+python = "3.12"
+installer = "uv"
+path = ".venv"
+dependencies = []
+
+#================
+# Env: default
+#================
+[envs.default]
+installer = "uv"
+dependencies = []
+
+#================
+# Env: test
+#================
+[[envs.test.matrix]]
+python = ["3.12"]
+
 [envs.test]
+type = "virtual"
 installer = "uv"
 dependencies = [
+    "coverage[toml]>=6.5",
     "pytest>=8.0",
-    "pytest-cov",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.1.0",
 ]
 
 [envs.test.scripts]
-test = "pytest {args}"
-test-target = "pytest {args} -v"
+# ===========================================
+# CORE TESTING COMMANDS - Use these daily
+# ===========================================
 
+test = [
+    "pytest --cov --junitxml=junit.xml {args}",
+    "coverage json --pretty-print",
+    "coverage xml",
+    "coverage html",
+    "coverage report --show-missing",
+]
+
+# Quick testing for iteration (no coverage overhead)
+test-quick = "pytest {args}"
+
+# ===========================================
+# TARGETED TESTING
+# ===========================================
+
+test-target = [
+    "coverage run --source=src -m pytest {args}",
+    "coverage xml",
+    "coverage json --pretty-print",
+    "coverage report --show-missing",
+]
+
+test-target-quick = "pytest {args}"
+
+#================
+# Env: ruff
+#================
 [envs.ruff]
-detached = true
-dependencies = ["ruff"]
+installer = "uv"
+dependencies = ["ruff==0.3.7"]
 
 [envs.ruff.scripts]
-check = "ruff check src/ tests/"
-fix = "ruff check --fix src/ tests/"
+check = "ruff check ./src"
+fix = "ruff check ./src --fix"
