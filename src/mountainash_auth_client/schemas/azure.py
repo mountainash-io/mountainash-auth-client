@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typing as t
 
-from pydantic import SecretStr
+from pydantic import SecretStr  # noqa: TC002
 
 from .base import AuthSpec
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 

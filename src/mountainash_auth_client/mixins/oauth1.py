@@ -1,13 +1,15 @@
 """OAuth1ConnectionMixin — connect/auth for OAuth1 providers."""
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 import httpx
 
 from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.flows.oauth1 import OAuth1Flow
-from mountainash_auth_client.store.protocol import SecretStore
+
+if TYPE_CHECKING:
+    from mountainash_auth_client.store.protocol import SecretStore
 
 
 class OAuth1ConnectionMixin:
@@ -15,7 +17,15 @@ class OAuth1ConnectionMixin:
     _base_url: ClassVar[str]
     _client: httpx.Client | None
 
-    def connect(self, profile, *, user: str = "default", store: SecretStore, domain: str, auto_authorize: bool = False) -> Self:
+    def connect(
+        self,
+        profile,
+        *,
+        user: str = "default",
+        store: SecretStore,
+        domain: str,
+        auto_authorize: bool = False,
+    ) -> Self:
         provider = self._spec.name
         tokens = store.load(domain, provider, user)
 
@@ -24,7 +34,11 @@ class OAuth1ConnectionMixin:
             if getattr(auth, "access_token", None) is not None:
                 tokens = {
                     "oauth_token": auth.access_token.get_secret_value(),
-                    "oauth_token_secret": auth.access_token_secret.get_secret_value() if auth.access_token_secret else None,
+                    "oauth_token_secret": (
+                        auth.access_token_secret.get_secret_value()
+                        if auth.access_token_secret
+                        else None
+                    ),
                 }
                 store.save(domain, provider, user, tokens)
 
@@ -35,7 +49,10 @@ class OAuth1ConnectionMixin:
         if auto_authorize:
             auth = profile.auth
             flow = OAuth1Flow(self._spec)
-            new_tokens = flow.authorize(consumer_key=auth.consumer_key, consumer_secret=auth.consumer_secret.get_secret_value())
+            new_tokens = flow.authorize(
+                consumer_key=auth.consumer_key,
+                consumer_secret=auth.consumer_secret.get_secret_value(),
+            )
             store.save(domain, provider, user, new_tokens)
             self._build_client(new_tokens, profile)
             return self
@@ -46,12 +63,19 @@ class OAuth1ConnectionMixin:
         try:
             from authlib.integrations.httpx_client import OAuth1Auth
         except ImportError as exc:
-            raise ImportError("OAuth1 requires authlib: pip install mountainash-auth-client[oauth1]") from exc
+            raise ImportError(
+                "OAuth1 requires authlib: pip install mountainash-auth-client[oauth1]"
+            ) from exc
 
         auth = profile.auth
         self._client = httpx.Client(
             base_url=self._base_url,
-            auth=OAuth1Auth(client_id=auth.consumer_key, client_secret=auth.consumer_secret.get_secret_value(), token=tokens["oauth_token"], token_secret=tokens["oauth_token_secret"]),
+            auth=OAuth1Auth(
+                client_id=auth.consumer_key,
+                client_secret=auth.consumer_secret.get_secret_value(),
+                token=tokens["oauth_token"],
+                token_secret=tokens["oauth_token_secret"],
+            ),
             timeout=30.0,
         )
 

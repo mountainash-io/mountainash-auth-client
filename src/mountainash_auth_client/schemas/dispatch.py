@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import typing as t
 
-from .base import AuthSpec
+from .base import AuthSpec  # noqa: TC001
 from .iam import IAMAuth
 from .none import NoAuth
 from .oauth2 import OAuth2Auth

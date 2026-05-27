@@ -33,33 +33,72 @@ class OAuth1Flow:
     def build_authorize_url(self, oauth_token: str) -> str:
         return f"{self.authorize_url}?{urlencode({'oauth_token': oauth_token})}"
 
-    def request_token(self, consumer_key: str, consumer_secret: str, callback_url: str = "oob") -> dict[str, str]:
+    def request_token(
+        self,
+        consumer_key: str,
+        consumer_secret: str,
+        callback_url: str = "oob",
+    ) -> dict[str, str]:
         try:
             from authlib.integrations.httpx_client import OAuth1Client
         except ImportError as exc:
-            raise ImportError("OAuth1 requires authlib: pip install mountainash-auth-client[oauth1]") from exc
+            raise ImportError(
+                "OAuth1 requires authlib: pip install mountainash-auth-client[oauth1]"
+            ) from exc
 
         client = OAuth1Client(client_id=consumer_key, client_secret=consumer_secret)
         try:
-            token = client.fetch_request_token(self.request_token_url, params={"oauth_callback": callback_url})
+            token = client.fetch_request_token(
+                self.request_token_url, params={"oauth_callback": callback_url}
+            )
         except httpx.HTTPStatusError as exc:
-            raise TokenExchangeError(url=self.request_token_url, status_code=exc.response.status_code, body=exc.response.text[:2000]) from exc
+            raise TokenExchangeError(
+                url=self.request_token_url,
+                status_code=exc.response.status_code,
+                body=exc.response.text[:2000],
+            ) from exc
         return token
 
-    def exchange_verifier(self, consumer_key: str, consumer_secret: str, oauth_token: str, oauth_token_secret: str, verifier: str) -> dict[str, str]:
+    def exchange_verifier(
+        self,
+        consumer_key: str,
+        consumer_secret: str,
+        oauth_token: str,
+        oauth_token_secret: str,
+        verifier: str,
+    ) -> dict[str, str]:
         try:
             from authlib.integrations.httpx_client import OAuth1Client
         except ImportError as exc:
-            raise ImportError("OAuth1 requires authlib: pip install mountainash-auth-client[oauth1]") from exc
+            raise ImportError(
+                "OAuth1 requires authlib: pip install mountainash-auth-client[oauth1]"
+            ) from exc
 
-        client = OAuth1Client(client_id=consumer_key, client_secret=consumer_secret, token=oauth_token, token_secret=oauth_token_secret)
+        client = OAuth1Client(
+            client_id=consumer_key,
+            client_secret=consumer_secret,
+            token=oauth_token,
+            token_secret=oauth_token_secret,
+        )
         try:
             token = client.fetch_access_token(self.access_token_url, verifier=verifier)
         except httpx.HTTPStatusError as exc:
-            raise TokenExchangeError(url=self.access_token_url, status_code=exc.response.status_code, body=exc.response.text[:2000]) from exc
-        return {"oauth_token": token["oauth_token"], "oauth_token_secret": token["oauth_token_secret"]}
+            raise TokenExchangeError(
+                url=self.access_token_url,
+                status_code=exc.response.status_code,
+                body=exc.response.text[:2000],
+            ) from exc
+        return {
+            "oauth_token": token["oauth_token"],
+            "oauth_token_secret": token["oauth_token_secret"],
+        }
 
-    def authorize(self, consumer_key: str, consumer_secret: str, redirect_mode: Literal["local_server", "manual"] = "local_server") -> dict[str, str]:
+    def authorize(
+        self,
+        consumer_key: str,
+        consumer_secret: str,
+        redirect_mode: Literal["local_server", "manual"] = "local_server",
+    ) -> dict[str, str]:
         if redirect_mode == "local_server":
             server = LocalCallbackServer(port=0)
             callback_url = server.redirect_uri
@@ -78,7 +117,9 @@ class OAuth1Flow:
             verifier = params.get("oauth_verifier", params.get("code", ""))
 
         return self.exchange_verifier(
-            consumer_key=consumer_key, consumer_secret=consumer_secret,
-            oauth_token=request_token["oauth_token"], oauth_token_secret=request_token["oauth_token_secret"],
+            consumer_key=consumer_key,
+            consumer_secret=consumer_secret,
+            oauth_token=request_token["oauth_token"],
+            oauth_token_secret=request_token["oauth_token_secret"],
             verifier=verifier,
         )

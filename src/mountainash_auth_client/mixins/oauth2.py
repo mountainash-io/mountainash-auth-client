@@ -1,13 +1,15 @@
 """OAuth2ConnectionMixin — reusable connect/refresh for OAuth2 providers."""
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 import httpx
 
 from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.flows.oauth2 import OAuthFlow
-from mountainash_auth_client.store.protocol import SecretStore
+
+if TYPE_CHECKING:
+    from mountainash_auth_client.store.protocol import SecretStore
 
 
 class OAuth2ConnectionMixin:

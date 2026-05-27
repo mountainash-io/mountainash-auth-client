@@ -1,7 +1,6 @@
 """Tests for auth schemas."""
 from __future__ import annotations
 
-import pytest
 
 from mountainash_auth_client.schemas import (
     NoAuth,

@@ -4,7 +4,6 @@ from __future__ import annotations
 import threading
 import urllib.request
 
-import pytest
 
 from mountainash_auth_client.server import LocalCallbackServer, prompt_for_code
 from mountainash_auth_client.server.manual import extract_code_from_input
