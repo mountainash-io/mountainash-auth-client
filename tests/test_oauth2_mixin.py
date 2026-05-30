@@ -168,3 +168,17 @@ class TestOAuth2ConnectionMixinExpiredToken:
                 store=store,
                 domain="wearables",
             )
+
+
+class TestClientProperty:
+    def test_client_property_exposes_httpx_client(self):
+        import httpx
+        provider = FakeProvider()
+        mock_client = httpx.Client()
+        provider._client = mock_client
+        assert provider.client is mock_client
+        mock_client.close()
+
+    def test_client_property_none_before_connect(self):
+        provider = FakeProvider()
+        assert provider.client is None

@@ -17,6 +17,10 @@ class OAuth2ConnectionMixin:
     _base_url: ClassVar[str]
     _client: httpx.Client | None
 
+    @property
+    def client(self) -> httpx.Client | None:
+        return self._client
+
     def connect(
         self,
         profile,
