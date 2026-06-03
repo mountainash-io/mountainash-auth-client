@@ -1,0 +1,64 @@
+{
+  "id": "store",
+  "path": "src/mountainash_auth_client/store/",
+  "summary": "Pluggable credential storage: SecretStore protocol (runtime-checkable) and FilesystemStore implementation. Domain-namespaced YAML files with 0o600 permissions, tombstone-based clear tracking, and fcntl file locking for concurrent refresh safety.",
+  "role": "backend",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers", "backend-architecture", "contributors"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": ["SecretStore", "FilesystemStore"],
+  "key_classes": [
+    {
+      "name": "SecretStore",
+      "summary": "Runtime-checkable Protocol. Methods: load, save, clear, is_cleared, list_users, lock. Domain/provider/user key space."
+    },
+    {
+      "name": "FilesystemStore",
+      "summary": "YAML-backed implementation. Layout: base_dir/{domain}/{provider}-{user}.yaml. Atomic writes via temp file + os.replace. File permissions 0o600, directory 0o700. Tombstone files for clear tracking. fcntl-based exclusive file locking."
+    }
+  ],
+  "key_functions": [
+    {"name": "FilesystemStore.load", "summary": "Reads YAML credential file. Refuses symlinks and group/world-readable files."},
+    {"name": "FilesystemStore.save", "summary": "Atomic write via temp file. Sets 0o600 permissions. Removes tombstone if present."},
+    {"name": "FilesystemStore.clear", "summary": "Deletes credential file and creates tombstone marker."},
+    {"name": "FilesystemStore.is_cleared", "summary": "Returns True if tombstone exists for this credential."},
+    {"name": "FilesystemStore.list_users", "summary": "Lists all users with saved credentials for a provider in a domain."},
+    {"name": "FilesystemStore.lock", "summary": "Context manager using fcntl.flock for exclusive access during refresh."}
+  ],
+  "dependencies": ["yaml (pyaml)", "fcntl (stdlib)", "pathlib (stdlib)"],
+  "dependents": ["mixins.oauth2", "mixins.oauth1"],
+  "extension_points": [
+    "Implement SecretStore protocol for alternative backends (database, cloud secrets manager, keyring)"
+  ],
+  "lifecycle_notes": [
+    "Segment names validated against [a-z0-9_]+ regex — no hyphens, spaces, or uppercase",
+    "Tombstone pattern: .{provider}-{user}.cleared file",
+    "Lock file pattern: .{provider}-{user}.lock file"
+  ],
+  "documentation_hooks": [
+    "File layout diagram",
+    "Security model: permissions, symlink rejection",
+    "How to implement a custom SecretStore"
+  ],
+  "examples": [],
+  "tests": ["tests/test_store.py"],
+  "risks": [
+    "fcntl is Linux/macOS only — not portable to Windows"
+  ],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/store/protocol.py", "detail": "SecretStore runtime-checkable Protocol with 6 methods"},
+    {"kind": "symbol", "path": "src/mountainash_auth_client/store/filesystem.py", "detail": "FilesystemStore class implementing all protocol methods"},
+    {"kind": "import", "path": "src/mountainash_auth_client/__init__.py", "detail": "Both SecretStore and FilesystemStore re-exported at package root"},
+    {"kind": "test", "path": "tests/test_store.py", "detail": "Comprehensive tests: CRUD, permissions, locking, validation, protocol conformance"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}
