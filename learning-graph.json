@@ -1,0 +1,981 @@
+{
+  "metadata": {
+    "title": "Mountainash Auth Client Concept Graph",
+    "description": "A concept dependency graph for the mountainash-auth-client type-safe multi-provider authentication library. 85 concepts across 9 categories covering auth types, OAuth flows, connection mixins, token lifecycle, and secret storage.",
+    "creator": "Nathaniel Ramm",
+    "date": "2026-06-03",
+    "version": "1.0",
+    "format": "Learning Graph JSON v1.0",
+    "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
+    "license": "CC BY-NC-SA 4.0 DEED"
+  },
+  "groups": {
+    "FOUND": {
+      "classifierName": "Foundation Concepts",
+      "color": "SteelBlue",
+      "font": {
+        "color": "white"
+      }
+    },
+    "ATYPE": {
+      "classifierName": "Auth Type System",
+      "color": "DarkSlateBlue",
+      "font": {
+        "color": "white"
+      }
+    },
+    "DISP": {
+      "classifierName": "Auth Dispatch",
+      "color": "DarkGreen",
+      "font": {
+        "color": "white"
+      }
+    },
+    "OA2": {
+      "classifierName": "OAuth 2.0 Flow",
+      "color": "Gold",
+      "font": {
+        "color": "black"
+      }
+    },
+    "OA1": {
+      "classifierName": "OAuth 1.0a Flow",
+      "color": "DarkGoldenrod",
+      "font": {
+        "color": "white"
+      }
+    },
+    "CONN": {
+      "classifierName": "Connection Mixins",
+      "color": "Teal",
+      "font": {
+        "color": "white"
+      }
+    },
+    "STORE": {
+      "classifierName": "Secret Storage",
+      "color": "MediumPurple",
+      "font": {
+        "color": "white"
+      }
+    },
+    "CALLB": {
+      "classifierName": "Callback Server",
+      "color": "Orange",
+      "font": {
+        "color": "black"
+      }
+    },
+    "ERROR": {
+      "classifierName": "Error Handling",
+      "color": "Crimson",
+      "font": {
+        "color": "white"
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "label": "OAuth 2.0 Basics",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 2,
+      "label": "OAuth 1.0a Basics",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 3,
+      "label": "Bearer Tokens",
+      "group": "FOUND"
+    },
+    {
+      "id": 4,
+      "label": "API Keys",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 5,
+      "label": "Pydantic Models",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 6,
+      "label": "Frozen Models",
+      "group": "FOUND"
+    },
+    {
+      "id": 7,
+      "label": "Python Protocols",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 8,
+      "label": "Context Managers",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 9,
+      "label": "File Permissions",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 10,
+      "label": "Atomic File Writes",
+      "group": "FOUND"
+    },
+    {
+      "id": 11,
+      "label": "AuthSpec Base Model",
+      "group": "ATYPE"
+    },
+    {
+      "id": 12,
+      "label": "Discriminated Union",
+      "group": "ATYPE"
+    },
+    {
+      "id": 13,
+      "label": "Literal Kind Discriminator",
+      "group": "ATYPE"
+    },
+    {
+      "id": 14,
+      "label": "NoAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 15,
+      "label": "PasswordAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 16,
+      "label": "TokenAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 17,
+      "label": "JWTAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 18,
+      "label": "OAuth2Auth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 19,
+      "label": "OAuth2AuthCodeAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 20,
+      "label": "OAuth1Auth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 21,
+      "label": "IAMAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 22,
+      "label": "AzureADAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 23,
+      "label": "WindowsAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 24,
+      "label": "KerberosAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 25,
+      "label": "CertificateAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 26,
+      "label": "ServiceAccountAuth Type",
+      "group": "ATYPE"
+    },
+    {
+      "id": 27,
+      "label": "Auth Dispatch Registry",
+      "group": "DISP"
+    },
+    {
+      "id": 28,
+      "label": "Auth To Driver Kwargs",
+      "group": "DISP"
+    },
+    {
+      "id": 29,
+      "label": "Auth Kwargs Function",
+      "group": "DISP"
+    },
+    {
+      "id": 30,
+      "label": "Type Based Dispatch",
+      "group": "DISP"
+    },
+    {
+      "id": 31,
+      "label": "Unmapped Auth Types",
+      "group": "DISP"
+    },
+    {
+      "id": 32,
+      "label": "Backend Specific Handling",
+      "group": "DISP"
+    },
+    {
+      "id": 33,
+      "label": "OAuthFlow Class",
+      "group": "OA2"
+    },
+    {
+      "id": 34,
+      "label": "Authorization Code Grant",
+      "group": "OA2"
+    },
+    {
+      "id": 35,
+      "label": "PKCE Extension",
+      "group": "OA2"
+    },
+    {
+      "id": 36,
+      "label": "Code Verifier",
+      "group": "OA2"
+    },
+    {
+      "id": 37,
+      "label": "Code Challenge",
+      "group": "OA2"
+    },
+    {
+      "id": 38,
+      "label": "Build Authorize URL",
+      "group": "OA2"
+    },
+    {
+      "id": 39,
+      "label": "State Parameter",
+      "group": "OA2"
+    },
+    {
+      "id": 40,
+      "label": "Exchange Code",
+      "group": "OA2"
+    },
+    {
+      "id": 41,
+      "label": "Token Exchange",
+      "group": "OA2"
+    },
+    {
+      "id": 42,
+      "label": "Refresh Token",
+      "group": "OA2"
+    },
+    {
+      "id": 43,
+      "label": "Token Expiry Check",
+      "group": "OA2"
+    },
+    {
+      "id": 44,
+      "label": "End To End Authorize",
+      "group": "OA2"
+    },
+    {
+      "id": 45,
+      "label": "OAuth1Flow Class",
+      "group": "OA1"
+    },
+    {
+      "id": 46,
+      "label": "Request Token",
+      "group": "OA1"
+    },
+    {
+      "id": 47,
+      "label": "Three Legged Flow",
+      "group": "OA1"
+    },
+    {
+      "id": 48,
+      "label": "Verifier Exchange",
+      "group": "OA1"
+    },
+    {
+      "id": 49,
+      "label": "Authlib Dependency",
+      "group": "OA1"
+    },
+    {
+      "id": 50,
+      "label": "Optional Import Guard",
+      "group": "OA1"
+    },
+    {
+      "id": 51,
+      "label": "OAuth2ConnectionMixin",
+      "group": "CONN"
+    },
+    {
+      "id": 52,
+      "label": "Connect Method",
+      "group": "CONN"
+    },
+    {
+      "id": 53,
+      "label": "Auto Authorize Flag",
+      "group": "CONN"
+    },
+    {
+      "id": 54,
+      "label": "Client Property",
+      "group": "CONN"
+    },
+    {
+      "id": 55,
+      "label": "Context Manager Support",
+      "group": "CONN"
+    },
+    {
+      "id": 56,
+      "label": "Profile Parameter",
+      "group": "CONN"
+    },
+    {
+      "id": 57,
+      "label": "Token Lifecycle Overview",
+      "group": "CONN"
+    },
+    {
+      "id": 58,
+      "label": "No Token State",
+      "group": "CONN"
+    },
+    {
+      "id": 59,
+      "label": "Valid Token State",
+      "group": "CONN"
+    },
+    {
+      "id": 60,
+      "label": "Expired With Refresh State",
+      "group": "CONN"
+    },
+    {
+      "id": 61,
+      "label": "Expired No Refresh State",
+      "group": "CONN"
+    },
+    {
+      "id": 62,
+      "label": "Cleared State",
+      "group": "CONN"
+    },
+    {
+      "id": 63,
+      "label": "File Locked Refresh",
+      "group": "CONN"
+    },
+    {
+      "id": 64,
+      "label": "SecretStore Protocol",
+      "group": "STORE"
+    },
+    {
+      "id": 65,
+      "label": "Load Method",
+      "group": "STORE"
+    },
+    {
+      "id": 66,
+      "label": "Save Method",
+      "group": "STORE"
+    },
+    {
+      "id": 67,
+      "label": "Clear Method",
+      "group": "STORE"
+    },
+    {
+      "id": 68,
+      "label": "Is Cleared Method",
+      "group": "STORE"
+    },
+    {
+      "id": 69,
+      "label": "List Users Method",
+      "group": "STORE"
+    },
+    {
+      "id": 70,
+      "label": "Lock Method",
+      "group": "STORE"
+    },
+    {
+      "id": 71,
+      "label": "FilesystemStore",
+      "group": "STORE"
+    },
+    {
+      "id": 72,
+      "label": "YAML Serialization",
+      "group": "STORE"
+    },
+    {
+      "id": 73,
+      "label": "Domain Provider Namespace",
+      "group": "STORE"
+    },
+    {
+      "id": 74,
+      "label": "Tombstone Semantics",
+      "group": "STORE"
+    },
+    {
+      "id": 75,
+      "label": "LocalCallbackServer",
+      "group": "CALLB"
+    },
+    {
+      "id": 76,
+      "label": "Ephemeral HTTP Server",
+      "group": "CALLB"
+    },
+    {
+      "id": 77,
+      "label": "Callback Capture",
+      "group": "CALLB"
+    },
+    {
+      "id": 78,
+      "label": "Prompt For Code",
+      "group": "CALLB"
+    },
+    {
+      "id": 79,
+      "label": "Manual Redirect Mode",
+      "group": "CALLB"
+    },
+    {
+      "id": 80,
+      "label": "TokenExchangeError",
+      "group": "ERROR"
+    },
+    {
+      "id": 81,
+      "label": "Token Exchange URL",
+      "group": "ERROR"
+    },
+    {
+      "id": 82,
+      "label": "TokenRefreshError",
+      "group": "ERROR"
+    },
+    {
+      "id": 83,
+      "label": "Refresh Status Code",
+      "group": "ERROR"
+    },
+    {
+      "id": 84,
+      "label": "AuthorizationRequired",
+      "group": "ERROR"
+    },
+    {
+      "id": 85,
+      "label": "Provider User Context",
+      "group": "ERROR"
+    }
+  ],
+  "edges": [
+    {
+      "from": 3,
+      "to": 1
+    },
+    {
+      "from": 6,
+      "to": 5
+    },
+    {
+      "from": 10,
+      "to": 9
+    },
+    {
+      "from": 11,
+      "to": 5
+    },
+    {
+      "from": 11,
+      "to": 6
+    },
+    {
+      "from": 12,
+      "to": 11
+    },
+    {
+      "from": 12,
+      "to": 13
+    },
+    {
+      "from": 13,
+      "to": 5
+    },
+    {
+      "from": 14,
+      "to": 12
+    },
+    {
+      "from": 15,
+      "to": 12
+    },
+    {
+      "from": 16,
+      "to": 12
+    },
+    {
+      "from": 16,
+      "to": 3
+    },
+    {
+      "from": 17,
+      "to": 12
+    },
+    {
+      "from": 17,
+      "to": 3
+    },
+    {
+      "from": 18,
+      "to": 12
+    },
+    {
+      "from": 18,
+      "to": 1
+    },
+    {
+      "from": 19,
+      "to": 12
+    },
+    {
+      "from": 19,
+      "to": 1
+    },
+    {
+      "from": 20,
+      "to": 12
+    },
+    {
+      "from": 20,
+      "to": 2
+    },
+    {
+      "from": 21,
+      "to": 12
+    },
+    {
+      "from": 22,
+      "to": 12
+    },
+    {
+      "from": 23,
+      "to": 12
+    },
+    {
+      "from": 24,
+      "to": 12
+    },
+    {
+      "from": 25,
+      "to": 12
+    },
+    {
+      "from": 26,
+      "to": 12
+    },
+    {
+      "from": 27,
+      "to": 12
+    },
+    {
+      "from": 28,
+      "to": 27
+    },
+    {
+      "from": 28,
+      "to": 30
+    },
+    {
+      "from": 29,
+      "to": 28
+    },
+    {
+      "from": 30,
+      "to": 12
+    },
+    {
+      "from": 30,
+      "to": 27
+    },
+    {
+      "from": 31,
+      "to": 27
+    },
+    {
+      "from": 31,
+      "to": 22
+    },
+    {
+      "from": 31,
+      "to": 23
+    },
+    {
+      "from": 31,
+      "to": 24
+    },
+    {
+      "from": 31,
+      "to": 25
+    },
+    {
+      "from": 31,
+      "to": 26
+    },
+    {
+      "from": 32,
+      "to": 31
+    },
+    {
+      "from": 33,
+      "to": 1
+    },
+    {
+      "from": 33,
+      "to": 5
+    },
+    {
+      "from": 34,
+      "to": 33
+    },
+    {
+      "from": 34,
+      "to": 1
+    },
+    {
+      "from": 35,
+      "to": 34
+    },
+    {
+      "from": 36,
+      "to": 35
+    },
+    {
+      "from": 37,
+      "to": 36
+    },
+    {
+      "from": 38,
+      "to": 33
+    },
+    {
+      "from": 38,
+      "to": 39
+    },
+    {
+      "from": 39,
+      "to": 33
+    },
+    {
+      "from": 40,
+      "to": 34
+    },
+    {
+      "from": 40,
+      "to": 41
+    },
+    {
+      "from": 41,
+      "to": 33
+    },
+    {
+      "from": 41,
+      "to": 3
+    },
+    {
+      "from": 42,
+      "to": 33
+    },
+    {
+      "from": 42,
+      "to": 3
+    },
+    {
+      "from": 43,
+      "to": 33
+    },
+    {
+      "from": 44,
+      "to": 38
+    },
+    {
+      "from": 44,
+      "to": 40
+    },
+    {
+      "from": 44,
+      "to": 42
+    },
+    {
+      "from": 44,
+      "to": 75
+    },
+    {
+      "from": 45,
+      "to": 2
+    },
+    {
+      "from": 45,
+      "to": 49
+    },
+    {
+      "from": 46,
+      "to": 45
+    },
+    {
+      "from": 47,
+      "to": 45
+    },
+    {
+      "from": 47,
+      "to": 46
+    },
+    {
+      "from": 48,
+      "to": 47
+    },
+    {
+      "from": 49,
+      "to": 2
+    },
+    {
+      "from": 50,
+      "to": 49
+    },
+    {
+      "from": 51,
+      "to": 33
+    },
+    {
+      "from": 51,
+      "to": 8
+    },
+    {
+      "from": 51,
+      "to": 64
+    },
+    {
+      "from": 52,
+      "to": 51
+    },
+    {
+      "from": 52,
+      "to": 53
+    },
+    {
+      "from": 53,
+      "to": 51
+    },
+    {
+      "from": 54,
+      "to": 51
+    },
+    {
+      "from": 55,
+      "to": 51
+    },
+    {
+      "from": 55,
+      "to": 8
+    },
+    {
+      "from": 56,
+      "to": 51
+    },
+    {
+      "from": 57,
+      "to": 51
+    },
+    {
+      "from": 58,
+      "to": 57
+    },
+    {
+      "from": 59,
+      "to": 57
+    },
+    {
+      "from": 59,
+      "to": 41
+    },
+    {
+      "from": 60,
+      "to": 57
+    },
+    {
+      "from": 60,
+      "to": 42
+    },
+    {
+      "from": 60,
+      "to": 43
+    },
+    {
+      "from": 61,
+      "to": 57
+    },
+    {
+      "from": 61,
+      "to": 43
+    },
+    {
+      "from": 62,
+      "to": 57
+    },
+    {
+      "from": 62,
+      "to": 67
+    },
+    {
+      "from": 63,
+      "to": 60
+    },
+    {
+      "from": 63,
+      "to": 70
+    },
+    {
+      "from": 64,
+      "to": 7
+    },
+    {
+      "from": 65,
+      "to": 64
+    },
+    {
+      "from": 66,
+      "to": 64
+    },
+    {
+      "from": 67,
+      "to": 64
+    },
+    {
+      "from": 68,
+      "to": 64
+    },
+    {
+      "from": 69,
+      "to": 64
+    },
+    {
+      "from": 70,
+      "to": 64
+    },
+    {
+      "from": 71,
+      "to": 64
+    },
+    {
+      "from": 71,
+      "to": 9
+    },
+    {
+      "from": 71,
+      "to": 10
+    },
+    {
+      "from": 72,
+      "to": 71
+    },
+    {
+      "from": 73,
+      "to": 71
+    },
+    {
+      "from": 74,
+      "to": 67
+    },
+    {
+      "from": 74,
+      "to": 71
+    },
+    {
+      "from": 75,
+      "to": 8
+    },
+    {
+      "from": 76,
+      "to": 75
+    },
+    {
+      "from": 77,
+      "to": 76
+    },
+    {
+      "from": 77,
+      "to": 39
+    },
+    {
+      "from": 78,
+      "to": 75
+    },
+    {
+      "from": 79,
+      "to": 78
+    },
+    {
+      "from": 80,
+      "to": 41
+    },
+    {
+      "from": 81,
+      "to": 80
+    },
+    {
+      "from": 82,
+      "to": 42
+    },
+    {
+      "from": 83,
+      "to": 82
+    },
+    {
+      "from": 84,
+      "to": 51
+    },
+    {
+      "from": 85,
+      "to": 84
+    }
+  ]
+}
