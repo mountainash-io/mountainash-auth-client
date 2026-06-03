@@ -1,0 +1,411 @@
+---
+title: OAuth 2.0 Flow
+description: Complete OAuth 2.0 Authorization Code flow implementation with PKCE, state parameters, token exchange, refresh, and expiry detection.
+generated_by: claude skill chapter-content-generator
+date: 2026-06-03
+version: 0.08
+---
+
+# OAuth 2.0 Flow
+
+## Summary
+
+This chapter covers the complete OAuth 2.0 implementation. It introduces the OAuthFlow class, the Authorization Code grant type, the PKCE extension with code verifier and challenge generation, building authorize URLs with state parameters for CSRF protection, exchanging authorization codes for tokens, token exchange mechanics, refresh token handling, and token expiry detection.
+
+## Concepts Covered
+
+- OAuthFlow Class
+- Authorization Code Grant
+- PKCE Extension
+- Code Verifier
+- Code Challenge
+- Build Authorize URL
+- State Parameter
+- Exchange Code
+- Token Exchange
+- Refresh Token
+- Token Expiry Check
+
+## Prerequisites
+
+- Chapter 1: Foundations (OAuth 2.0 Basics, Bearer Tokens, Pydantic Models)
+
+## Learning Objectives
+
+After completing this chapter, you will be able to:
+
+- Construct an OAuthFlow instance for any OAuth 2.0 provider
+- Implement Authorization Code grant with PKCE for enhanced security
+- Generate code verifiers and challenges for PKCE flows
+- Build authorize URLs with state parameters for CSRF protection
+- Exchange authorization codes for access tokens
+- Implement token refresh logic with expiry detection
+
+---
+
+## From Protocol to Implementation
+
+Chapter 1 introduced OAuth 2.0 as an authorization framework with four roles and several grant types. This chapter turns that conceptual understanding into working code by examining the `OAuthFlow` class -- the mountainash-auth-client library's implementation of the OAuth 2.0 Authorization Code grant with PKCE.
+
+The `OAuthFlow` class handles every stage of the authorization flow: constructing authorization URLs, managing PKCE challenge-response pairs, exchanging authorization codes for tokens, refreshing expired tokens, and checking token expiry. It delegates the browser interaction and callback capture to the callback server (Chapter 7) while focusing on the protocol mechanics.
+
+## The OAuthFlow Class
+
+The `OAuthFlow` class is constructed with a spec object that contains provider-specific metadata -- the authorization and token endpoint URLs, whether PKCE is required, and optional default scopes. This metadata is typically loaded from a provider profile configuration.
+
+```python
+class OAuthFlow:
+    def __init__(self, spec) -> None:
+        self._spec = spec
+        self._metadata = spec.metadata
+        self._code_verifier: str | None = None
+```
+
+The class exposes the provider URLs as read-only properties that extract values from the metadata dictionary.
+
+| Property | Metadata Key | Purpose |
+|---|---|---|
+| `authorize_url` | `authorize_url` | URL where the user grants consent |
+| `token_url` | `token_url` | Endpoint for code-to-token and refresh exchanges |
+| `use_pkce` | `use_pkce` (default: `False`) | Whether to include PKCE challenge parameters |
+| `default_scope` | `default_scope` (default: `None`) | Fallback scope if not specified at call time |
+
+The `_code_verifier` instance variable is initialized to `None` and populated during `build_authorize_url` if PKCE is enabled. It is later used during `exchange_code` to complete the PKCE proof. This stateful coupling between the two methods means a single `OAuthFlow` instance should handle one authorization flow at a time.
+
+## Authorization Code Grant
+
+The Authorization Code grant is the most secure standard OAuth 2.0 flow for applications that can keep a client secret confidential. It involves two server-side HTTP exchanges (the authorization redirect and the token exchange), with the user's browser acting as an intermediary.
+
+The flow proceeds in four stages:
+
+1. **Build the authorize URL** with client ID, redirect URI, scope, state, and optional PKCE challenge
+2. **Redirect the user** to the authorization server (via browser)
+3. **Capture the authorization code** from the callback (via the callback server or manual entry)
+4. **Exchange the code** for an access token and refresh token at the token endpoint
+
+Each of these stages maps directly to a method on the `OAuthFlow` class. The `authorize` method (covered at the end of this chapter) orchestrates all four stages into a single call.
+
+## PKCE Extension
+
+### Why PKCE Exists
+
+Proof Key for Code Exchange (PKCE, pronounced "pixy") was originally designed for public clients (mobile apps, SPAs) that cannot securely store a client secret. Even for confidential clients that do have a client secret, PKCE provides an additional layer of security against authorization code interception attacks.
+
+Without PKCE, an attacker who intercepts the authorization code (for example, through a malicious browser extension or a compromised redirect URI) can exchange it for tokens. With PKCE, the attacker also needs the code verifier, which was never transmitted through the browser.
+
+### Code Verifier
+
+A code verifier is a high-entropy random string generated by the client before the authorization flow begins. The library generates it using Python's `secrets.token_urlsafe(64)`, which produces a cryptographically random URL-safe base64 string of approximately 86 characters.
+
+```python
+self._code_verifier = secrets.token_urlsafe(64)
+```
+
+The code verifier is stored in the `OAuthFlow` instance and never sent through the browser. It is only transmitted directly from the client to the authorization server during the token exchange (step 4), over a server-to-server HTTPS connection.
+
+### Code Challenge
+
+The code challenge is a transformed version of the code verifier that is safe to send through the browser. The library uses the S256 challenge method, which computes a SHA-256 hash of the verifier and base64url-encodes the result.
+
+The transformation follows RFC 7636:
+
+\[
+\text{code\_challenge} = \text{base64url}(\text{SHA256}(\text{code\_verifier}))
+\]
+
+In Python, this is:
+
+```python
+challenge = base64.urlsafe_b64encode(
+    hashlib.sha256(self._code_verifier.encode()).digest()
+).rstrip(b"=").decode()
+```
+
+The `rstrip(b"=")` removes padding characters, as required by the base64url encoding in RFC 7636. The resulting challenge string is included in the authorization URL as the `code_challenge` parameter, along with `code_challenge_method=S256` to tell the authorization server which transform was used.
+
+#### Diagram: PKCE Challenge-Response Flow
+<iframe src="../../sims/pkce-challenge-response/main.html" width="100%" height="500px" scrolling="no"></iframe>
+<details markdown="1">
+<summary>PKCE Challenge-Response Flow</summary>
+Type: workflow
+**sim-id:** pkce-challenge-response<br/>
+**Library:** vis-network<br/>
+**Status:** Specified
+
+**Purpose:** Visualize the PKCE flow showing how the code verifier is generated, transformed into a code challenge, sent through the browser (safe), and then the original verifier is sent server-to-server during token exchange (secret).
+
+**Components:** Four swim lanes: Client App, User Browser, Authorization Server, Token Endpoint. Arrows show: (1) Client generates code_verifier, (2) Client computes SHA256 -> base64url = code_challenge, (3) code_challenge travels through browser to Auth Server, (4) Auth code returns through browser, (5) Client sends code_verifier directly to Token Endpoint, (6) Token Endpoint computes SHA256(verifier), compares to stored challenge, (7) Tokens returned.
+
+**Interactions:** Click "Generate Verifier" to see a random verifier generated and its SHA256 hash computed in real time. Play button animates the full sequence. Hover on the browser lane to see what an attacker could intercept (code_challenge, auth_code) vs what they cannot (code_verifier).
+
+**Colors:** Client=SteelBlue, Browser=Gold (insecure channel), Auth Server=DarkSlateBlue, Token Endpoint=DarkGreen. Secret values=red border.
+
+**Learning Objective:** Analyze (Bloom Level 4) how PKCE prevents authorization code interception attacks by binding the code exchange to a secret known only to the client.
+</details>
+
+## Building the Authorize URL
+
+The `build_authorize_url` method constructs the full URL that the user visits to grant authorization. It assembles query parameters, generates PKCE material if needed, and produces a cryptographic state token.
+
+```python
+def build_authorize_url(
+    self,
+    client_id: str,
+    redirect_uri: str,
+    scope: str | None = None,
+) -> tuple[str, str]:
+    state = secrets.token_urlsafe(32)
+    params: dict[str, str] = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "state": state,
+    }
+    effective_scope = scope or self.default_scope
+    if effective_scope:
+        params["scope"] = effective_scope
+
+    if self.use_pkce:
+        self._code_verifier = secrets.token_urlsafe(64)
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(self._code_verifier.encode()).digest()
+        ).rstrip(b"=").decode()
+        params["code_challenge"] = challenge
+        params["code_challenge_method"] = "S256"
+
+    url = f"{self.authorize_url}?{urlencode(params)}"
+    return url, state
+```
+
+The method returns a tuple of the full URL and the state token. The caller must store the state token to validate it when the callback arrives.
+
+### State Parameter
+
+The state parameter is a cryptographic random string included in the authorization URL and echoed back in the callback. Its primary purpose is CSRF (Cross-Site Request Forgery) protection. Without a state parameter, an attacker could craft a malicious authorization URL and trick the user into completing an OAuth flow that binds the attacker's account to the victim's session.
+
+The state parameter works as follows:
+
+1. The client generates a random state value and stores it locally
+2. The state is included as a query parameter in the authorization URL
+3. After the user authorizes, the callback includes the same state value
+4. The client compares the received state with the stored value
+5. If they do not match, the flow is aborted with an error
+
+The library generates state using `secrets.token_urlsafe(32)`, which produces a 43-character base64url string with 256 bits of entropy -- sufficient to prevent brute-force guessing.
+
+## Token Exchange
+
+### Exchange Code
+
+After the user authorizes and the callback is captured, the client exchanges the authorization code for tokens by sending a POST request to the provider's token endpoint.
+
+The `exchange_code` method sends the authorization code along with the client credentials, redirect URI, and (if PKCE was used) the code verifier. It receives back an access token, an optional refresh token, and an expiration time.
+
+```python
+def exchange_code(
+    self,
+    code: str,
+    redirect_uri: str,
+    client_id: str,
+    client_secret: str,
+    scope: str | None = None,
+) -> dict[str, str | int | None]:
+    data: dict[str, str] = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_uri,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }
+    if self.use_pkce and self._code_verifier:
+        data["code_verifier"] = self._code_verifier
+```
+
+The `grant_type` parameter is always `"authorization_code"` for this flow. The `redirect_uri` must exactly match the one used in the authorization URL -- providers reject mismatches as a security measure.
+
+The method uses `httpx.Client` to make the POST request. If the provider returns an HTTP error status, the method raises a `TokenExchangeError` (covered in Chapter 7) with the URL, status code, and truncated response body for diagnostics.
+
+### Token Exchange Response Processing
+
+The token endpoint returns a JSON response containing the tokens and metadata. The `exchange_code` method processes this response into a flat dictionary suitable for storage.
+
+```python
+token_data = resp.json()
+expires_at: int | None = None
+if "expires_in" in token_data:
+    expires_at = int(time.time()) + int(token_data["expires_in"])
+
+return {
+    "access_token": token_data["access_token"],
+    "refresh_token": token_data.get("refresh_token", ""),
+    "token_expires_at": expires_at,
+    "scope": scope or self.default_scope,
+}
+```
+
+A critical detail is the conversion from `expires_in` (a relative duration in seconds) to `token_expires_at` (an absolute Unix timestamp). Storing the absolute timestamp is more reliable than storing the relative duration, because the expiry check does not need to know when the token was obtained -- it simply compares the current time against the stored timestamp.
+
+#### Diagram: Token Exchange Data Flow
+<iframe src="../../sims/token-exchange-data-flow/main.html" width="100%" height="450px" scrolling="no"></iframe>
+<details markdown="1">
+<summary>Token Exchange Data Flow</summary>
+Type: workflow
+**sim-id:** token-exchange-data-flow<br/>
+**Library:** vis-network<br/>
+**Status:** Specified
+
+**Purpose:** Show the data transformation from the raw token endpoint response to the normalized storage format, highlighting the expires_in to expires_at conversion.
+
+**Components:** Three columns: Input (token endpoint JSON response with access_token, refresh_token, expires_in, scope, token_type), Transform (processing logic showing time.time() + expires_in calculation), Output (normalized dict with access_token, refresh_token, token_expires_at, scope). Connecting arrows show which input fields map to which output fields.
+
+**Interactions:** Click on any input field to highlight its transformation path. Modify the "expires_in" value via a slider to see the "token_expires_at" calculation update in real time. Toggle "Show Optional Fields" to see how missing refresh_token defaults to empty string.
+
+**Colors:** Input=SteelBlue, Transform=Gold, Output=DarkGreen, Absent fields=LightGray.
+
+**Learning Objective:** Apply (Bloom Level 3) the token normalization logic to understand how raw provider responses are stored for later use by the token lifecycle system.
+</details>
+
+## Refresh Token
+
+Access tokens are short-lived by design -- typically one hour for most providers. The refresh token is a longer-lived credential that can be used to obtain a new access token without requiring the user to re-authorize through the browser.
+
+The `refresh` method sends the refresh token to the same token endpoint used for the initial exchange, but with `grant_type` set to `"refresh_token"`.
+
+```python
+def refresh(
+    self,
+    refresh_token: str,
+    client_id: str,
+    client_secret: str,
+) -> dict[str, str | int | None]:
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }
+```
+
+An important detail in the response handling is refresh token rotation. Some providers issue a new refresh token with each refresh, invalidating the old one. The library handles this by preferring the new refresh token if present, and falling back to the original if the provider does not rotate.
+
+```python
+return {
+    "access_token": token_data["access_token"],
+    "refresh_token": token_data.get("refresh_token", refresh_token),
+    "token_expires_at": expires_at,
+}
+```
+
+The expression `token_data.get("refresh_token", refresh_token)` says: use the new refresh token if the provider sent one, otherwise keep the existing one. This handles both rotating and non-rotating providers without configuration.
+
+If the refresh fails (expired refresh token, revoked credentials, provider error), the method raises a `TokenRefreshError`. The connection mixin (Chapter 8) uses this signal to clear the stored credentials and either trigger re-authorization or raise `AuthorizationRequired`.
+
+## Token Expiry Check
+
+The `is_expired` static method determines whether an access token has expired or is about to expire. It accepts the stored `token_expires_at` timestamp and an optional buffer in seconds.
+
+```python
+@staticmethod
+def is_expired(token_expires_at: int | None, buffer_seconds: int = 300) -> bool:
+    if token_expires_at is None:
+        return False
+    return time.time() >= (token_expires_at - buffer_seconds)
+```
+
+The method applies a 300-second (5-minute) buffer by default. This means a token is considered "expired" when it has fewer than 5 minutes of validity remaining. The buffer prevents a race condition where the token is valid when the check passes but expires during the subsequent API call.
+
+The buffer-based approach is a practical tradeoff. A zero buffer risks intermittent authentication failures. An overly large buffer wastes valid token time and triggers unnecessary refreshes. Five minutes is a reasonable default that accounts for network latency and clock skew while keeping refreshes infrequent.
+
+When `token_expires_at` is `None`, the method returns `False` (not expired). This handles tokens without an expiry time -- some providers issue non-expiring tokens, and the `expires_in` field in the token response is optional per the OAuth 2.0 specification.
+
+| Condition | `is_expired` Returns | Action |
+|---|---|---|
+| `token_expires_at` is `None` | `False` | Use the token as-is |
+| Current time < `expires_at - 300` | `False` | Use the token as-is |
+| Current time >= `expires_at - 300` | `True` | Refresh before using |
+| Current time >= `expires_at` | `True` | Refresh before using |
+
+## End To End Authorize
+
+The `authorize` method orchestrates the complete flow from start to finish. It combines URL building, browser interaction, callback capture (or manual code entry), state validation, and code exchange into a single method call.
+
+```python
+def authorize(
+    self,
+    client_id: str,
+    client_secret: str,
+    redirect_mode: Literal["local_server", "manual"] = "local_server",
+    scope: str | None = None,
+) -> dict[str, str | int | None]:
+```
+
+The method supports two redirect modes. In `local_server` mode, it starts a `LocalCallbackServer` on an ephemeral port, opens the user's browser to the authorization URL, and waits for the provider to redirect back with the authorization code. In `manual` mode, it prints the authorization URL and prompts the user to paste the callback URL or code.
+
+After capturing the callback parameters, the method validates the state parameter to prevent CSRF attacks. If the state does not match, it raises a `ValueError`.
+
+```python
+if params.get("state") and params["state"] != state:
+    raise ValueError("OAuth state mismatch -- possible CSRF attack")
+```
+
+Finally, it calls `exchange_code` to convert the authorization code into tokens, returning the normalized token dictionary.
+
+#### Diagram: End-to-End Authorization Sequence
+<iframe src="../../sims/e2e-authorize-sequence/main.html" width="100%" height="550px" scrolling="no"></iframe>
+<details markdown="1">
+<summary>End-to-End Authorization Sequence</summary>
+Type: workflow
+**sim-id:** e2e-authorize-sequence<br/>
+**Library:** vis-network<br/>
+**Status:** Specified
+
+**Purpose:** Show the complete end-to-end authorization flow as orchestrated by the `authorize` method, including the decision between local_server and manual modes, all intermediate steps, and the final token output.
+
+**Components:** A start node splits into two paths (local_server mode, manual mode). Each path shows: callback server setup or OOB URI, build_authorize_url, browser open or print URL, capture callback or prompt for code, state validation, exchange_code, return tokens. Paths merge at the state validation step.
+
+**Interactions:** Toggle between "Local Server" and "Manual" mode to see the different paths animate. Click any step to see the method call and parameters involved. A "Failure Scenarios" toggle shows the error paths (state mismatch, exchange error, timeout).
+
+**Colors:** Local Server path=SteelBlue, Manual path=Gold, Shared steps=DarkSlateBlue, Success=DarkGreen, Errors=Crimson.
+
+**Learning Objective:** Apply (Bloom Level 3) the end-to-end authorization flow to understand how the OAuthFlow class coordinates all components of the Authorization Code grant.
+</details>
+
+!!! note "Thread Safety"
+    The `OAuthFlow` class stores the `_code_verifier` as instance state, which means a single instance should not be used for concurrent authorization flows. Each authorization flow should use its own `OAuthFlow` instance, or the calling code should serialize access. In practice, this is rarely an issue because authorization is an interactive, user-facing operation that happens one flow at a time.
+
+## Provider Configuration
+
+Different OAuth 2.0 providers have different requirements and behaviors. The `OAuthFlow` class accommodates this variance through the metadata dictionary passed at construction time. The following examples show typical metadata configurations for common providers.
+
+```python
+# Google Cloud Platform
+google_metadata = {
+    "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+    "token_url": "https://oauth2.googleapis.com/token",
+    "use_pkce": True,
+    "default_scope": "https://www.googleapis.com/auth/bigquery",
+}
+
+# Snowflake
+snowflake_metadata = {
+    "authorize_url": "https://account.snowflakecomputing.com/oauth/authorize",
+    "token_url": "https://account.snowflakecomputing.com/oauth/token-request",
+    "use_pkce": False,
+    "default_scope": "session:role:analyst",
+}
+```
+
+The `use_pkce` flag controls whether PKCE parameters are included in the authorization request. Most modern providers (Google, Microsoft, Okta) support PKCE, and it should be enabled whenever possible. Some older providers may not support it, in which case `use_pkce: False` omits the challenge parameters entirely.
+
+The `callback_port` metadata key (optional) allows specifying a fixed port for the callback server. This is useful when the provider requires pre-registered redirect URIs that include a specific port number. When set to 0 (or omitted), the OS assigns an available ephemeral port.
+
+## Key Takeaways
+
+- **OAuthFlow** is a stateful class constructed with provider metadata (authorize URL, token URL, PKCE flag, default scope). One instance handles one authorization flow at a time.
+- **Authorization Code grant** is a four-stage process: build URL, redirect user, capture code, exchange code for tokens. It is the most secure standard flow for confidential clients.
+- **PKCE** adds a challenge-response layer that prevents authorization code interception. The **code verifier** (a random secret) never leaves the client; only the **code challenge** (its SHA-256 hash) passes through the browser.
+- **`build_authorize_url`** constructs the authorization URL with client_id, redirect_uri, scope, state, and optional PKCE parameters. It returns both the URL and the state token.
+- **The state parameter** is a CSRF protection mechanism: a random token included in the authorization request and validated in the callback. Mismatches abort the flow.
+- **`exchange_code`** sends the authorization code to the token endpoint and normalizes the response, converting relative `expires_in` to absolute `token_expires_at` timestamps.
+- **Token refresh** uses the same token endpoint with `grant_type=refresh_token`. The library handles refresh token rotation by preferring new tokens when present and falling back to the existing one.
+- **`is_expired`** checks token validity with a 300-second buffer, preventing race conditions where tokens expire between the check and the API call. Tokens with no expiry time are treated as always valid.
