@@ -7,7 +7,9 @@
     "version": "1.0",
     "format": "Learning Graph JSON v1.0",
     "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
-    "license": "CC BY-NC-SA 4.0 DEED"
+    "license": "CC BY-NC-SA 4.0 DEED",
+    "source_commit": "bea71b46178a4a764a6a289218f2e701490fe08e",
+    "profile_dir": "03.profile/mountainash-auth-client"
   },
   "groups": {
     "FOUND": {
@@ -79,433 +81,773 @@
       "id": 1,
       "label": "OAuth 2.0 Basics",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "01-foundations",
+      "match_confidence": 0.7
     },
     {
       "id": 2,
       "label": "OAuth 1.0a Basics",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": "flows.oauth1",
+      "source_path": "src/mountainash_auth_client/flows/oauth1.py",
+      "chapter": "01-foundations",
+      "match_confidence": 0.6
     },
     {
       "id": 3,
       "label": "Bearer Tokens",
-      "group": "FOUND"
+      "group": "FOUND",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "01-foundations",
+      "match_confidence": 0.7
     },
     {
       "id": 4,
       "label": "API Keys",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundations",
+      "match_confidence": 0.0
     },
     {
       "id": 5,
       "label": "Pydantic Models",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundations",
+      "match_confidence": 0.0
     },
     {
       "id": 6,
       "label": "Frozen Models",
-      "group": "FOUND"
+      "group": "FOUND",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundations",
+      "match_confidence": 0.0
     },
     {
       "id": 7,
       "label": "Python Protocols",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundations",
+      "match_confidence": 0.0
     },
     {
       "id": 8,
       "label": "Context Managers",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundations",
+      "match_confidence": 0.0
     },
     {
       "id": 9,
       "label": "File Permissions",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundations",
+      "match_confidence": 0.0
     },
     {
       "id": 10,
       "label": "Atomic File Writes",
-      "group": "FOUND"
+      "group": "FOUND",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundations",
+      "match_confidence": 0.0
     },
     {
       "id": 11,
       "label": "AuthSpec Base Model",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.base",
+      "source_path": "src/mountainash_auth_client/schemas/base.py",
+      "chapter": "02-auth-type-system-and-basic-types",
+      "match_confidence": 0.7
     },
     {
       "id": 12,
       "label": "Discriminated Union",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-auth-type-system-and-basic-types",
+      "match_confidence": 0.0
     },
     {
       "id": 13,
       "label": "Literal Kind Discriminator",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-auth-type-system-and-basic-types",
+      "match_confidence": 0.0
     },
     {
       "id": 14,
       "label": "NoAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "02-auth-type-system-and-basic-types",
+      "match_confidence": 0.7
     },
     {
       "id": 15,
       "label": "PasswordAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "02-auth-type-system-and-basic-types",
+      "match_confidence": 0.7
     },
     {
       "id": 16,
       "label": "TokenAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "02-auth-type-system-and-basic-types",
+      "match_confidence": 0.7
     },
     {
       "id": 17,
       "label": "JWTAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "02-auth-type-system-and-basic-types",
+      "match_confidence": 0.7
     },
     {
       "id": 18,
       "label": "OAuth2Auth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "02-auth-type-system-and-basic-types",
+      "match_confidence": 0.7
     },
     {
       "id": 19,
       "label": "OAuth2AuthCodeAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "03-advanced-auth-type-variants",
+      "match_confidence": 0.7
     },
     {
       "id": 20,
       "label": "OAuth1Auth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "03-advanced-auth-type-variants",
+      "match_confidence": 0.7
     },
     {
       "id": 21,
       "label": "IAMAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "03-advanced-auth-type-variants",
+      "match_confidence": 0.7
     },
     {
       "id": 22,
       "label": "AzureADAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "03-advanced-auth-type-variants",
+      "match_confidence": 0.7
     },
     {
       "id": 23,
       "label": "WindowsAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "03-advanced-auth-type-variants",
+      "match_confidence": 0.7
     },
     {
       "id": 24,
       "label": "KerberosAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "03-advanced-auth-type-variants",
+      "match_confidence": 0.7
     },
     {
       "id": 25,
       "label": "CertificateAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "03-advanced-auth-type-variants",
+      "match_confidence": 0.7
     },
     {
       "id": 26,
       "label": "ServiceAccountAuth Type",
-      "group": "ATYPE"
+      "group": "ATYPE",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "03-advanced-auth-type-variants",
+      "match_confidence": 0.7
     },
     {
       "id": 27,
       "label": "Auth Dispatch Registry",
-      "group": "DISP"
+      "group": "DISP",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.6
     },
     {
       "id": 28,
       "label": "Auth To Driver Kwargs",
-      "group": "DISP"
+      "group": "DISP",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 1.0
     },
     {
       "id": 29,
       "label": "Auth Kwargs Function",
-      "group": "DISP"
+      "group": "DISP",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.7
     },
     {
       "id": 30,
       "label": "Type Based Dispatch",
-      "group": "DISP"
+      "group": "DISP",
+      "source_module": "schemas.base",
+      "source_path": "src/mountainash_auth_client/schemas/base.py",
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.6
     },
     {
       "id": 31,
       "label": "Unmapped Auth Types",
-      "group": "DISP"
+      "group": "DISP",
+      "source_module": "schemas.auth-types",
+      "source_path": "src/mountainash_auth_client/schemas/",
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.6
     },
     {
       "id": 32,
       "label": "Backend Specific Handling",
-      "group": "DISP"
+      "group": "DISP",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.0
     },
     {
       "id": 33,
       "label": "OAuthFlow Class",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": "flows.oauth2",
+      "source_path": "src/mountainash_auth_client/flows/oauth2.py",
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.7
     },
     {
       "id": 34,
       "label": "Authorization Code Grant",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.0
     },
     {
       "id": 35,
       "label": "PKCE Extension",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.0
     },
     {
       "id": 36,
       "label": "Code Verifier",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.0
     },
     {
       "id": 37,
       "label": "Code Challenge",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.0
     },
     {
       "id": 38,
       "label": "Build Authorize URL",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": "flows.oauth1",
+      "source_path": "src/mountainash_auth_client/flows/oauth1.py",
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.7
     },
     {
       "id": 39,
       "label": "State Parameter",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.0
     },
     {
       "id": 40,
       "label": "Exchange Code",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": "flows.oauth2",
+      "source_path": "src/mountainash_auth_client/flows/oauth2.py",
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.7
     },
     {
       "id": 41,
       "label": "Token Exchange",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": "errors",
+      "source_path": "src/mountainash_auth_client/errors.py",
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.7
     },
     {
       "id": 42,
       "label": "Refresh Token",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.7
     },
     {
       "id": 43,
       "label": "Token Expiry Check",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "05-oauth2-flow",
+      "match_confidence": 0.7
     },
     {
       "id": 44,
       "label": "End To End Authorize",
-      "group": "OA2"
+      "group": "OA2",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 45,
       "label": "OAuth1Flow Class",
-      "group": "OA1"
+      "group": "OA1",
+      "source_module": "flows.oauth1",
+      "source_path": "src/mountainash_auth_client/flows/oauth1.py",
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.7
     },
     {
       "id": 46,
       "label": "Request Token",
-      "group": "OA1"
+      "group": "OA1",
+      "source_module": "flows.oauth1",
+      "source_path": "src/mountainash_auth_client/flows/oauth1.py",
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.7
     },
     {
       "id": 47,
       "label": "Three Legged Flow",
-      "group": "OA1"
+      "group": "OA1",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.0
     },
     {
       "id": 48,
       "label": "Verifier Exchange",
-      "group": "OA1"
+      "group": "OA1",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.0
     },
     {
       "id": 49,
       "label": "Authlib Dependency",
-      "group": "OA1"
+      "group": "OA1",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.0
     },
     {
       "id": 50,
       "label": "Optional Import Guard",
-      "group": "OA1"
+      "group": "OA1",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-auth-dispatch-and-oauth1",
+      "match_confidence": 0.0
     },
     {
       "id": 51,
       "label": "OAuth2ConnectionMixin",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": "mixins.oauth2",
+      "source_path": "src/mountainash_auth_client/mixins/oauth2.py",
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 1.0
     },
     {
       "id": 52,
       "label": "Connect Method",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 53,
       "label": "Auto Authorize Flag",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 54,
       "label": "Client Property",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 55,
       "label": "Context Manager Support",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 56,
       "label": "Profile Parameter",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 57,
       "label": "Token Lifecycle Overview",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.7
     },
     {
       "id": 58,
       "label": "No Token State",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.7
     },
     {
       "id": 59,
       "label": "Valid Token State",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.7
     },
     {
       "id": 60,
       "label": "Expired With Refresh State",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 61,
       "label": "Expired No Refresh State",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 62,
       "label": "Cleared State",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 63,
       "label": "File Locked Refresh",
-      "group": "CONN"
+      "group": "CONN",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     },
     {
       "id": 64,
       "label": "SecretStore Protocol",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": "store",
+      "source_path": "src/mountainash_auth_client/store/",
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.7
     },
     {
       "id": 65,
       "label": "Load Method",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.0
     },
     {
       "id": 66,
       "label": "Save Method",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.0
     },
     {
       "id": 67,
       "label": "Clear Method",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.0
     },
     {
       "id": 68,
       "label": "Is Cleared Method",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.0
     },
     {
       "id": 69,
       "label": "List Users Method",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.0
     },
     {
       "id": 70,
       "label": "Lock Method",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.0
     },
     {
       "id": 71,
       "label": "FilesystemStore",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": "store",
+      "source_path": "src/mountainash_auth_client/store/",
+      "chapter": "06-secret-storage",
+      "match_confidence": 1.0
     },
     {
       "id": 72,
       "label": "YAML Serialization",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.0
     },
     {
       "id": 73,
       "label": "Domain Provider Namespace",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.0
     },
     {
       "id": 74,
       "label": "Tombstone Semantics",
-      "group": "STORE"
+      "group": "STORE",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-secret-storage",
+      "match_confidence": 0.0
     },
     {
       "id": 75,
       "label": "LocalCallbackServer",
-      "group": "CALLB"
+      "group": "CALLB",
+      "source_module": "server",
+      "source_path": "src/mountainash_auth_client/server/",
+      "chapter": "07-callback-server-and-token-errors",
+      "match_confidence": 1.0
     },
     {
       "id": 76,
       "label": "Ephemeral HTTP Server",
-      "group": "CALLB"
+      "group": "CALLB",
+      "source_module": "server",
+      "source_path": "src/mountainash_auth_client/server/",
+      "chapter": "07-callback-server-and-token-errors",
+      "match_confidence": 0.6
     },
     {
       "id": 77,
       "label": "Callback Capture",
-      "group": "CALLB"
+      "group": "CALLB",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-callback-server-and-token-errors",
+      "match_confidence": 0.0
     },
     {
       "id": 78,
       "label": "Prompt For Code",
-      "group": "CALLB"
+      "group": "CALLB",
+      "source_module": "server",
+      "source_path": "src/mountainash_auth_client/server/",
+      "chapter": "07-callback-server-and-token-errors",
+      "match_confidence": 1.0
     },
     {
       "id": 79,
       "label": "Manual Redirect Mode",
-      "group": "CALLB"
+      "group": "CALLB",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-callback-server-and-token-errors",
+      "match_confidence": 0.0
     },
     {
       "id": 80,
       "label": "TokenExchangeError",
-      "group": "ERROR"
+      "group": "ERROR",
+      "source_module": "errors",
+      "source_path": "src/mountainash_auth_client/errors.py",
+      "chapter": "07-callback-server-and-token-errors",
+      "match_confidence": 1.0
     },
     {
       "id": 81,
       "label": "Token Exchange URL",
-      "group": "ERROR"
+      "group": "ERROR",
+      "source_module": "schemas.dispatch",
+      "source_path": "src/mountainash_auth_client/schemas/dispatch.py",
+      "chapter": "07-callback-server-and-token-errors",
+      "match_confidence": 0.7
     },
     {
       "id": 82,
       "label": "TokenRefreshError",
-      "group": "ERROR"
+      "group": "ERROR",
+      "source_module": "errors",
+      "source_path": "src/mountainash_auth_client/errors.py",
+      "chapter": "07-callback-server-and-token-errors",
+      "match_confidence": 1.0
     },
     {
       "id": 83,
       "label": "Refresh Status Code",
-      "group": "ERROR"
+      "group": "ERROR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-callback-server-and-token-errors",
+      "match_confidence": 0.0
     },
     {
       "id": 84,
       "label": "AuthorizationRequired",
-      "group": "ERROR"
+      "group": "ERROR",
+      "source_module": "errors",
+      "source_path": "src/mountainash_auth_client/errors.py",
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 1.0
     },
     {
       "id": 85,
       "label": "Provider User Context",
-      "group": "ERROR"
+      "group": "ERROR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-connection-mixins-and-token-lifecycle",
+      "match_confidence": 0.0
     }
   ],
   "edges": [

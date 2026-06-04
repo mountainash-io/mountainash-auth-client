@@ -45,6 +45,7 @@ Data platforms use wildly different authentication mechanisms. A DuckDB file nee
 
 The mountainash-auth-client library solves this by representing every authentication mechanism as a single type hierarchy. Configuration files, validation logic, and dispatch code all work with one polymorphic type rather than a sprawling set of unrelated dictionaries. This chapter explains how that type hierarchy is constructed using Pydantic's discriminated union pattern.
 
+<!-- concept:11 -->
 ## The AuthSpec Base Model
 
 The `AuthSpec` class is the root of the authentication type hierarchy. It is a Pydantic `BaseModel` configured as frozen (immutable) and strict about extra fields. Every authentication variant in the library inherits from this class.
@@ -63,6 +64,8 @@ The `ConfigDict` applies two constraints that propagate to all subclasses. The `
 
 A deliberate design choice in AuthSpec is the absence of a `kind` field on the base class itself. If the base declared `kind: str`, every subclass that narrows `kind` to a `Literal` would trigger a type checker warning (`reportIncompatibleVariableOverride`). By omitting `kind` from the base, each subclass is free to declare its own `Literal` discriminator without conflict.
 
+<!-- concept:13 -->
+<!-- concept:12 -->
 ## Discriminated Unions and the Literal Kind Discriminator
 
 ### Understanding Discriminated Unions
@@ -134,6 +137,7 @@ This single type annotation gives consuming code full type safety: a function ac
 
 The library defines thirteen auth type variants in total. This chapter covers the five basic variants that handle the most common authentication scenarios. The remaining eight advanced variants are covered in Chapter 3.
 
+<!-- concept:14 -->
 ### NoAuth Type
 
 The simplest variant represents the absence of authentication. Some data sources -- local file databases like SQLite and DuckDB, or in-memory engines like PySpark -- require no credentials at all. Rather than using `None` or an empty dictionary to represent this case, the library uses an explicit type.
@@ -149,6 +153,7 @@ Using an explicit type rather than `None` avoids a common source of bugs: code t
 
 In configuration files, `NoAuth` appears as simply `kind: none`, making it clear to anyone reading the configuration that the absence of credentials is intentional, not an oversight.
 
+<!-- concept:15 -->
 ### PasswordAuth Type
 
 Username-and-password authentication remains the most prevalent mechanism for traditional databases. The `PasswordAuth` type captures a username as a plain string and a password as a `SecretStr`.
@@ -164,6 +169,7 @@ The `SecretStr` type for the password field ensures the value is masked in logs 
 
 Both `username` and `password` are required fields with no defaults, meaning Pydantic raises a `ValidationError` if either is missing during construction. Combined with `extra="forbid"` from the base class, this means the only valid `PasswordAuth` configuration is one that provides exactly `kind`, `username`, and `password` -- nothing more, nothing less.
 
+<!-- concept:16 -->
 ### TokenAuth Type
 
 The `TokenAuth` type represents opaque bearer token authentication, where the client presents a single secret string to identify itself. This pattern is common in SaaS APIs and managed database services like MotherDuck.
@@ -178,6 +184,7 @@ An opaque token is called "opaque" because the client treats it as an arbitrary 
 
 Opaque tokens are often preferred by API providers because revocation is straightforward -- the provider simply marks the token as invalid in its database. The client cannot cache or extend the token's validity because it has no access to the token's metadata.
 
+<!-- concept:17 -->
 ### JWTAuth Type
 
 JSON Web Tokens (JWTs) are a specific token format defined by RFC 7519. Unlike opaque tokens, JWTs are structured: they consist of three base64-encoded parts separated by dots (header, payload, signature). The payload contains claims about the authenticated entity, such as expiration time, issuer, and subject.
@@ -200,6 +207,7 @@ Some backend drivers (such as Trino) require knowing that the token is a JWT rat
 | JWTAuth | `"jwt"` | `token` | Trino, JWT-authenticated APIs |
 | OAuth2Auth | `"oauth2"` | `client_id`, `client_secret`, `token`, `refresh_token`, `server_uri`, `scope` | Snowflake, PyIceberg REST |
 
+<!-- concept:18 -->
 ### OAuth2Auth Type
 
 The `OAuth2Auth` type captures the full set of OAuth 2.0 credentials that a client might need. Unlike the previous types where all fields are required, OAuth2Auth makes every field beyond `kind` optional. This flexibility reflects the reality that OAuth 2.0 configurations vary significantly across providers.

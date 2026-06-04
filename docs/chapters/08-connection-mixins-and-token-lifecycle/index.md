@@ -58,6 +58,7 @@ The previous chapters covered the individual components of the mountainash-auth-
 
 The mixin's `connect` method is the library's central integration point. It loads stored tokens from the secret store, checks their validity, refreshes expired tokens, triggers interactive authorization when needed, and constructs an authenticated HTTP client -- all in a single method call. Understanding how it makes decisions requires understanding the token lifecycle model it implements.
 
+<!-- concept:51 -->
 ## OAuth2ConnectionMixin
 
 The `OAuth2ConnectionMixin` is a class designed to be mixed into connection classes that need OAuth 2.0 token management. It declares three class-level variables that the consuming class must provide.
@@ -79,6 +80,7 @@ class SnowflakeConnection(OAuth2ConnectionMixin):
     _base_url = "https://account.snowflakecomputing.com"
 ```
 
+<!-- concept:54 -->
 ### Client Property
 
 The `client` property provides read-only access to the underlying `httpx.Client` instance. After a successful `connect` call, this property returns the configured client with the `Authorization: Bearer <token>` header set. Before connection, it returns `None`.
@@ -97,6 +99,7 @@ conn.connect(profile, store=store, domain="prod")
 response = conn.client.get("/api/data")
 ```
 
+<!-- concept:56 -->
 ### Profile Parameter
 
 The `connect` method accepts a `profile` parameter that provides the OAuth client credentials (client_id, client_secret, scope) needed for token operations. The profile is typically a configuration object with an `.auth` attribute containing an `OAuth2AuthCodeAuth` instance.
@@ -110,6 +113,7 @@ The mixin accesses `profile.auth` to extract:
 
 This loose coupling (via attribute access rather than typed parameters) allows the mixin to work with different profile object structures across the mountainash ecosystem.
 
+<!-- concept:55 -->
 ### Context Manager Support
 
 The mixin implements `__enter__` and `__exit__` to support the `with` statement pattern for connection lifecycle management.
@@ -133,6 +137,7 @@ with SnowflakeConnection() as conn:
 
 This guarantees cleanup even when exceptions occur during API calls, preventing resource leaks in long-running applications and scripts.
 
+<!-- concept:52 -->
 ## The Connect Method
 
 The `connect` method is the heart of the mixin. It accepts a profile object and several keyword arguments that control its behavior.
@@ -157,6 +162,7 @@ def connect(
 | `domain` | str | (required) | Environment namespace (e.g., `"production"`, `"staging"`) |
 | `auto_authorize` | bool | `False` | Whether to trigger interactive authorization when no valid token exists |
 
+<!-- concept:53 -->
 ### Auto Authorize Flag
 
 The `auto_authorize` flag controls the mixin's behavior when no valid token is available and refresh has failed (or is not possible). When `True`, the mixin launches the interactive OAuth authorization flow (opening a browser for user consent). When `False`, it raises an `AuthorizationRequired` exception instead.
@@ -173,6 +179,7 @@ Setting `auto_authorize=True` is appropriate for:
 - **Interactive scripts** where first-time setup should be seamless
 - **Development environments** where convenience outweighs automation concerns
 
+<!-- concept:57 -->
 ## Token Lifecycle Overview
 
 The connection mixin manages tokens through a five-state lifecycle. Each state represents a different combination of stored token presence, validity, and refresh token availability. The `connect` method evaluates the current state and takes the appropriate action.
@@ -197,6 +204,7 @@ Type: diagram
 **Learning Objective:** Analyze (Bloom Level 4) the complete token lifecycle state machine and predict the connect method's behavior for any given token state and configuration.
 </details>
 
+<!-- concept:58 -->
 ### No Token State
 
 The No Token state occurs when `store.load()` returns `None` and `store.is_cleared()` returns `False`. This is the initial state before any authorization has occurred.
@@ -217,6 +225,7 @@ if tokens is None and not store.is_cleared(domain, provider, user):
 
 If no legacy tokens exist and `auto_authorize` is `True`, the mixin launches the full OAuth authorization flow. If `auto_authorize` is `False`, it raises `AuthorizationRequired`.
 
+<!-- concept:59 -->
 ### Valid Token State
 
 A token is in the Valid state when `store.load()` returns a token dictionary and `OAuthFlow.is_expired()` returns `False` for the stored `token_expires_at`. This is the happy path -- the mixin extracts the access token and constructs the HTTP client immediately.
@@ -228,18 +237,21 @@ if tokens and not flow.is_expired(tokens.get("token_expires_at")):
 
 No network calls are needed. The token is used directly.
 
+<!-- concept:60 -->
 ### Expired With Refresh State
 
 When the token has expired but a refresh token is available, the mixin attempts to obtain a new access token using `OAuthFlow.refresh()`. This state triggers the file-locked refresh mechanism (discussed in the next section).
 
 If the refresh succeeds, the new tokens are saved to the store and the connection proceeds with the fresh access token. If the refresh fails (raising `TokenRefreshError`), the mixin clears the stored credentials and either re-authorizes (if `auto_authorize=True`) or raises `AuthorizationRequired`.
 
+<!-- concept:61 -->
 ### Expired No Refresh State
 
 When the token has expired and no refresh token is available, the mixin cannot silently renew the credentials. Some providers do not issue refresh tokens (especially for client-credentials grants), and some tokens may have had their refresh token revoked.
 
 In this state, the only option is a full re-authorization. If `auto_authorize=True`, the mixin launches the interactive flow. If `False`, it raises `AuthorizationRequired`.
 
+<!-- concept:62 -->
 ### Cleared State
 
 The Cleared state occurs when `store.load()` returns `None` AND `store.is_cleared()` returns `True`. This indicates that credentials were intentionally revoked (Chapter 6's tombstone semantics).
@@ -248,6 +260,7 @@ The critical behavior in this state is that the mixin does NOT attempt legacy mi
 
 From the Cleared state, the only path forward is a fresh authorization (if `auto_authorize=True`) or `AuthorizationRequired`.
 
+<!-- concept:63 -->
 ## File Locked Refresh
 
 When multiple processes share the same credential store (common in data pipelines with parallel workers), a race condition can occur during token refresh. If two processes both detect an expired token simultaneously, they might both attempt to refresh using the same refresh token. With providers that rotate refresh tokens, the second refresh attempt would use an already-invalidated refresh token and fail.
@@ -302,6 +315,7 @@ Type: microsim
 **Learning Objective:** Evaluate (Bloom Level 5) why double-check locking is necessary for concurrent token refresh and trace the execution through both the normal and contention scenarios.
 </details>
 
+<!-- concept:44 -->
 ## End To End Authorize
 
 When the mixin determines that a full authorization is needed (no valid token and `auto_authorize=True`), it delegates to `OAuthFlow.authorize()`, which orchestrates the complete flow described in Chapter 5.
@@ -339,6 +353,7 @@ return self
 
 The client is configured with the provider's base URL, a Bearer token authorization header, and a 30-second timeout. The method returns `self` to support method chaining.
 
+<!-- concept:84 -->
 ## AuthorizationRequired Exception
 
 When the mixin cannot obtain a valid token and `auto_authorize` is `False`, it raises `AuthorizationRequired`. This exception carries the provider name and user identity so that upstream code can present a targeted re-authorization prompt.
@@ -351,6 +366,7 @@ class AuthorizationRequired(Exception):
         super().__init__(f"Authorization required for {provider}/{user}")
 ```
 
+<!-- concept:85 -->
 ### Provider User Context
 
 The `provider` and `user` attributes on `AuthorizationRequired` enable precise error handling. A data pipeline that connects to multiple providers can catch this exception and determine exactly which provider needs re-authorization, without affecting connections to other providers.

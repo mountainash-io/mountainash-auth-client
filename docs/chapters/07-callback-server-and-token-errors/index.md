@@ -48,6 +48,7 @@ OAuth authorization flows require capturing a redirect from the authorization se
 
 The mountainash-auth-client library solves this with a short-lived local HTTP server that starts, waits for a single redirect, extracts the parameters, and shuts down. For environments where binding a local port is not possible (containers, remote SSH sessions, CI/CD), the library provides a fallback mode where the user manually copies the redirect URL or authorization code.
 
+<!-- concept:75 -->
 ## LocalCallbackServer
 
 The `LocalCallbackServer` class manages the lifecycle of an ephemeral HTTP server that captures a single OAuth callback. It binds to localhost, generates a redirect URI based on the assigned port, and blocks until a callback request arrives or a timeout expires.
@@ -69,6 +70,7 @@ Two properties provide the server's addressing information:
 - **`port`** -- the actual port number assigned by the OS (useful for constructing the redirect URI)
 - **`redirect_uri`** -- the full callback URL in the format `http://localhost:{port}/callback`
 
+<!-- concept:76 -->
 ### Ephemeral HTTP Server
 
 The underlying HTTP server uses Python's standard library `HTTPServer` from `http.server`. It is configured with a custom request handler class (`_CallbackHandler`) that processes a single GET request and extracts query parameters from the URL.
@@ -93,6 +95,7 @@ The handler does four things on receiving a request. First, it parses the query 
 
 The term "ephemeral" is significant: the server handles exactly one request and then shuts down. It is not a long-running service. This minimizes the window during which the port is open, reducing the attack surface.
 
+<!-- concept:77 -->
 ### Callback Capture
 
 The `wait_for_callback` method blocks the calling thread until the HTTP server receives a callback request or the timeout expires. It delegates to `HTTPServer.handle_request()`, which processes a single incoming request.
@@ -137,6 +140,7 @@ Type: workflow
 
 Not every environment can bind a local port. Remote SSH sessions, Docker containers without exposed ports, headless CI runners, and sandboxed environments all present situations where `LocalCallbackServer` cannot function. The library provides two fallback approaches.
 
+<!-- concept:78 -->
 ### Prompt For Code
 
 The `prompt_for_code` function implements the simplest fallback: print the authorization URL, ask the user to visit it in a browser, complete the consent flow, and then paste either the redirect URL or the bare authorization code back into the terminal.
@@ -167,6 +171,7 @@ def extract_code_from_input(user_input: str) -> dict[str, str]:
 
 This dual-format handling accommodates different provider behaviors. Some providers redirect to the callback URL (which the user can copy from the browser address bar). Others display the code directly on a page (particularly when using the `urn:ietf:wg:oauth:2.0:oob` redirect URI).
 
+<!-- concept:79 -->
 ### Manual Redirect Mode
 
 Manual redirect mode is engaged at the `OAuthFlow.authorize()` level by passing `redirect_mode="manual"`. When this mode is active, the flow uses `urn:ietf:wg:oauth:2.0:oob` as the redirect URI instead of a localhost URL. This special URI tells the authorization server to display the authorization code on-screen rather than performing an HTTP redirect.
@@ -186,6 +191,7 @@ The flow logic for choosing between modes is straightforward: the `OAuthFlow.aut
 
 When token operations fail, the library raises typed exceptions that carry diagnostic information. Rather than catching generic HTTP errors and re-raising them with string messages, the library defines two specific exception classes that preserve the URL, status code, and response body.
 
+<!-- concept:80 -->
 ### TokenExchangeError
 
 `TokenExchangeError` is raised when the authorization code exchange fails -- typically because the code has expired, the redirect URI does not match, or the client credentials are invalid.
@@ -205,12 +211,14 @@ The exception carries three structured attributes:
 - **`status_code`** -- the HTTP response status code (e.g., 400 for invalid grant, 401 for bad credentials)
 - **`body`** -- the first 2000 characters of the response body, which typically contains a JSON error description from the provider
 
+<!-- concept:81 -->
 ### Token Exchange URL
 
 The `url` attribute on `TokenExchangeError` serves a specific diagnostic purpose. When a token exchange fails, knowing which URL was called helps determine whether the issue is a misconfigured endpoint (wrong URL), a network problem (connection refused), or a provider-side error. The same URL is used for both initial exchange and refresh, so the error message includes the HTTP method (`POST`) for clarity.
 
 The error message is constructed to be immediately useful in logs: `"Token exchange failed: HTTP 400 POST https://oauth.provider.com/token -- {"error":"invalid_grant","error_description":"Code expired"}"`. This includes the status code, the URL, and enough of the body to identify the provider's error message without overwhelming log aggregators with multi-kilobyte responses.
 
+<!-- concept:82 -->
 ### TokenRefreshError
 
 `TokenRefreshError` has an identical structure to `TokenExchangeError` but represents a different failure context: the refresh token exchange failed, meaning the refresh token may be expired or revoked.
@@ -224,6 +232,7 @@ class TokenRefreshError(Exception):
         super().__init__(f"Token refresh failed: HTTP {status_code} POST {url} -- {body[:200]}")
 ```
 
+<!-- concept:83 -->
 ### Refresh Status Code
 
 The `status_code` attribute on `TokenRefreshError` is particularly important for determining the correct recovery action. Different status codes indicate different failure modes.

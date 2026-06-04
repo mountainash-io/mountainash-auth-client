@@ -49,6 +49,7 @@ OAuth tokens, API keys, and other credentials must be persisted between sessions
 
 Different environments also have different storage requirements. A developer laptop might store credentials as encrypted YAML files on disk. A CI/CD pipeline might use a cloud vault service. A containerized application might use Kubernetes secrets. The mountainash-auth-client library addresses this diversity by defining a storage protocol that any backend can implement.
 
+<!-- concept:64 -->
 ## The SecretStore Protocol
 
 The `SecretStore` protocol defines the interface that all credential storage backends must satisfy. It uses Python's structural subtyping (the `Protocol` class from the `typing` module, introduced in Chapter 1) so that any class implementing these six methods is a valid store, regardless of inheritance.
@@ -88,6 +89,7 @@ Type: diagram
 **Learning Objective:** Understand (Bloom Level 2) the complete SecretStore protocol interface and how the six methods form a coherent credential management API.
 </details>
 
+<!-- concept:65 -->
 ### Load Method
 
 The `load` method retrieves stored credentials for a specific domain, provider, and user combination. It returns a dictionary of credential data if credentials exist, or `None` if no credentials have been saved for that key.
@@ -98,6 +100,7 @@ def load(self, domain: str, provider: str, user: str) -> dict[str, Any] | None:
 
 Returning `None` rather than raising an exception for missing credentials is a deliberate design choice. The connection mixin needs to distinguish between "no credentials exist yet" (trigger authorization) and "credentials exist but are invalid" (trigger refresh or re-authorization). A `None` return signals the former cleanly.
 
+<!-- concept:66 -->
 ### Save Method
 
 The `save` method persists a credential dictionary for a given key. The `data` parameter is an arbitrary dictionary, typically containing fields like `access_token`, `refresh_token`, and `token_expires_at`. The save method is responsible for ensuring the data is stored securely (appropriate permissions, encryption if supported) and durably (atomic writes to prevent corruption).
@@ -108,6 +111,7 @@ def save(self, domain: str, provider: str, user: str, data: dict[str, Any]) -> N
 
 Save operations should be idempotent -- saving the same data twice should produce the same result as saving once. In the `FilesystemStore`, saving after a `clear` operation also removes the tombstone file, indicating that fresh credentials replace the cleared state.
 
+<!-- concept:67 -->
 ### Clear Method
 
 The `clear` method removes stored credentials for a given key. Clearing is not the same as simply deleting -- it signals that the credentials have been intentionally revoked and should not be migrated or re-created from legacy sources.
@@ -118,6 +122,7 @@ def clear(self, domain: str, provider: str, user: str) -> None:
 
 The clear operation is the first half of the tombstone semantics pattern. After clearing, the `is_cleared` method returns `True` for the same key, allowing the connection mixin to distinguish between "never authorized" and "previously authorized but revoked."
 
+<!-- concept:68 -->
 ### Is Cleared Method
 
 The `is_cleared` method checks whether credentials for a given key have been intentionally cleared. It returns `True` if a `clear` operation was previously performed and no subsequent `save` has occurred.
@@ -128,6 +133,7 @@ def is_cleared(self, domain: str, provider: str, user: str) -> bool:
 
 This method is essential for preventing unintended credential migration. When the connection mixin finds no stored tokens, it checks `is_cleared` before falling back to legacy token sources. If the credentials were explicitly cleared, the mixin does not re-import legacy tokens -- it requires a fresh authorization instead.
 
+<!-- concept:69 -->
 ### List Users Method
 
 The `list_users` method returns a list of all user identifiers that have stored credentials for a given domain and provider.
@@ -138,6 +144,7 @@ def list_users(self, domain: str, provider: str) -> list[str]:
 
 This method supports multi-user scenarios where the same application connects to the same provider with different user identities. For example, a data pipeline might access a SaaS API as both a read-only analytics user and a write-capable admin user. The `list_users` method allows administration tools to discover and manage all stored credentials.
 
+<!-- concept:70 -->
 ### Lock Method
 
 The `lock` method returns a context manager that provides exclusive access to the credential file for a given key. The lock is used during token refresh to prevent concurrent processes from simultaneously refreshing the same token, which could lead to race conditions with rotating refresh tokens.
@@ -148,6 +155,7 @@ def lock(self, domain: str, provider: str, user: str) -> AbstractContextManager[
 
 The lock is advisory and file-based in the `FilesystemStore` implementation. It protects against concurrent processes on the same machine but does not protect against concurrent access across machines. For distributed environments, a store implementation backed by a distributed lock (Redis, ZooKeeper, or a cloud-native lock service) would be more appropriate.
 
+<!-- concept:71 -->
 ## FilesystemStore
 
 The `FilesystemStore` is the built-in implementation of the `SecretStore` protocol. It stores credentials as YAML files organized in a directory hierarchy under a configurable base directory. The constructor takes a single parameter: the path to the base directory.
@@ -158,6 +166,7 @@ class FilesystemStore:
         self.base_dir = Path(base_dir)
 ```
 
+<!-- concept:73 -->
 ### Domain Provider Namespace
 
 The `FilesystemStore` organizes credential files using a two-level namespace: domain and provider. The file path for a given credential is `{base_dir}/{domain}/{provider}-{user}.yaml`. This structure enables clean separation of credentials across environments and services.
@@ -208,6 +217,7 @@ Type: diagram
 **Learning Objective:** Apply (Bloom Level 3) the FilesystemStore namespace structure to organize credentials for a multi-environment, multi-provider deployment.
 </details>
 
+<!-- concept:72 -->
 ### YAML Serialization
 
 The `FilesystemStore` serializes credential data as YAML using `yaml.safe_dump` for writing and `yaml.safe_load` for reading. YAML was chosen over JSON for several reasons: it supports multi-line strings cleanly (useful for certificates and keys), it is human-readable (useful for debugging), and it does not require quoting string values.
@@ -261,6 +271,7 @@ def load(self, domain: str, provider: str, user: str) -> dict[str, Any] | None:
         return yaml.safe_load(fh)
 ```
 
+<!-- concept:74 -->
 ### Tombstone Semantics
 
 A tombstone is a marker file that records the fact that credentials were intentionally cleared. The `FilesystemStore` creates a tombstone file (`.{provider}-{user}.cleared`) when `clear()` is called, and removes it when `save()` stores fresh credentials.

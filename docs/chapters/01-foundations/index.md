@@ -50,6 +50,7 @@ Before diving into the library itself, you need a solid understanding of the pro
 
 ## Authentication Protocols
 
+<!-- concept:1 -->
 ### OAuth 2.0 Basics
 
 OAuth 2.0 is an authorization framework that enables a third-party application to obtain limited access to an HTTP service. Rather than sharing a username and password directly, the resource owner (the user) grants the application a time-limited access token through a delegation flow. The framework defines four roles that interact during an authorization exchange.
@@ -83,6 +84,7 @@ Type: workflow
 
 OAuth 2.0 also supports other grant types -- client credentials for server-to-server communication, device code for input-constrained devices, and the now-deprecated implicit grant. The mountainash-auth-client library primarily implements the Authorization Code grant with PKCE (Proof Key for Code Exchange), which is covered in detail in Chapter 5.
 
+<!-- concept:2 -->
 ### OAuth 1.0a Basics
 
 OAuth 1.0a is the predecessor to OAuth 2.0, and it takes a fundamentally different approach to security. While OAuth 2.0 relies on TLS for transport security and uses simple bearer tokens, OAuth 1.0a requires each request to be cryptographically signed using HMAC-SHA1 or RSA-SHA1. This signature covers the HTTP method, URL, and parameters, providing request integrity even without TLS.
@@ -97,6 +99,7 @@ The OAuth 1.0a flow involves three sets of credentials that participate in a "th
 
 The flow proceeds as follows: the client obtains a temporary request token from the provider, redirects the user to authorize that token, and then exchanges the authorized request token (along with a verifier code) for a permanent access token. Some providers, such as the Garmin Health API, still require OAuth 1.0a, which is why the mountainash-auth-client library supports it through an optional `authlib` dependency.
 
+<!-- concept:3 -->
 ### Bearer Tokens
 
 A bearer token is the simplest form of OAuth token usage. Any party that possesses the token can use it to access the protected resource -- there is no additional proof of identity required beyond the token itself. In HTTP, bearer tokens are transmitted in the `Authorization` header.
@@ -109,6 +112,7 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 
 The critical security implication is that bearer tokens must be protected in transit (via TLS) and at rest (via secure storage). If a bearer token is leaked, anyone who obtains it gains the same access as the legitimate holder. The mountainash-auth-client library addresses storage security through its `SecretStore` abstraction, covered in Chapter 6.
 
+<!-- concept:4 -->
 ### API Keys
 
 API keys are static strings that identify and authenticate a client to an API. Unlike OAuth tokens, API keys are typically long-lived and do not expire. They are commonly passed as query parameters or custom headers.
@@ -124,6 +128,7 @@ API keys are simpler than OAuth but provide weaker security properties. They can
 
 ## Data Modeling with Pydantic
 
+<!-- concept:5 -->
 ### Pydantic Models
 
 Pydantic is a data validation library for Python that uses type annotations to define data schemas. A Pydantic model is a Python class that inherits from `BaseModel` and declares its fields with type hints. When you instantiate a model, Pydantic validates the input data, coerces compatible types, and raises clear errors for invalid input.
@@ -144,6 +149,7 @@ class DatabaseCredential(BaseModel):
 
 Pydantic's `SecretStr` type is particularly important for authentication libraries. It wraps string values so they are masked in string representations and logs. The actual value is only accessible through the `.get_secret_value()` method, reducing the risk of accidental credential exposure.
 
+<!-- concept:6 -->
 ### Frozen Models
 
 A frozen model is a Pydantic model configured with `frozen=True` in its `model_config`. Once instantiated, a frozen model's fields cannot be modified. Any attempt to set an attribute raises a `ValidationError`.
@@ -181,6 +187,7 @@ Type: workflow
 
 ## Structural Typing and Resource Management
 
+<!-- concept:7 -->
 ### Python Protocols
 
 Python protocols, introduced in PEP 544 and available through the `typing` module, enable structural subtyping -- a form of duck typing with static type checker support. A protocol defines a set of methods and attributes that a class must have, without requiring explicit inheritance. Any class that implements the required methods is considered compatible with the protocol, whether or not it inherits from it.
@@ -204,6 +211,7 @@ The `@runtime_checkable` decorator allows `isinstance()` checks at runtime, so y
 
 The practical advantage of protocols over abstract base classes is that third-party code can implement the interface without importing or depending on the library. A team could write a Vault-backed secret store or a Keyring-backed store without any mountainash-auth-client imports, and it would be fully type-safe.
 
+<!-- concept:8 -->
 ### Context Managers
 
 A context manager is a Python object that defines `__enter__` and `__exit__` methods, enabling it to be used with the `with` statement. The `__enter__` method sets up a resource, and `__exit__` tears it down, guaranteeing cleanup even if an exception occurs.
@@ -225,6 +233,7 @@ Python also provides the `@contextmanager` decorator from the `contextlib` modul
 
 ## File Security Primitives
 
+<!-- concept:9 -->
 ### File Permissions
 
 Unix file permissions control which users and groups can read, write, or execute a file. Permissions are expressed as a three-digit octal number, where each digit represents the owner, group, and others respectively. Each digit encodes read (4), write (2), and execute (1) permissions.
@@ -241,6 +250,7 @@ The `FilesystemStore` rejects any credential file where `mode & 0o077` is nonzer
 
 These checks prevent a common class of credential leaks where files are created with default permissions (often `0o644`, world-readable) and then left exposed on shared systems or in container images.
 
+<!-- concept:10 -->
 ### Atomic File Writes
 
 An atomic file write is a technique that ensures a file is either fully written or not modified at all. The standard approach is a two-step process: write the data to a temporary file, then rename (move) the temporary file to the target path. On POSIX systems, `os.replace()` is an atomic operation -- the target file is either the old version or the new version, never a partially written intermediate state.

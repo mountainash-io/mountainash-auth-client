@@ -53,6 +53,7 @@ The auth type system (Chapters 2-3) defines how credentials are structured and v
 
 This translation layer is intentionally thin. Its job is to extract values from `AuthSpec` instances (calling `.get_secret_value()` on `SecretStr` fields as needed) and arrange them into the kwargs format that a particular backend's driver expects.
 
+<!-- concept:27 -->
 ### Auth Dispatch Registry
 
 The dispatch registry is a dictionary that maps auth type classes to converter functions. Each converter function accepts an instance of a specific `AuthSpec` subclass and returns a `dict[str, Any]` suitable for passing to a driver.
@@ -72,6 +73,7 @@ The registry is a module-level constant, not a class instance. This makes it eas
 
 Six of the thirteen auth types have default converters. The remaining seven (`WindowsAuth`, `AzureADAuth`, `KerberosAuth`, `CertificateAuth`, `ServiceAccountAuth`, `OAuth1Auth`, `OAuth2AuthCodeAuth`) are intentionally absent because they require platform-specific handling that cannot be captured in a single function.
 
+<!-- concept:28 -->
 ### Auth To Driver Kwargs
 
 The `auth_to_driver_kwargs` function is the primary dispatch entry point. It looks up the converter for the given auth instance's type and invokes it. If no converter is registered for the type, it raises a `KeyError`.
@@ -113,6 +115,7 @@ Type: workflow
 **Learning Objective:** Apply (Bloom Level 3) the dispatch mechanism to trace how a specific auth type instance produces driver kwargs.
 </details>
 
+<!-- concept:29 -->
 ### Auth Kwargs Function
 
 The `auth_kwargs` function is a convenience wrapper that extracts auth from any object with an optional `.auth` attribute. This is designed for profile objects that may or may not include authentication configuration.
@@ -128,6 +131,7 @@ def auth_kwargs(profile: object) -> dict[str, Any]:
 
 This function demonstrates a common pattern in the library: graceful handling of absent authentication. If the profile has no `.auth` attribute, or if `.auth` is `None`, the function returns an empty dict rather than raising an error. This allows backend connection code to unconditionally call `auth_kwargs(profile)` and merge the result into driver kwargs without conditional checks.
 
+<!-- concept:30 -->
 ### Type Based Dispatch
 
 The dispatch mechanism uses Python's `type()` function for routing rather than `isinstance()` checks or pattern matching. This is a deliberate design choice with specific tradeoffs.
@@ -142,12 +146,14 @@ The advantages of registry-based dispatch over `isinstance()` chains are:
 
 The alternative approaches (a `match` statement, an abstract method on each auth type, or visitor pattern) would each tightly couple the dispatch logic to the type definitions. The registry keeps them independent.
 
+<!-- concept:31 -->
 ### Unmapped Auth Types
 
 Five auth types have no entry in the default dispatch registry: `WindowsAuth`, `AzureADAuth`, `KerberosAuth`, `CertificateAuth`, and `ServiceAccountAuth`. When `auth_to_driver_kwargs` encounters one of these, the registry lookup raises a `KeyError`.
 
 This is not a bug -- it is intentional signaling. These types require platform-specific SDK calls (Azure SDK, AWS STS, `gssapi`, OpenSSL) that the auth-client library does not depend on. The `KeyError` tells the backend adapter: "the generic dispatch cannot handle this type; you must implement your own handling."
 
+<!-- concept:32 -->
 ### Backend Specific Handling
 
 A backend adapter handles unmapped types by catching the `KeyError` from dispatch and applying its own logic.
@@ -176,6 +182,7 @@ This pattern keeps the generic library thin while allowing each backend to bring
 
 ## Part 2: OAuth 1.0a Flow
 
+<!-- concept:45 -->
 ### OAuth1Flow Class
 
 The `OAuth1Flow` class encapsulates the complete OAuth 1.0a three-legged authorization flow. It is constructed with a spec object (typically a `ProfileSpec`) that contains metadata about the provider's OAuth endpoints.
@@ -200,6 +207,7 @@ class OAuth1Flow:
 
 The class reads three URLs from the provider metadata: the request token endpoint, the authorization URL (where the user grants consent), and the access token endpoint. These URLs are specific to each OAuth 1.0a provider -- for example, Garmin's connect API uses `https://connectapi.garmin.com/oauth-service/oauth/request_token`.
 
+<!-- concept:46 -->
 ### Request Token
 
 The first step in the OAuth 1.0a flow is obtaining a temporary request token. The client sends its consumer credentials to the provider's request token endpoint and receives back an `oauth_token` and `oauth_token_secret` pair.
@@ -223,6 +231,7 @@ def request_token(
 
 The `callback_url` parameter tells the provider where to redirect the user after they grant authorization. Setting it to `"oob"` (out-of-band) indicates that the application will use manual code entry rather than an HTTP redirect. When using the local callback server, this is set to `http://localhost:<port>/callback`.
 
+<!-- concept:47 -->
 ### Three Legged Flow
 
 The "three legs" of OAuth 1.0a refer to the three parties involved in the authorization dance: the consumer (your application), the provider (the API), and the user. The flow proceeds through three HTTP interactions.
@@ -262,6 +271,7 @@ Type: workflow
 **Learning Objective:** Understand (Bloom Level 2) the complete sequence of the OAuth 1.0a three-legged authorization flow and the role of each party.
 </details>
 
+<!-- concept:48 -->
 ### Verifier Exchange
 
 The final step exchanges the authorized request token and verifier code for permanent access credentials. The `exchange_verifier` method calls the provider's access token endpoint with all the cryptographic material needed to prove the exchange is legitimate.
@@ -293,6 +303,7 @@ The returned dictionary contains the permanent `oauth_token` and `oauth_token_se
 
 If the exchange fails (invalid verifier, expired request token, or provider error), the method raises a `TokenExchangeError` with the URL, HTTP status code, and response body for diagnostics.
 
+<!-- concept:49 -->
 ### Authlib Dependency
 
 The OAuth 1.0a implementation depends on the `authlib` library for HMAC-SHA1 request signing. However, `authlib` is declared as an optional dependency in the package metadata under the `oauth1` extra. This means users who never connect to OAuth 1.0a providers do not need to install it.
@@ -310,6 +321,7 @@ Users install it explicitly when needed:
 pip install mountainash-auth-client[oauth1]
 ```
 
+<!-- concept:50 -->
 ### Optional Import Guard
 
 Since `authlib` is optional, the code must handle its absence gracefully. The library uses a deferred import pattern: rather than importing `authlib` at the top of the module (which would fail at import time if uninstalled), it imports inside each method that needs it.

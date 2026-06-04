@@ -48,6 +48,7 @@ This chapter introduces the eight advanced variants that complete the discrimina
 
 ## Interactive OAuth Types
 
+<!-- concept:19 -->
 ### OAuth2AuthCodeAuth Type
 
 The `OAuth2AuthCodeAuth` type represents the credentials needed for an interactive OAuth 2.0 Authorization Code grant -- the flow where a user opens a browser, signs in, and grants consent. This is distinct from the `OAuth2Auth` type covered in Chapter 2, which stores static credentials and pre-obtained tokens.
@@ -77,6 +78,7 @@ When should you choose `OAuth2AuthCodeAuth` over `OAuth2Auth`? The decision tabl
 | Token refresh with automatic re-authorization | `OAuth2AuthCodeAuth` | Needs client_id/secret for refresh |
 | Embedding tokens in CI/CD pipelines | `OAuth2Auth` | Tokens injected from vault; no browser available |
 
+<!-- concept:20 -->
 ### OAuth1Auth Type
 
 OAuth 1.0a remains in use at several major providers, including the Garmin Health API, certain enterprise Twitter integrations, and some financial data providers. The `OAuth1Auth` type captures the consumer credentials and, optionally, previously-obtained access tokens.
@@ -118,6 +120,7 @@ Type: diagram
 
 Cloud platforms implement their own identity systems that do not fit neatly into the standard OAuth model. The following three types capture the credentials for AWS, Microsoft Azure, and Google Cloud platforms respectively.
 
+<!-- concept:21 -->
 ### IAMAuth Type
 
 AWS Identity and Access Management (IAM) uses a credential model based on access key pairs, role assumption, and session tokens. The `IAMAuth` type supports all of these patterns through optional fields.
@@ -142,6 +145,7 @@ The supported credential patterns are:
 - **Session credentials** -- `access_key_id` + `secret_access_key` + `session_token`; short-lived credentials from STS
 - **Named profile** -- `profile_name` references a configuration in `~/.aws/config`
 
+<!-- concept:22 -->
 ### AzureADAuth Type
 
 Microsoft's identity platform (Azure Active Directory, now Microsoft Entra ID) supports both interactive user authentication and managed identity for services running inside Azure. The `AzureADAuth` type captures the parameters for both patterns.
@@ -160,6 +164,7 @@ When `managed_identity` is `True`, the backend uses Azure's Managed Service Iden
 
 When `managed_identity` is `False`, the type behaves as a standard OAuth 2.0 client-credentials configuration using `tenant_id`, `client_id`, and `client_secret`. This is appropriate for applications running outside Azure that need to authenticate against Azure resources.
 
+<!-- concept:26 -->
 ### ServiceAccountAuth Type
 
 Google Cloud Platform uses service account JSON key files for machine-to-machine authentication. The `ServiceAccountAuth` type accepts either the raw JSON key data as a dictionary or a path to the key file.
@@ -180,6 +185,7 @@ Providing the key data inline (via `info`) is useful when credentials are inject
 
 Enterprise environments often use platform-native authentication mechanisms that leverage existing identity infrastructure (Active Directory, Kerberos realms, PKI certificates). These types typically require no stored secrets because they rely on the operating system or network environment for credential material.
 
+<!-- concept:23 -->
 ### WindowsAuth Type
 
 Windows Integrated Authentication (also known as NTLM or SSPI) allows applications to authenticate using the logged-in Windows user's credentials. This is the default authentication mechanism for Microsoft SQL Server in Windows domain environments.
@@ -193,6 +199,7 @@ class WindowsAuth(AuthSpec):
 
 Both fields are optional. When both are `None`, the backend uses the current process's Windows credentials (the logged-in user). When `username` and `domain` are specified, the backend attempts to authenticate as that specific domain user, which may require the process to have delegation privileges.
 
+<!-- concept:24 -->
 ### KerberosAuth Type
 
 Kerberos is a network authentication protocol that uses tickets issued by a Key Distribution Center (KDC) to authenticate clients to services. It is commonly used in Hadoop ecosystems, PostgreSQL with GSS-API, and Trino/Presto clusters.
@@ -207,6 +214,7 @@ class KerberosAuth(AuthSpec):
 
 The `service_name` defaults to `"postgres"` because that is the most common Kerberos-authenticated service in the data platform context. For Trino, you would set it to `"trino"` or `"HTTP"`. The `principal` overrides the default client principal (usually derived from the logged-in user), and `keytab` points to a file containing pre-exported keys for non-interactive authentication.
 
+<!-- concept:25 -->
 ### CertificateAuth Type
 
 Certificate-based authentication uses public-key cryptography. The client holds a private key and presents a certificate (containing the corresponding public key) to the server. The server validates the certificate against a trusted Certificate Authority and challenges the client to prove possession of the private key.
