@@ -26,17 +26,17 @@ class FakeSpec:
 
 
 class FakeAuth:
-    client_id = "cid"
-    access_token = None
-    refresh_token = None
-    token_expires_at = None
+    CLIENT_ID = "cid"
+    ACCESS_TOKEN = None
+    REFRESH_TOKEN = None
+    TOKEN_EXPIRES_AT = None
 
     def __init__(self, client_secret="csec", scope="read"):
         self._client_secret = client_secret
-        self.scope = scope
+        self.SCOPE = scope
 
     @property
-    def client_secret(self):
+    def CLIENT_SECRET(self):
         class _Secret:
             def __init__(self, val):
                 self._val = val
