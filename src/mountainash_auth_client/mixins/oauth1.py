@@ -17,11 +17,10 @@ class OAuth1ConnectionMixin:
 
     def connect(
         self,
-        profile,
+        auth,
         *,
         auto_authorize: bool = False,
     ) -> Self:
-        auth = profile.auth
         provider = self._spec.name
 
         backend = get_secrets_backend(auth.SETTINGS_SOURCE_SECRETS_PROVIDER)
@@ -29,7 +28,7 @@ class OAuth1ConnectionMixin:
         tokens = backend.get(key)
 
         if tokens and tokens.get("oauth_token"):
-            self._build_client(tokens, profile)
+            self._build_client(tokens, auth)
             return self
 
         if auto_authorize:
@@ -39,12 +38,12 @@ class OAuth1ConnectionMixin:
                 consumer_secret=auth.CONSUMER_SECRET.get_secret_value(),
             )
             backend.set(key, new_tokens)
-            self._build_client(new_tokens, profile)
+            self._build_client(new_tokens, auth)
             return self
 
         raise AuthorizationRequired(provider=provider, user="default")
 
-    def _build_client(self, tokens: dict, profile) -> None:
+    def _build_client(self, tokens: dict, auth) -> None:
         try:
             from authlib.integrations.httpx_client import OAuth1Auth
         except ImportError as exc:
@@ -52,7 +51,6 @@ class OAuth1ConnectionMixin:
                 "OAuth1 requires authlib: pip install mountainash-auth-client[oauth1]"
             ) from exc
 
-        auth = profile.auth
         self._client = httpx.Client(
             base_url=self._base_url,
             auth=OAuth1Auth(

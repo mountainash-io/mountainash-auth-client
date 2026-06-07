@@ -21,11 +21,10 @@ class OAuth2ConnectionMixin:
 
     def connect(
         self,
-        profile,
+        auth,
         *,
         auto_authorize: bool = False,
     ) -> Self:
-        auth = profile.auth
         provider = self._spec.name
         flow = OAuthFlow(self._spec)
 
