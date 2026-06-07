@@ -1,15 +1,17 @@
 """The 'no authentication' variant."""
+from mountainash_settings import Profile, ProfileSpec
 
-from __future__ import annotations
+from .registry import register
 
-import typing as t
+__all__ = ["NoAuth", "NOAUTH_SPEC"]
 
-from .base import AuthSpec
+NOAUTH_SPEC = ProfileSpec(
+    name="none",
+    provider_type="none",
+    parameters=[],
+)
 
-__all__ = ["NoAuth"]
 
-
-class NoAuth(AuthSpec):
-    """No authentication required (SQLite, DuckDB, PySpark)."""
-
-    kind: t.Literal["none"] = "none"
+@register
+class NoAuth(Profile):
+    __spec__ = NOAUTH_SPEC

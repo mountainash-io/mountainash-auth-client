@@ -1,19 +1,31 @@
 """Classic username + password authentication."""
+from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-from __future__ import annotations
+from .registry import register
 
-import typing as t
+__all__ = ["PasswordAuth", "PASSWORD_SPEC"]
 
-from pydantic import SecretStr  # noqa: TC002
+PASSWORD_SPEC = ProfileSpec(
+    name="password",
+    provider_type="password",
+    parameters=[
+        ParameterSpec(
+            name="USERNAME",
+            type=str,
+            tier="core",
+            driver_key="user",
+        ),
+        ParameterSpec(
+            name="PASSWORD",
+            type=str,
+            tier="core",
+            driver_key="password",
+            secret=True,
+        ),
+    ],
+)
 
-from .base import AuthSpec
 
-__all__ = ["PasswordAuth"]
-
-
-class PasswordAuth(AuthSpec):
-    """Username + password authentication."""
-
-    kind: t.Literal["password"] = "password"
-    username: str
-    password: SecretStr
+@register
+class PasswordAuth(Profile):
+    __spec__ = PASSWORD_SPEC
