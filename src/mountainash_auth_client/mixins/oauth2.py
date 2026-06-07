@@ -7,11 +7,14 @@ import httpx
 
 from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.flows.oauth2 import OAuthFlow
+from mountainash_settings import ProfileSpec
 from mountainash_settings.secrets.registry import get_secrets_backend
+from ..schemas.oauth2 import OAuth2Auth
+from ..schemas.oauth2_authcode import OAuth2AuthCodeAuth
 
 
 class OAuth2ConnectionMixin:
-    _spec: ClassVar
+    _spec: ClassVar[ProfileSpec]
     _base_url: ClassVar[str]
     _client: httpx.Client | None
 
@@ -21,7 +24,7 @@ class OAuth2ConnectionMixin:
 
     def connect(
         self,
-        auth,
+        auth: OAuth2Auth | OAuth2AuthCodeAuth,
         *,
         auto_authorize: bool = False,
     ) -> Self:

@@ -7,17 +7,18 @@ import httpx
 
 from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.flows.oauth1 import OAuth1Flow
+from mountainash_settings import ProfileSpec
 from mountainash_settings.secrets.registry import get_secrets_backend
-
+from ..schemas.oauth1 import OAuth1Auth
 
 class OAuth1ConnectionMixin:
-    _spec: ClassVar
+    _spec: ClassVar[ProfileSpec]
     _base_url: ClassVar[str]
     _client: httpx.Client | None
 
     def connect(
         self,
-        auth,
+        auth: OAuth1Auth,
         *,
         auto_authorize: bool = False,
     ) -> Self:
@@ -43,7 +44,7 @@ class OAuth1ConnectionMixin:
 
         raise AuthorizationRequired(provider=provider, user="default")
 
-    def _build_client(self, tokens: dict, auth_settings) -> None:
+    def _build_client(self, tokens: dict[str, str], auth_settings: OAuth1Auth) -> None:
         try:
             from authlib.integrations.httpx_client import OAuth1Auth
         except ImportError as exc:

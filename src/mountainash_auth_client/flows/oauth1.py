@@ -10,12 +10,13 @@ import httpx
 from mountainash_auth_client.errors import TokenExchangeError
 from mountainash_auth_client.server.callback import LocalCallbackServer
 from mountainash_auth_client.server.manual import prompt_for_code
+from mountainash_settings import ProfileSpec
 
 
 class OAuth1Flow:
     """Runs OAuth 1.0a 3-legged authorization flow."""
 
-    def __init__(self, spec) -> None:
+    def __init__(self, spec: ProfileSpec) -> None:
         self._metadata = spec.metadata
 
     @property

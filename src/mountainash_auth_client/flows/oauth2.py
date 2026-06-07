@@ -13,12 +13,13 @@ import httpx
 from mountainash_auth_client.errors import TokenExchangeError, TokenRefreshError
 from mountainash_auth_client.server.callback import LocalCallbackServer
 from mountainash_auth_client.server.manual import prompt_for_code
+from mountainash_settings import ProfileSpec
 
 
 class OAuthFlow:
     """Runs OAuth 2.0 Authorization Code flow for an OAuth2 provider."""
 
-    def __init__(self, spec) -> None:
+    def __init__(self, spec: ProfileSpec) -> None:
         self._spec = spec
         self._metadata = spec.metadata
         self._code_verifier: str | None = None
