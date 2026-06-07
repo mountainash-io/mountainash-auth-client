@@ -54,11 +54,6 @@ class FakeAuth:
         return "test.oauth2"
 
 
-class FakeProfile:
-    def __init__(self, auth=None):
-        self.auth = auth or FakeAuth()
-
-
 class FakeProvider(OAuth2ConnectionMixin):
     _spec = FakeSpec()
     _base_url = "https://api.example.com"
@@ -88,7 +83,7 @@ class TestOAuth2ConnectionMixinNoToken:
     def test_raises_authorization_required_when_no_token(self, backend):
         provider = FakeProvider()
         with pytest.raises(AuthorizationRequired) as exc_info:
-            provider.connect(FakeProfile())
+            provider.connect(FakeAuth())
         assert exc_info.value.provider == "testprovider"
 
 
@@ -100,7 +95,7 @@ class TestOAuth2ConnectionMixinWithToken:
             "token_expires_at": int(time.time()) + 3600,
         })
         provider = FakeProvider()
-        result = provider.connect(FakeProfile())
+        result = provider.connect(FakeAuth())
         assert result is provider
 
     def test_client_is_set_after_connect(self, backend):
@@ -110,7 +105,7 @@ class TestOAuth2ConnectionMixinWithToken:
             "token_expires_at": int(time.time()) + 3600,
         })
         provider = FakeProvider()
-        provider.connect(FakeProfile())
+        provider.connect(FakeAuth())
         assert provider._client is not None
 
     def test_client_has_bearer_auth_header(self, backend):
@@ -120,7 +115,7 @@ class TestOAuth2ConnectionMixinWithToken:
             "token_expires_at": int(time.time()) + 3600,
         })
         provider = FakeProvider()
-        provider.connect(FakeProfile())
+        provider.connect(FakeAuth())
         auth_header = provider._client.headers.get("authorization", "")
         assert "Bearer tok_abc" in auth_header
 
@@ -131,7 +126,7 @@ class TestOAuth2ConnectionMixinWithToken:
             "token_expires_at": int(time.time()) + 7200,
         })
         provider = FakeProvider()
-        provider.connect(FakeProfile())
+        provider.connect(FakeAuth())
         loaded = backend.get("test.oauth2")
         assert loaded["access_token"] == "valid_tok"
 
@@ -145,7 +140,7 @@ class TestOAuth2ConnectionMixinExpiredToken:
         })
         provider = FakeProvider()
         with pytest.raises(AuthorizationRequired):
-            provider.connect(FakeProfile())
+            provider.connect(FakeAuth())
 
 
 class TestClientProperty:
