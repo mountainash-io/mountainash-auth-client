@@ -1,19 +1,23 @@
 """Kerberos / GSSAPI authentication."""
+from pathlib import Path
 
-from __future__ import annotations
+from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-import typing as t
-from pathlib import Path  # noqa: TC003
+from .registry import register
 
-from .base import AuthSpec
+__all__ = ["KerberosAuth", "KERBEROS_SPEC"]
 
-__all__ = ["KerberosAuth"]
+KERBEROS_SPEC = ProfileSpec(
+    name="kerberos",
+    provider_type="kerberos",
+    parameters=[
+        ParameterSpec(name="SERVICE_NAME", type=str, tier="core", default="postgres"),
+        ParameterSpec(name="PRINCIPAL", type=str | None, tier="core", default=None),
+        ParameterSpec(name="KEYTAB", type=Path | None, tier="advanced", default=None),
+    ],
+)
 
 
-class KerberosAuth(AuthSpec):
-    """Kerberos authentication (Trino, PostgreSQL via GSS)."""
-
-    kind: t.Literal["kerberos"] = "kerberos"
-    service_name: str = "postgres"
-    principal: str | None = None
-    keytab: Path | None = None
+@register
+class KerberosAuth(Profile):
+    __spec__ = KERBEROS_SPEC

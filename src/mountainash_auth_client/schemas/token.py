@@ -1,25 +1,33 @@
 """Bearer-token and JWT authentication."""
+from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-from __future__ import annotations
+from .registry import register
 
-import typing as t
+__all__ = ["TokenAuth", "JWTAuth", "TOKEN_SPEC", "JWT_SPEC"]
 
-from pydantic import SecretStr  # noqa: TC002
-
-from .base import AuthSpec
-
-__all__ = ["TokenAuth", "JWTAuth"]
-
-
-class TokenAuth(AuthSpec):
-    """Opaque bearer token (e.g. MotherDuck, PyIceberg REST)."""
-
-    kind: t.Literal["token"] = "token"
-    token: SecretStr
+TOKEN_SPEC = ProfileSpec(
+    name="token",
+    provider_type="token",
+    parameters=[
+        ParameterSpec(name="TOKEN", type=str, tier="core", driver_key="token", secret=True),
+    ],
+)
 
 
-class JWTAuth(AuthSpec):
-    """JSON Web Token authentication (e.g. Trino)."""
+@register
+class TokenAuth(Profile):
+    __spec__ = TOKEN_SPEC
 
-    kind: t.Literal["jwt"] = "jwt"
-    token: SecretStr
+
+JWT_SPEC = ProfileSpec(
+    name="jwt",
+    provider_type="jwt",
+    parameters=[
+        ParameterSpec(name="TOKEN", type=str, tier="core", driver_key="token", secret=True),
+    ],
+)
+
+
+@register
+class JWTAuth(Profile):
+    __spec__ = JWT_SPEC

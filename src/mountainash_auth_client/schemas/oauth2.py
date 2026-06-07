@@ -1,23 +1,24 @@
 """OAuth2 client-credentials / token authentication."""
+from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-from __future__ import annotations
+from .registry import register
 
-import typing as t
+__all__ = ["OAuth2Auth", "OAUTH2_SPEC"]
 
-from pydantic import SecretStr  # noqa: TC002
+OAUTH2_SPEC = ProfileSpec(
+    name="oauth2",
+    provider_type="oauth2",
+    parameters=[
+        ParameterSpec(name="CLIENT_ID", type=str | None, tier="core", driver_key="client_id", default=None),
+        ParameterSpec(name="CLIENT_SECRET", type=str | None, tier="core", driver_key="client_secret", default=None, secret=True),
+        ParameterSpec(name="TOKEN", type=str | None, tier="core", driver_key="token", default=None, secret=True),
+        ParameterSpec(name="REFRESH_TOKEN", type=str | None, tier="advanced", default=None, secret=True),
+        ParameterSpec(name="SERVER_URI", type=str | None, tier="advanced", default=None),
+        ParameterSpec(name="SCOPE", type=str | None, tier="advanced", default=None),
+    ],
+)
 
-from .base import AuthSpec
 
-__all__ = ["OAuth2Auth"]
-
-
-class OAuth2Auth(AuthSpec):
-    """OAuth2 credential set (Snowflake, Trino, PyIceberg REST)."""
-
-    kind: t.Literal["oauth2"] = "oauth2"
-    client_id: str | None = None
-    client_secret: SecretStr | None = None
-    token: SecretStr | None = None
-    refresh_token: SecretStr | None = None
-    server_uri: str | None = None
-    scope: str | None = None
+@register
+class OAuth2Auth(Profile):
+    __spec__ = OAUTH2_SPEC

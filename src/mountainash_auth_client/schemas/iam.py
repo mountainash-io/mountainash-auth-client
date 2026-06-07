@@ -1,22 +1,23 @@
 """AWS IAM authentication."""
+from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-from __future__ import annotations
+from .registry import register
 
-import typing as t
+__all__ = ["IAMAuth", "IAM_SPEC"]
 
-from pydantic import SecretStr  # noqa: TC002
+IAM_SPEC = ProfileSpec(
+    name="iam",
+    provider_type="iam",
+    parameters=[
+        ParameterSpec(name="ROLE_ARN", type=str | None, tier="core", driver_key="iam_role_arn", default=None),
+        ParameterSpec(name="ACCESS_KEY_ID", type=str | None, tier="core", driver_key="aws_access_key_id", default=None),
+        ParameterSpec(name="SECRET_ACCESS_KEY", type=str | None, tier="core", driver_key="aws_secret_access_key", default=None, secret=True),
+        ParameterSpec(name="SESSION_TOKEN", type=str | None, tier="advanced", driver_key="aws_session_token", default=None, secret=True),
+        ParameterSpec(name="PROFILE_NAME", type=str | None, tier="advanced", default=None),
+    ],
+)
 
-from .base import AuthSpec
 
-__all__ = ["IAMAuth"]
-
-
-class IAMAuth(AuthSpec):
-    """AWS IAM credentials (Redshift, S3-backed catalogs)."""
-
-    kind: t.Literal["iam"] = "iam"
-    role_arn: str | None = None
-    access_key_id: str | None = None
-    secret_access_key: SecretStr | None = None
-    session_token: SecretStr | None = None
-    profile_name: str | None = None
+@register
+class IAMAuth(Profile):
+    __spec__ = IAM_SPEC

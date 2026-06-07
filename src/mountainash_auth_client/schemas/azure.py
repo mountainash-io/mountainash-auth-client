@@ -1,30 +1,38 @@
 """Microsoft-centric authentication: Windows integrated + Azure AD."""
+from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-from __future__ import annotations
+from .registry import register
 
-import typing as t
+__all__ = ["WindowsAuth", "AzureADAuth", "WINDOWS_SPEC", "AZURE_AD_SPEC"]
 
-from pydantic import SecretStr  # noqa: TC002
-
-from .base import AuthSpec
-
-__all__ = ["WindowsAuth", "AzureADAuth"]
-
-
-class WindowsAuth(AuthSpec):
-    """Integrated Windows authentication (MSSQL)."""
-
-    kind: t.Literal["windows"] = "windows"
-    username: str | None = None
-    domain: str | None = None
+WINDOWS_SPEC = ProfileSpec(
+    name="windows",
+    provider_type="windows",
+    parameters=[
+        ParameterSpec(name="USERNAME", type=str | None, tier="core", default=None),
+        ParameterSpec(name="DOMAIN", type=str | None, tier="core", default=None),
+    ],
+)
 
 
-class AzureADAuth(AuthSpec):
-    """Azure Active Directory authentication (MSSQL)."""
+@register
+class WindowsAuth(Profile):
+    __spec__ = WINDOWS_SPEC
 
-    kind: t.Literal["azure_ad"] = "azure_ad"
-    tenant_id: str | None = None
-    client_id: str | None = None
-    client_secret: SecretStr | None = None
-    managed_identity: bool = False
-    msi_endpoint: str | None = None
+
+AZURE_AD_SPEC = ProfileSpec(
+    name="azure_ad",
+    provider_type="azure_ad",
+    parameters=[
+        ParameterSpec(name="TENANT_ID", type=str | None, tier="core", default=None),
+        ParameterSpec(name="CLIENT_ID", type=str | None, tier="core", default=None),
+        ParameterSpec(name="CLIENT_SECRET", type=str | None, tier="core", default=None, secret=True),
+        ParameterSpec(name="MANAGED_IDENTITY", type=bool, tier="advanced", default=False),
+        ParameterSpec(name="MSI_ENDPOINT", type=str | None, tier="advanced", default=None),
+    ],
+)
+
+
+@register
+class AzureADAuth(Profile):
+    __spec__ = AZURE_AD_SPEC

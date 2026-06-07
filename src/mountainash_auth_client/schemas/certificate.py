@@ -1,21 +1,23 @@
 """Private-key / certificate authentication (Snowflake JWT)."""
+from pathlib import Path
 
-from __future__ import annotations
+from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-import typing as t
-from pathlib import Path  # noqa: TC003
+from .registry import register
 
-from pydantic import SecretStr  # noqa: TC002
+__all__ = ["CertificateAuth", "CERTIFICATE_SPEC"]
 
-from .base import AuthSpec
+CERTIFICATE_SPEC = ProfileSpec(
+    name="certificate",
+    provider_type="certificate",
+    parameters=[
+        ParameterSpec(name="PRIVATE_KEY", type=str | None, tier="core", default=None, secret=True),
+        ParameterSpec(name="PRIVATE_KEY_PATH", type=Path | None, tier="core", default=None),
+        ParameterSpec(name="PASSPHRASE", type=str | None, tier="advanced", default=None, secret=True),
+    ],
+)
 
-__all__ = ["CertificateAuth"]
 
-
-class CertificateAuth(AuthSpec):
-    """Private-key signed JWT authentication (Snowflake)."""
-
-    kind: t.Literal["certificate"] = "certificate"
-    private_key: SecretStr | None = None
-    private_key_path: Path | None = None
-    passphrase: SecretStr | None = None
+@register
+class CertificateAuth(Profile):
+    __spec__ = CERTIFICATE_SPEC
