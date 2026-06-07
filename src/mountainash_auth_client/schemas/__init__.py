@@ -1,8 +1,7 @@
-"""Auth schema types — discriminated-union Pydantic models."""
-from .base import AuthSpec
+"""Auth mode Profile subclasses — registered in AUTH_REGISTRY."""
+from .registry import AUTH_REGISTRY, register
 from .azure import AzureADAuth, WindowsAuth
 from .certificate import CertificateAuth
-from .dispatch import AUTH_TO_DRIVER_KWARGS, auth_to_driver_kwargs, auth_kwargs
 from .iam import IAMAuth
 from .kerberos import KerberosAuth
 from .none import NoAuth
@@ -14,8 +13,19 @@ from .service_account import ServiceAccountAuth
 from .token import JWTAuth, TokenAuth
 
 __all__ = [
-    "AUTH_TO_DRIVER_KWARGS", "AuthSpec", "AzureADAuth", "CertificateAuth",
-    "IAMAuth", "JWTAuth", "KerberosAuth", "NoAuth", "OAuth1Auth", "OAuth2Auth",
-    "OAuth2AuthCodeAuth", "PasswordAuth", "ServiceAccountAuth", "TokenAuth",
-    "WindowsAuth", "auth_kwargs", "auth_to_driver_kwargs",
+    "AUTH_REGISTRY",
+    "AzureADAuth",
+    "CertificateAuth",
+    "IAMAuth",
+    "JWTAuth",
+    "KerberosAuth",
+    "NoAuth",
+    "OAuth1Auth",
+    "OAuth2Auth",
+    "OAuth2AuthCodeAuth",
+    "PasswordAuth",
+    "ServiceAccountAuth",
+    "TokenAuth",
+    "WindowsAuth",
+    "register",
 ]
