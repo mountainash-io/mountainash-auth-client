@@ -31,12 +31,12 @@ class OAuth1ConnectionMixin:
 
         if tokens is None and not store.is_cleared(domain, provider, user):
             auth = profile.auth
-            if getattr(auth, "access_token", None) is not None:
+            if getattr(auth, "ACCESS_TOKEN", None) is not None:
                 tokens = {
-                    "oauth_token": auth.access_token.get_secret_value(),
+                    "oauth_token": auth.ACCESS_TOKEN.get_secret_value(),
                     "oauth_token_secret": (
-                        auth.access_token_secret.get_secret_value()
-                        if auth.access_token_secret
+                        auth.ACCESS_TOKEN_SECRET.get_secret_value()
+                        if auth.ACCESS_TOKEN_SECRET
                         else None
                     ),
                 }
@@ -50,8 +50,8 @@ class OAuth1ConnectionMixin:
             auth = profile.auth
             flow = OAuth1Flow(self._spec)
             new_tokens = flow.authorize(
-                consumer_key=auth.consumer_key,
-                consumer_secret=auth.consumer_secret.get_secret_value(),
+                consumer_key=auth.CONSUMER_KEY,
+                consumer_secret=auth.CONSUMER_SECRET.get_secret_value(),
             )
             store.save(domain, provider, user, new_tokens)
             self._build_client(new_tokens, profile)
@@ -71,8 +71,8 @@ class OAuth1ConnectionMixin:
         self._client = httpx.Client(
             base_url=self._base_url,
             auth=OAuth1Auth(
-                client_id=auth.consumer_key,
-                client_secret=auth.consumer_secret.get_secret_value(),
+                client_id=auth.CONSUMER_KEY,
+                client_secret=auth.CONSUMER_SECRET.get_secret_value(),
                 token=tokens["oauth_token"],
                 token_secret=tokens["oauth_token_secret"],
             ),

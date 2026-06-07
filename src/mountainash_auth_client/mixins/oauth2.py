@@ -38,11 +38,11 @@ class OAuth2ConnectionMixin:
         # Migration: fall back to profile.auth token fields if no token file and not cleared
         if tokens is None and not store.is_cleared(domain, provider, user):
             auth = profile.auth
-            if getattr(auth, "access_token", None) is not None:
+            if getattr(auth, "ACCESS_TOKEN", None) is not None:
                 tokens = {
-                    "access_token": auth.access_token.get_secret_value(),
-                    "refresh_token": auth.refresh_token.get_secret_value() if auth.refresh_token else None,
-                    "token_expires_at": auth.token_expires_at,
+                    "access_token": auth.ACCESS_TOKEN.get_secret_value(),
+                    "refresh_token": auth.REFRESH_TOKEN.get_secret_value() if auth.REFRESH_TOKEN else None,
+                    "token_expires_at": auth.TOKEN_EXPIRES_AT,
                 }
                 store.save(domain, provider, user, tokens)
 
@@ -60,8 +60,8 @@ class OAuth2ConnectionMixin:
                         auth = profile.auth
                         new_tokens = flow.refresh(
                             refresh_token=tokens["refresh_token"],
-                            client_id=auth.client_id,
-                            client_secret=auth.client_secret.get_secret_value(),
+                            client_id=auth.CLIENT_ID,
+                            client_secret=auth.CLIENT_SECRET.get_secret_value(),
                         )
                         store.save(domain, provider, user, new_tokens)
                         access_token = new_tokens["access_token"]
@@ -74,9 +74,9 @@ class OAuth2ConnectionMixin:
             if auto_authorize:
                 auth = profile.auth
                 new_tokens = flow.authorize(
-                    client_id=auth.client_id,
-                    client_secret=auth.client_secret.get_secret_value(),
-                    scope=auth.scope,
+                    client_id=auth.CLIENT_ID,
+                    client_secret=auth.CLIENT_SECRET.get_secret_value(),
+                    scope=auth.SCOPE,
                 )
                 store.save(domain, provider, user, new_tokens)
                 access_token = new_tokens["access_token"]
