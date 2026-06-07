@@ -43,7 +43,7 @@ class OAuth1ConnectionMixin:
 
         raise AuthorizationRequired(provider=provider, user="default")
 
-    def _build_client(self, tokens: dict, auth) -> None:
+    def _build_client(self, tokens: dict, auth_settings) -> None:
         try:
             from authlib.integrations.httpx_client import OAuth1Auth
         except ImportError as exc:
@@ -54,8 +54,8 @@ class OAuth1ConnectionMixin:
         self._client = httpx.Client(
             base_url=self._base_url,
             auth=OAuth1Auth(
-                client_id=auth.CONSUMER_KEY,
-                client_secret=auth.CONSUMER_SECRET.get_secret_value(),
+                client_id=auth_settings.CONSUMER_KEY,
+                client_secret=auth_settings.CONSUMER_SECRET.get_secret_value(),
                 token=tokens["oauth_token"],
                 token_secret=tokens["oauth_token_secret"],
             ),
