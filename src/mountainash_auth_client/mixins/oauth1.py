@@ -1,15 +1,13 @@
 """OAuth1ConnectionMixin — connect/auth for OAuth1 providers."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Self
+from typing import ClassVar, Self
 
 import httpx
 
 from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.flows.oauth1 import OAuth1Flow
-
-if TYPE_CHECKING:
-    from mountainash_auth_client.store.protocol import SecretStore
+from mountainash_settings.secrets.registry import get_secrets_backend
 
 
 class OAuth1ConnectionMixin:
@@ -21,43 +19,30 @@ class OAuth1ConnectionMixin:
         self,
         profile,
         *,
-        user: str = "default",
-        store: SecretStore,
-        domain: str,
         auto_authorize: bool = False,
     ) -> Self:
+        auth = profile.auth
         provider = self._spec.name
-        tokens = store.load(domain, provider, user)
 
-        if tokens is None and not store.is_cleared(domain, provider, user):
-            auth = profile.auth
-            if getattr(auth, "ACCESS_TOKEN", None) is not None:
-                tokens = {
-                    "oauth_token": auth.ACCESS_TOKEN.get_secret_value(),
-                    "oauth_token_secret": (
-                        auth.ACCESS_TOKEN_SECRET.get_secret_value()
-                        if auth.ACCESS_TOKEN_SECRET
-                        else None
-                    ),
-                }
-                store.save(domain, provider, user, tokens)
+        backend = get_secrets_backend(auth.SETTINGS_SOURCE_SECRETS_PROVIDER)
+        key = auth.persist_key()
+        tokens = backend.get(key)
 
         if tokens and tokens.get("oauth_token"):
             self._build_client(tokens, profile)
             return self
 
         if auto_authorize:
-            auth = profile.auth
             flow = OAuth1Flow(self._spec)
             new_tokens = flow.authorize(
                 consumer_key=auth.CONSUMER_KEY,
                 consumer_secret=auth.CONSUMER_SECRET.get_secret_value(),
             )
-            store.save(domain, provider, user, new_tokens)
+            backend.set(key, new_tokens)
             self._build_client(new_tokens, profile)
             return self
 
-        raise AuthorizationRequired(provider=provider, user=user)
+        raise AuthorizationRequired(provider=provider, user="default")
 
     def _build_client(self, tokens: dict, profile) -> None:
         try:
