@@ -28,7 +28,7 @@ dependencies = [
     "pydantic>=2.9.0",
     "httpx>=0.27.0",
     "pyaml",
-    "mountainash-settings",
+    # "mountainash-settings",
 ]
 
 [project.optional-dependencies]
