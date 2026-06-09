@@ -25,7 +25,7 @@ from mountainash_auth_client.schemas import (
 )
 from mountainash_auth_client.server.callback import LocalCallbackServer
 
-AuthMode = (
+AuthProfile = (
     NoAuth | PasswordAuth | TokenAuth | JWTAuth | OAuth1Auth | OAuth2Auth
     | OAuth2AuthCodeAuth | IAMAuth | WindowsAuth | AzureADAuth
     | KerberosAuth | CertificateAuth | ServiceAccountAuth
@@ -33,7 +33,7 @@ AuthMode = (
 
 __all__ = [
     "AUTH_REGISTRY",
-    "AuthMode",
+    "AuthProfile",
     "AuthorizationRequired",
     "AzureADAuth",
     "CONST_AUTH_MODE",
