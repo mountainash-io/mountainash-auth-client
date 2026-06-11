@@ -65,3 +65,24 @@ def test_wait_for_callback_times_out_with_callback_timeout_error():
             s.wait_for_callback()
     finally:
         s._server.server_close()
+
+
+import mountainash_auth_client.connections.server.manual as man
+from mountainash_auth_client.connections.server.manual import ManualCallbackServer
+
+
+def test_manual_conforms_and_defaults_to_oauth2_oob():
+    s = ManualCallbackServer()
+    assert isinstance(s, CallbackServerProtocol)
+    assert s.port is None
+    assert s.redirect_uri == "urn:ietf:wg:oauth:2.0:oob"
+
+
+def test_manual_accepts_custom_redirect_uri():
+    assert ManualCallbackServer(redirect_uri="oob").redirect_uri == "oob"
+
+
+def test_manual_obtain_callback_delegates_to_prompt(monkeypatch):
+    monkeypatch.setattr(man, "prompt_for_code", lambda url: {"code": "PASTED", "seen": url})
+    out = ManualCallbackServer().obtain_callback("https://auth/q")
+    assert out == {"code": "PASTED", "seen": "https://auth/q"}
