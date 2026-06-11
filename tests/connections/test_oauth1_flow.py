@@ -65,3 +65,71 @@ class TestOAuth1FlowAuthlib:
         flow = OAuth1Flow(FakeSpec())
         with pytest.raises(ImportError, match="authlib"):
             flow.exchange_verifier("ck", "cs", "tok", "tok_sec", "verifier")
+
+
+from mountainash_auth_client.errors import MalformedCallbackError
+
+
+class _OAuth1Echo:
+    """Test double whose obtain_callback returns a verifier (+ matching token)."""
+
+    port = None
+
+    def __init__(self, redirect_uri="http://localhost/cb", params=None):
+        self.redirect_uri = redirect_uri
+        self._params = params
+
+    def obtain_callback(self, authorize_url):
+        if self._params is not None:
+            return self._params
+        return {"oauth_verifier": "VERIF", "oauth_token": "REQTOKEN"}
+
+
+def _stub_oauth1(flow, monkeypatch, sink):
+    monkeypatch.setattr(
+        flow, "request_token",
+        lambda consumer_key, consumer_secret, callback_url:
+            sink.update(callback_url=callback_url)
+            or {"oauth_token": "REQTOKEN", "oauth_token_secret": "REQSECRET"})
+    monkeypatch.setattr(
+        flow, "exchange_verifier",
+        lambda **kw: sink.update(kw) or {"oauth_token": "ACCESS", "oauth_token_secret": "ASEC"})
+
+
+class TestOAuth1Authorize:
+    def test_injected_server_drives_callback_url_and_verifier(self, monkeypatch):
+        flow = OAuth1Flow(FakeSpec())
+        sink = {}
+        _stub_oauth1(flow, monkeypatch, sink)
+        flow.authorize("ckey", "csec",
+                       callback_server=lambda: _OAuth1Echo("https://INJECT/cb"))
+        assert sink["callback_url"] == "https://INJECT/cb"
+        assert sink["verifier"] == "VERIF"
+
+    def test_manual_builtin_uses_literal_oob(self, monkeypatch):
+        flow = OAuth1Flow(FakeSpec())
+        sink = {}
+        _stub_oauth1(flow, monkeypatch, sink)
+        monkeypatch.setattr(
+            "mountainash_auth_client.connections.server.manual.prompt_for_code",
+            lambda url: {"code": "BAREVERIF"})
+        flow.authorize("ckey", "csec", redirect_mode="manual")
+        assert sink["callback_url"] == "oob"
+        assert sink["verifier"] == "BAREVERIF"
+
+    def test_missing_verifier_raises_malformed(self, monkeypatch):
+        flow = OAuth1Flow(FakeSpec())
+        sink = {}
+        _stub_oauth1(flow, monkeypatch, sink)
+        with pytest.raises(MalformedCallbackError):
+            flow.authorize("ckey", "csec",
+                           callback_server=lambda: _OAuth1Echo(params={"oauth_token": "REQTOKEN"}))
+
+    def test_token_mismatch_raises_value_error(self, monkeypatch):
+        flow = OAuth1Flow(FakeSpec())
+        sink = {}
+        _stub_oauth1(flow, monkeypatch, sink)
+        with pytest.raises(ValueError, match="mismatch"):
+            flow.authorize("ckey", "csec",
+                           callback_server=lambda: _OAuth1Echo(
+                               params={"oauth_verifier": "V", "oauth_token": "WRONG"}))

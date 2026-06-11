@@ -1,26 +1,31 @@
 """OAuth1 3-legged flow for providers like Garmin Health API."""
 from __future__ import annotations
 
-import webbrowser
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlencode
 
 import httpx
 
-from mountainash_auth_client.errors import TokenExchangeError
+from mountainash_auth_client.errors import MalformedCallbackError, TokenExchangeError
 from mountainash_auth_client.connections._optional import require_authlib
-from mountainash_auth_client.connections.server.callback import LocalCallbackServer
-from mountainash_auth_client.connections.server.manual import prompt_for_code
+from mountainash_auth_client.connections.server.factory import resolve_callback_factory
 
 if TYPE_CHECKING:
     from mountainash_settings import ProfileSpec
+    from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
 
 class OAuth1Flow:
     """Runs OAuth 1.0a 3-legged authorization flow."""
 
-    def __init__(self, spec: ProfileSpec) -> None:
+    def __init__(
+        self,
+        spec: ProfileSpec,
+        *,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> None:
         self._metadata = spec.metadata
+        self._callback_server = callback_server
 
     @property
     def request_token_url(self) -> str:
@@ -92,23 +97,29 @@ class OAuth1Flow:
         consumer_key: str,
         consumer_secret: str,
         redirect_mode: Literal["local_server", "manual"] = "local_server",
+        callback_server: CallbackServerFactory | None = None,
     ) -> dict[str, str]:
-        if redirect_mode == "local_server":
-            server = LocalCallbackServer(port=0)
-            callback_url = server.redirect_uri
-        else:
-            callback_url = "oob"
+        factory = resolve_callback_factory(
+            redirect_mode=redirect_mode,
+            callback_server=callback_server,
+            instance_default=self._callback_server,
+            metadata=self._metadata,
+            manual_redirect_uri="oob",
+        )
+        server = factory()
 
-        request_token = self.request_token(consumer_key, consumer_secret, callback_url)
+        request_token = self.request_token(consumer_key, consumer_secret, server.redirect_uri)
         url = self.build_authorize_url(request_token["oauth_token"])
+        params = server.obtain_callback(url)
 
-        if redirect_mode == "local_server":
-            webbrowser.open(url)
-            params = server.wait_for_callback()
-            verifier = params.get("oauth_verifier", "")
-        else:
-            params = prompt_for_code(url)
-            verifier = params.get("oauth_verifier", params.get("code", ""))
+        returned_token = params.get("oauth_token")
+        if returned_token is not None and returned_token != request_token["oauth_token"]:
+            raise ValueError("OAuth1 token mismatch — possible CSRF")
+
+        # Bare manual paste lands the verifier in "code"; accept it as a fallback.
+        verifier = params.get("oauth_verifier") or params.get("code")
+        if not verifier:
+            raise MalformedCallbackError("OAuth1 callback missing 'oauth_verifier'")
 
         return self.exchange_verifier(
             consumer_key=consumer_key,
