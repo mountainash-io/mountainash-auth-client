@@ -12,32 +12,6 @@ version: 0.08
 
 This chapter covers the remaining eight auth type variants in the discriminated union. It introduces OAuth2AuthCodeAuth for interactive authorization code flows, OAuth1Auth for legacy APIs, IAMAuth for AWS-style identity, AzureADAuth for Microsoft identity platform, WindowsAuth and KerberosAuth for enterprise single sign-on, CertificateAuth for mutual TLS, and ServiceAccountAuth for machine-to-machine authentication.
 
-## Concepts Covered
-
-- OAuth2AuthCodeAuth Type
-- OAuth1Auth Type
-- IAMAuth Type
-- AzureADAuth Type
-- WindowsAuth Type
-- KerberosAuth Type
-- CertificateAuth Type
-- ServiceAccountAuth Type
-
-## Prerequisites
-
-- Chapter 1: Foundations (OAuth 2.0 Basics, OAuth 1.0a Basics)
-- Chapter 2: Auth Type System and Basic Types (Discriminated Union)
-
-## Learning Objectives
-
-After completing this chapter, you will be able to:
-
-- Distinguish OAuth2AuthCodeAuth from OAuth2Auth and choose the right one
-- Configure OAuth1Auth for legacy OAuth 1.0a APIs
-- Set up cloud provider auth types (IAMAuth, AzureADAuth, ServiceAccountAuth)
-- Apply platform-specific auth types (WindowsAuth, KerberosAuth, CertificateAuth)
-- Map real-world authentication requirements to the correct auth type variant
-
 ---
 
 ## Beyond the Basics: Specialized Authentication

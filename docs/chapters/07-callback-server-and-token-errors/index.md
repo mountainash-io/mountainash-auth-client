@@ -12,34 +12,6 @@ version: 0.08
 
 This chapter covers two components that support OAuth authorization flows. First, the LocalCallbackServer used for capturing OAuth redirect callbacks, including the ephemeral HTTP server, callback capture with state validation, the prompt-for-code fallback, and manual redirect mode for headless environments. Second, the typed exceptions for token operation failures: TokenExchangeError with its diagnostic URL, and TokenRefreshError with HTTP status code context.
 
-## Concepts Covered
-
-- LocalCallbackServer
-- Ephemeral HTTP Server
-- Callback Capture
-- Prompt For Code
-- Manual Redirect Mode
-- TokenExchangeError
-- Token Exchange URL
-- TokenRefreshError
-- Refresh Status Code
-
-## Prerequisites
-
-- Chapter 1: Foundations (Context Managers)
-- Chapter 5: OAuth 2.0 Flow (State Parameter, Token Exchange, Refresh Token)
-
-## Learning Objectives
-
-After completing this chapter, you will be able to:
-
-- Start and stop a LocalCallbackServer for OAuth redirects
-- Capture authorization callbacks with state parameter validation
-- Fall back to manual code entry when local binding is unavailable
-- Configure manual redirect mode for headless environments
-- Handle TokenExchangeError with diagnostic URL information
-- Handle TokenRefreshError with HTTP status code context
-
 ---
 
 ## The Callback Problem

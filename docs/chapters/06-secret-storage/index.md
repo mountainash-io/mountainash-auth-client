@@ -12,35 +12,6 @@ version: 0.08
 
 This chapter covers the credential storage layer of mountainash-auth-client. It introduces the SecretStore protocol with its six methods (load, save, clear, is_cleared, list_users, lock), then covers the FilesystemStore concrete implementation with YAML serialization, domain/provider namespace organization for multi-tenant credential management, and tombstone semantics for secure credential revocation.
 
-## Concepts Covered
-
-- SecretStore Protocol
-- Load Method
-- Save Method
-- Clear Method
-- Is Cleared Method
-- List Users Method
-- Lock Method
-- FilesystemStore
-- YAML Serialization
-- Domain Provider Namespace
-- Tombstone Semantics
-
-## Prerequisites
-
-- Chapter 1: Foundations (Python Protocols, File Permissions, Atomic File Writes)
-
-## Learning Objectives
-
-After completing this chapter, you will be able to:
-
-- Define and implement the SecretStore protocol interface
-- Use each SecretStore method correctly (load, save, clear, is_cleared, list_users, lock)
-- Configure FilesystemStore with proper file permissions and atomic writes
-- Organize credentials using domain/provider namespaces
-- Implement tombstone semantics for secure credential clearing
-- Design custom SecretStore backends for vault or keyring systems
-
 ---
 
 ## Why Credential Storage Needs an Abstraction
