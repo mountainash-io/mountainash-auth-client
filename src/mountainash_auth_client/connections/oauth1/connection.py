@@ -1,17 +1,19 @@
-"""OAuth1ConnectionMixin — connect/auth for OAuth1 providers."""
+"""OAuth1Connection — connect/auth for OAuth1 providers."""
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 import httpx
 
 from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
-from mountainash_settings import ProfileSpec
 from mountainash_settings.secrets.registry import get_secrets_backend
-from ...schemas.oauth1 import OAuth1Auth
 
-class OAuth1ConnectionMixin:
+if TYPE_CHECKING:
+    from mountainash_settings import ProfileSpec
+    from ...schemas.oauth1 import OAuth1Auth
+
+class OAuth1Connection:
     _spec: ClassVar[ProfileSpec]
     _base_url: ClassVar[str]
     _client: httpx.Client | None

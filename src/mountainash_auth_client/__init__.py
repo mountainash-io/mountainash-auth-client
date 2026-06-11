@@ -6,7 +6,7 @@ from mountainash_auth_client.errors import (
     TokenRefreshError,
 )
 from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
-from mountainash_auth_client.connections.oauth2.connection import OAuth2ConnectionMixin
+from mountainash_auth_client.connections.oauth2.connection import OAuth2Connection
 from mountainash_auth_client.schemas import (
     AUTH_REGISTRY,
     AzureADAuth,
@@ -46,7 +46,7 @@ __all__ = [
     "OAuth1Auth",
     "OAuth2Auth",
     "OAuth2AuthCodeAuth",
-    "OAuth2ConnectionMixin",
+    "OAuth2Connection",
     "OAuthFlow",
     "PasswordAuth",
     "ServiceAccountAuth",

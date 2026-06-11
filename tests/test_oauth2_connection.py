@@ -1,4 +1,4 @@
-"""Tests for OAuth2ConnectionMixin."""
+"""Tests for OAuth2Connection."""
 from __future__ import annotations
 
 import time
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mountainash_auth_client.errors import AuthorizationRequired
-from mountainash_auth_client.connections.oauth2.connection import OAuth2ConnectionMixin
+from mountainash_auth_client.connections.oauth2.connection import OAuth2Connection
 from mountainash_settings.secrets.registry import (
     clear_secrets_registry,
     register_secrets_backend,
@@ -55,7 +55,7 @@ class FakeAuth:
         return "test.oauth2"
 
 
-class FakeProvider(OAuth2ConnectionMixin):
+class FakeProvider(OAuth2Connection):
     _spec = FakeSpec()
     _base_url = "https://api.example.com"
     _client = None
@@ -80,7 +80,7 @@ def backend():
     return b
 
 
-class TestOAuth2ConnectionMixinNoToken:
+class TestOAuth2ConnectionNoToken:
     def test_raises_authorization_required_when_no_token(self, backend):
         provider = FakeProvider()
         with pytest.raises(AuthorizationRequired) as exc_info:
@@ -88,7 +88,7 @@ class TestOAuth2ConnectionMixinNoToken:
         assert exc_info.value.provider == "testprovider"
 
 
-class TestOAuth2ConnectionMixinWithToken:
+class TestOAuth2ConnectionWithToken:
     def test_connects_with_valid_stored_token(self, backend):
         backend.set("test.oauth2", {
             "access_token": "tok_abc",
@@ -132,7 +132,7 @@ class TestOAuth2ConnectionMixinWithToken:
         assert loaded["access_token"] == "valid_tok"
 
 
-class TestOAuth2ConnectionMixinExpiredToken:
+class TestOAuth2ConnectionExpiredToken:
     def test_raises_authorization_required_when_token_expired_and_no_refresh(self, backend):
         backend.set("test.oauth2", {
             "access_token": "old_tok",
@@ -144,7 +144,7 @@ class TestOAuth2ConnectionMixinExpiredToken:
             provider.connect(FakeAuth())
 
 
-class TestOAuth2ConnectionMixinRefresh:
+class TestOAuth2ConnectionRefresh:
     def _store_expired_token(self, backend):
         backend.set("test.oauth2", {
             "access_token": "old_tok",

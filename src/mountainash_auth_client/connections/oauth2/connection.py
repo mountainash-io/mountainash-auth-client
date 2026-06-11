@@ -1,19 +1,21 @@
-"""OAuth2ConnectionMixin — reusable connect/refresh for OAuth2 providers."""
+"""OAuth2Connection — reusable connect/refresh for OAuth2 providers."""
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 import httpx
 
 from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
-from mountainash_settings import ProfileSpec
 from mountainash_settings.secrets.registry import get_secrets_backend
-from ...schemas.oauth2 import OAuth2Auth
-from ...schemas.oauth2_authcode import OAuth2AuthCodeAuth
+
+if TYPE_CHECKING:
+    from mountainash_settings import ProfileSpec
+    from ...schemas.oauth2 import OAuth2Auth
+    from ...schemas.oauth2_authcode import OAuth2AuthCodeAuth
 
 
-class OAuth2ConnectionMixin:
+class OAuth2Connection:
     _spec: ClassVar[ProfileSpec]
     _base_url: ClassVar[str]
     _client: httpx.Client | None

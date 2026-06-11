@@ -6,7 +6,7 @@ import json
 import secrets
 import time
 import webbrowser
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlencode
 
 import httpx
@@ -14,7 +14,9 @@ import httpx
 from mountainash_auth_client.errors import TokenExchangeError, TokenRefreshError
 from mountainash_auth_client.connections.server.callback import LocalCallbackServer
 from mountainash_auth_client.connections.server.manual import prompt_for_code
-from mountainash_settings import ProfileSpec
+
+if TYPE_CHECKING:
+    from mountainash_settings import ProfileSpec
 
 
 class OAuthFlow:
