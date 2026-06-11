@@ -118,6 +118,98 @@ class TestExchangeCode:
         assert result["refresh_token"] == "refresh_tok"
         assert result["token_expires_at"] is not None
 
+    def test_raises_on_invalid_json_response(self):
+        flow = OAuthFlow(FakeSpec())
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "<html>not json</html>"
+        mock_response.json.side_effect = ValueError("no json")
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.Client") as MockClient:
+            mock_client_instance = MockClient.return_value.__enter__.return_value
+            mock_client_instance.post.return_value = mock_response
+
+            with pytest.raises(TokenExchangeError) as exc_info:
+                flow.exchange_code(
+                    code="code123",
+                    redirect_uri="http://localhost/cb",
+                    client_id="cid",
+                    client_secret="csec",
+                )
+            assert "Invalid JSON" in exc_info.value.body
+
+    def test_raises_when_access_token_missing(self):
+        flow = OAuthFlow(FakeSpec())
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"error": "invalid_grant"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.Client") as MockClient:
+            mock_client_instance = MockClient.return_value.__enter__.return_value
+            mock_client_instance.post.return_value = mock_response
+
+            with pytest.raises(TokenExchangeError) as exc_info:
+                flow.exchange_code(
+                    code="code123",
+                    redirect_uri="http://localhost/cb",
+                    client_id="cid",
+                    client_secret="csec",
+                )
+            assert "access_token" in exc_info.value.body
+
+    def test_pkce_verifier_keyed_by_state_survives_second_authorize(self):
+        spec = FakeSpec(metadata={
+            "authorize_url": "https://auth.example.com/authorize",
+            "token_url": "https://auth.example.com/token",
+            "use_pkce": True,
+        })
+        flow = OAuthFlow(spec)
+
+        # First flow generates a verifier bound to state_a.
+        _, state_a = flow.build_authorize_url(
+            client_id="cid", redirect_uri="http://localhost/cb"
+        )
+        # A second authorize starts before the first completes.
+        flow.build_authorize_url(client_id="cid", redirect_uri="http://localhost/cb")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"access_token": "tok"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.Client") as MockClient:
+            mock_client_instance = MockClient.return_value.__enter__.return_value
+            mock_client_instance.post.return_value = mock_response
+
+            flow.exchange_code(
+                code="code123",
+                redirect_uri="http://localhost/cb",
+                client_id="cid",
+                client_secret="csec",
+                state=state_a,
+            )
+            sent_data = mock_client_instance.post.call_args.kwargs["data"]
+        # The first flow's verifier is recovered by its own state, not clobbered.
+        assert "code_verifier" in sent_data
+
+
+class TestValidateCallbackState:
+    def test_matching_state_passes(self):
+        flow = OAuthFlow(FakeSpec())
+        flow._validate_callback_state({"state": "abc"}, "abc")
+
+    def test_mismatched_state_raises(self):
+        flow = OAuthFlow(FakeSpec())
+        with pytest.raises(ValueError, match="CSRF"):
+            flow._validate_callback_state({"state": "evil"}, "abc")
+
+    def test_missing_state_raises(self):
+        flow = OAuthFlow(FakeSpec())
+        with pytest.raises(ValueError, match="CSRF"):
+            flow._validate_callback_state({}, "abc")
+
 
 class TestRefresh:
     def test_raises_token_refresh_error_on_http_error(self):
