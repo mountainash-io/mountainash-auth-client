@@ -29,3 +29,31 @@ class AuthorizationRequired(Exception):
         self.provider = provider
         self.user = user
         super().__init__(f"Authorization required for {provider}/{user}")
+
+
+class CallbackError(Exception):
+    """Base for failures while obtaining or validating an OAuth callback."""
+
+
+class AuthorizationDeniedError(CallbackError):
+    """The provider returned an OAuth2 ``error`` instead of an authorization code."""
+
+    def __init__(self, *, error: str, description: str = "") -> None:
+        self.error = error
+        self.description = description
+        message = f"Authorization denied: {error}"
+        if description:
+            message += f" — {description}"
+        super().__init__(message)
+
+
+class MalformedCallbackError(CallbackError):
+    """Callback passed CSRF/state validation but is missing a required parameter."""
+
+
+class CallbackTimeoutError(CallbackError, TimeoutError):
+    """No OAuth callback was received before the deadline.
+
+    Subclasses the builtin ``TimeoutError`` so existing ``except TimeoutError``
+    handlers keep working while callers can also catch ``CallbackError``.
+    """
