@@ -6,10 +6,10 @@ from typing import ClassVar, Self
 import httpx
 
 from mountainash_auth_client.errors import AuthorizationRequired
-from mountainash_auth_client.flows.oauth1 import OAuth1Flow
+from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
 from mountainash_settings import ProfileSpec
 from mountainash_settings.secrets.registry import get_secrets_backend
-from ..schemas.oauth1 import OAuth1Auth
+from ...schemas.oauth1 import OAuth1Auth
 
 class OAuth1ConnectionMixin:
     _spec: ClassVar[ProfileSpec]

@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from mountainash_auth_client.errors import TokenExchangeError, TokenRefreshError
-from mountainash_auth_client.flows.oauth2 import OAuthFlow
+from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
 
 
 class FakeSpec:

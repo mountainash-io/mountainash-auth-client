@@ -5,8 +5,8 @@ import threading
 import urllib.request
 
 
-from mountainash_auth_client.server import LocalCallbackServer, prompt_for_code
-from mountainash_auth_client.server.manual import extract_code_from_input
+from mountainash_auth_client.connections.server import LocalCallbackServer, prompt_for_code
+from mountainash_auth_client.connections.server.manual import extract_code_from_input
 
 
 class TestLocalCallbackServer:

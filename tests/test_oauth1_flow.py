@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from mountainash_auth_client.flows.oauth1 import OAuth1Flow
+from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
 
 
 class FakeSpec:

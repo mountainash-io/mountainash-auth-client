@@ -5,8 +5,8 @@ from mountainash_auth_client.errors import (
     TokenExchangeError,
     TokenRefreshError,
 )
-from mountainash_auth_client.flows.oauth2 import OAuthFlow
-from mountainash_auth_client.mixins.oauth2 import OAuth2ConnectionMixin
+from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
+from mountainash_auth_client.connections.oauth2.connection import OAuth2ConnectionMixin
 from mountainash_auth_client.schemas import (
     AUTH_REGISTRY,
     AzureADAuth,
@@ -23,7 +23,7 @@ from mountainash_auth_client.schemas import (
     TokenAuth,
     WindowsAuth,
 )
-from mountainash_auth_client.server.callback import LocalCallbackServer
+from mountainash_auth_client.connections.server.callback import LocalCallbackServer
 
 AuthProfile = (
     NoAuth | PasswordAuth | TokenAuth | JWTAuth | OAuth1Auth | OAuth2Auth

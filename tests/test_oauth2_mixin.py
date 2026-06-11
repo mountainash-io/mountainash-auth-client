@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mountainash_auth_client.errors import AuthorizationRequired
-from mountainash_auth_client.mixins.oauth2 import OAuth2ConnectionMixin
+from mountainash_auth_client.connections.oauth2.connection import OAuth2ConnectionMixin
 from mountainash_settings.secrets.registry import (
     clear_secrets_registry,
     register_secrets_backend,
@@ -165,7 +165,7 @@ class TestOAuth2ConnectionMixinRefresh:
     def test_successful_refresh_persists_and_connects(self, backend):
         self._store_expired_token(backend)
         with patch(
-            "mountainash_auth_client.mixins.oauth2.OAuthFlow",
+            "mountainash_auth_client.connections.oauth2.connection.OAuthFlow",
             return_value=self._fake_flow(),
         ):
             provider = FakeProvider()
@@ -185,7 +185,7 @@ class TestOAuth2ConnectionMixinRefresh:
         backend.set = boom
 
         with patch(
-            "mountainash_auth_client.mixins.oauth2.OAuthFlow",
+            "mountainash_auth_client.connections.oauth2.connection.OAuthFlow",
             return_value=self._fake_flow(),
         ):
             provider = FakeProvider()
