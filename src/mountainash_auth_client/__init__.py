@@ -28,7 +28,10 @@ from mountainash_auth_client.schemas import (
     WindowsAuthProfile,
 )
 from mountainash_auth_client.connections.server.callback import LocalCallbackServer
-from mountainash_auth_client.connections.protocols import CallbackServerProtocol
+from mountainash_auth_client.connections.protocols import (
+    CallbackServerFactory,
+    CallbackServerProtocol,
+)
 from mountainash_auth_client.connections.server.manual import ManualCallbackServer
 
 AuthProfile = (
@@ -46,6 +49,7 @@ __all__ = [
     "AzureADAuthProfile",
     "CONST_AUTH_PROFILES",
     "CallbackError",
+    "CallbackServerFactory",
     "CallbackServerProtocol",
     "CallbackTimeoutError",
     "CertificateAuthProfile",

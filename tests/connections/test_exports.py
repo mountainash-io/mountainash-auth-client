@@ -11,6 +11,7 @@ from mountainash_auth_client.connections import (
 def test_package_root_exports():
     for name in (
         "CallbackServerProtocol",
+        "CallbackServerFactory",
         "ManualCallbackServer",
         "CallbackError",
         "AuthorizationDeniedError",
