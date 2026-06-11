@@ -51,12 +51,13 @@ class OAuth2ConnectionMixin:
                             client_id=auth.CLIENT_ID,
                             client_secret=auth.CLIENT_SECRET.get_secret_value(),
                         )
-                        backend.set(key, new_tokens)
-                        access_token = new_tokens["access_token"]
                     except Exception:
                         backend.delete(key)
                         if not auto_authorize:
                             raise AuthorizationRequired(provider=provider, user="default")
+                    else:
+                        backend.set(key, new_tokens)
+                        access_token = new_tokens["access_token"]
 
         if access_token is None:
             if auto_authorize:

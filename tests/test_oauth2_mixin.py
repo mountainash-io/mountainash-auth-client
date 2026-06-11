@@ -4,6 +4,7 @@ from __future__ import annotations
 import time
 import typing as t
 from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -141,6 +142,57 @@ class TestOAuth2ConnectionMixinExpiredToken:
         provider = FakeProvider()
         with pytest.raises(AuthorizationRequired):
             provider.connect(FakeAuth())
+
+
+class TestOAuth2ConnectionMixinRefresh:
+    def _store_expired_token(self, backend):
+        backend.set("test.oauth2", {
+            "access_token": "old_tok",
+            "refresh_token": "refresh_xyz",
+            "token_expires_at": int(time.time()) - 1000,
+        })
+
+    def _fake_flow(self):
+        flow = MagicMock()
+        flow.is_expired.return_value = True
+        flow.refresh.return_value = {
+            "access_token": "new_tok",
+            "refresh_token": "new_refresh",
+            "token_expires_at": int(time.time()) + 3600,
+        }
+        return flow
+
+    def test_successful_refresh_persists_and_connects(self, backend):
+        self._store_expired_token(backend)
+        with patch(
+            "mountainash_auth_client.mixins.oauth2.OAuthFlow",
+            return_value=self._fake_flow(),
+        ):
+            provider = FakeProvider()
+            provider.connect(FakeAuth())
+        assert backend.get("test.oauth2")["access_token"] == "new_tok"
+        assert "Bearer new_tok" in provider._client.headers.get("authorization", "")
+
+    def test_persist_failure_after_refresh_propagates_and_keeps_token(self, backend):
+        # A successful refresh whose persistence fails must surface the storage
+        # error — not delete the still-valid refresh token nor be misreported
+        # as AuthorizationRequired.
+        self._store_expired_token(backend)
+
+        def boom(key, data):
+            raise RuntimeError("disk full")
+
+        backend.set = boom
+
+        with patch(
+            "mountainash_auth_client.mixins.oauth2.OAuthFlow",
+            return_value=self._fake_flow(),
+        ):
+            provider = FakeProvider()
+            with pytest.raises(RuntimeError, match="disk full"):
+                provider.connect(FakeAuth())
+
+        assert backend.get("test.oauth2")["refresh_token"] == "refresh_xyz"
 
 
 class TestClientProperty:
