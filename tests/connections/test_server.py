@@ -5,8 +5,8 @@ import threading
 import urllib.request
 
 
-from mountainash_auth_client.server import LocalCallbackServer, prompt_for_code
-from mountainash_auth_client.server.manual import extract_code_from_input
+from mountainash_auth_client.connections.server import LocalCallbackServer, prompt_for_code
+from mountainash_auth_client.connections.server.manual import extract_code_from_input
 
 
 class TestLocalCallbackServer:
@@ -86,6 +86,12 @@ class TestExtractCodeFromInput:
         result = extract_code_from_input(url)
         assert result["code"] == "def456"
         assert result["state"] == "statetoken"
+
+    def test_oauth1_callback_url_extracts_verifier_and_token(self):
+        url = "http://localhost:8080/callback?oauth_token=tok123&oauth_verifier=ver456"
+        result = extract_code_from_input(url)
+        assert result["oauth_verifier"] == "ver456"
+        assert result["oauth_token"] == "tok123"
 
 
 class TestPromptForCode:

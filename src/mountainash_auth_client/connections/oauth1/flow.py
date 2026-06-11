@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import webbrowser
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlencode
 
 import httpx
 
 from mountainash_auth_client.errors import TokenExchangeError
-from mountainash_auth_client.server.callback import LocalCallbackServer
-from mountainash_auth_client.server.manual import prompt_for_code
-from mountainash_settings import ProfileSpec
+from mountainash_auth_client.connections._optional import require_authlib
+from mountainash_auth_client.connections.server.callback import LocalCallbackServer
+from mountainash_auth_client.connections.server.manual import prompt_for_code
+
+if TYPE_CHECKING:
+    from mountainash_settings import ProfileSpec
 
 
 class OAuth1Flow:
@@ -40,12 +43,7 @@ class OAuth1Flow:
         consumer_secret: str,
         callback_url: str = "oob",
     ) -> dict[str, str]:
-        try:
-            from authlib.integrations.httpx_client import OAuth1Client
-        except ImportError as exc:
-            raise ImportError(
-                "OAuth1 requires authlib: pip install mountainash-auth-client[oauth1]"
-            ) from exc
+        OAuth1Client = require_authlib("OAuth1Client")
 
         client = OAuth1Client(client_id=consumer_key, client_secret=consumer_secret)
         try:
@@ -68,12 +66,7 @@ class OAuth1Flow:
         oauth_token_secret: str,
         verifier: str,
     ) -> dict[str, str]:
-        try:
-            from authlib.integrations.httpx_client import OAuth1Client
-        except ImportError as exc:
-            raise ImportError(
-                "OAuth1 requires authlib: pip install mountainash-auth-client[oauth1]"
-            ) from exc
+        OAuth1Client = require_authlib("OAuth1Client")
 
         client = OAuth1Client(
             client_id=consumer_key,

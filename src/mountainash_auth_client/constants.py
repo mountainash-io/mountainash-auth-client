@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-__all__ = ["CONST_AUTH_MODE"]
+__all__ = ["CONST_AUTH_PROFILES"]
 
 
-class CONST_AUTH_MODE(StrEnum):
+class CONST_AUTH_PROFILES(StrEnum):
     """Auth mode identifiers matching AUTH_REGISTRY keys."""
 
     NONE = "none"

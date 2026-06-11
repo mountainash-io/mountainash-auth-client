@@ -3,7 +3,7 @@ from mountainash_settings import Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["NoAuth", "NOAUTH_SPEC"]
+__all__ = ["NoAuthProfile", "NOAUTH_SPEC"]
 
 NOAUTH_SPEC = ProfileSpec(
     name="none",
@@ -13,5 +13,5 @@ NOAUTH_SPEC = ProfileSpec(
 
 
 @register
-class NoAuth(Profile):
+class NoAuthProfile(Profile):
     __spec__ = NOAUTH_SPEC

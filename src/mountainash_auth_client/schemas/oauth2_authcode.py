@@ -3,7 +3,7 @@ from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["OAuth2AuthCodeAuth", "OAUTH2_AUTHCODE_SPEC"]
+__all__ = ["OAuth2AuthCodeAuthProfile", "OAUTH2_AUTHCODE_SPEC"]
 
 OAUTH2_AUTHCODE_SPEC = ProfileSpec(
     name="oauth2_authcode",
@@ -20,5 +20,5 @@ OAUTH2_AUTHCODE_SPEC = ProfileSpec(
 
 
 @register
-class OAuth2AuthCodeAuth(Profile):
+class OAuth2AuthCodeAuthProfile(Profile):
     __spec__ = OAUTH2_AUTHCODE_SPEC

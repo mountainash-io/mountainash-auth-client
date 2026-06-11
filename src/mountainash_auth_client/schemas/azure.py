@@ -3,7 +3,7 @@ from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["WindowsAuth", "AzureADAuth", "WINDOWS_SPEC", "AZURE_AD_SPEC"]
+__all__ = ["WindowsAuthProfile", "AzureADAuthProfile", "WINDOWS_SPEC", "AZURE_AD_SPEC"]
 
 WINDOWS_SPEC = ProfileSpec(
     name="windows",
@@ -16,7 +16,7 @@ WINDOWS_SPEC = ProfileSpec(
 
 
 @register
-class WindowsAuth(Profile):
+class WindowsAuthProfile(Profile):
     __spec__ = WINDOWS_SPEC
 
 
@@ -34,5 +34,5 @@ AZURE_AD_SPEC = ProfileSpec(
 
 
 @register
-class AzureADAuth(Profile):
+class AzureADAuthProfile(Profile):
     __spec__ = AZURE_AD_SPEC

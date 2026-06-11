@@ -8,7 +8,7 @@ from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["ServiceAccountAuth", "SERVICE_ACCOUNT_SPEC"]
+__all__ = ["ServiceAccountAuthProfile", "SERVICE_ACCOUNT_SPEC"]
 
 SERVICE_ACCOUNT_SPEC = ProfileSpec(
     name="service_account",
@@ -21,5 +21,5 @@ SERVICE_ACCOUNT_SPEC = ProfileSpec(
 
 
 @register
-class ServiceAccountAuth(Profile):
+class ServiceAccountAuthProfile(Profile):
     __spec__ = SERVICE_ACCOUNT_SPEC

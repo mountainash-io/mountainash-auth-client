@@ -3,7 +3,7 @@ from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["PasswordAuth", "PASSWORD_SPEC"]
+__all__ = ["PasswordAuthProfile", "PASSWORD_SPEC"]
 
 PASSWORD_SPEC = ProfileSpec(
     name="password",
@@ -27,5 +27,5 @@ PASSWORD_SPEC = ProfileSpec(
 
 
 @register
-class PasswordAuth(Profile):
+class PasswordAuthProfile(Profile):
     __spec__ = PASSWORD_SPEC

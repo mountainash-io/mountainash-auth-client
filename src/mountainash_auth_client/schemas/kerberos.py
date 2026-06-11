@@ -5,7 +5,7 @@ from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["KerberosAuth", "KERBEROS_SPEC"]
+__all__ = ["KerberosAuthProfile", "KERBEROS_SPEC"]
 
 KERBEROS_SPEC = ProfileSpec(
     name="kerberos",
@@ -19,5 +19,5 @@ KERBEROS_SPEC = ProfileSpec(
 
 
 @register
-class KerberosAuth(Profile):
+class KerberosAuthProfile(Profile):
     __spec__ = KERBEROS_SPEC

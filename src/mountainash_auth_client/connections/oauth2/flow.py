@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import hashlib
 import base64
+import json
 import secrets
 import time
 import webbrowser
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlencode
 
 import httpx
 
 from mountainash_auth_client.errors import TokenExchangeError, TokenRefreshError
-from mountainash_auth_client.server.callback import LocalCallbackServer
-from mountainash_auth_client.server.manual import prompt_for_code
-from mountainash_settings import ProfileSpec
+from mountainash_auth_client.connections.server.callback import LocalCallbackServer
+from mountainash_auth_client.connections.server.manual import prompt_for_code
+
+if TYPE_CHECKING:
+    from mountainash_settings import ProfileSpec
 
 
 class OAuthFlow:
@@ -22,7 +25,8 @@ class OAuthFlow:
     def __init__(self, spec: ProfileSpec) -> None:
         self._spec = spec
         self._metadata = spec.metadata
-        self._code_verifier: str | None = None
+        self._pending_verifiers: dict[str, str] = {}
+        self._last_state: str | None = None
 
     @property
     def authorize_url(self) -> str:
@@ -48,6 +52,7 @@ class OAuthFlow:
     ) -> tuple[str, str]:
         """Build the authorization URL and generate state token."""
         state = secrets.token_urlsafe(32)
+        self._last_state = state
         params: dict[str, str] = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
@@ -59,15 +64,23 @@ class OAuthFlow:
             params["scope"] = effective_scope
 
         if self.use_pkce:
-            self._code_verifier = secrets.token_urlsafe(64)
+            verifier = secrets.token_urlsafe(64)
+            self._pending_verifiers[state] = verifier
             challenge = base64.urlsafe_b64encode(
-                hashlib.sha256(self._code_verifier.encode()).digest()
+                hashlib.sha256(verifier.encode()).digest()
             ).rstrip(b"=").decode()
             params["code_challenge"] = challenge
             params["code_challenge_method"] = "S256"
 
         url = f"{self.authorize_url}?{urlencode(params)}"
         return url, state
+
+    def _validate_callback_state(
+        self, params: dict[str, str], expected_state: str
+    ) -> None:
+        """Reject the callback unless its state exactly matches the expected one."""
+        if params.get("state") != expected_state:
+            raise ValueError("OAuth state mismatch — possible CSRF attack")
 
     def exchange_code(
         self,
@@ -76,6 +89,7 @@ class OAuthFlow:
         client_id: str,
         client_secret: str,
         scope: str | None = None,
+        state: str | None = None,
     ) -> dict[str, str | int | None]:
         """Exchange authorization code for tokens. Returns flat token dict."""
         data: dict[str, str] = {
@@ -85,8 +99,10 @@ class OAuthFlow:
             "client_id": client_id,
             "client_secret": client_secret,
         }
-        if self.use_pkce and self._code_verifier:
-            data["code_verifier"] = self._code_verifier
+
+        lookup_state = state or self._last_state
+        if self.use_pkce and lookup_state and lookup_state in self._pending_verifiers:
+            data["code_verifier"] = self._pending_verifiers.pop(lookup_state)
 
         with httpx.Client() as client:
             try:
@@ -98,7 +114,21 @@ class OAuthFlow:
                     status_code=exc.response.status_code,
                     body=exc.response.text[:2000],
                 ) from exc
-            token_data = resp.json()
+            try:
+                token_data = resp.json()
+            except (ValueError, json.JSONDecodeError) as exc:
+                raise TokenExchangeError(
+                    url=self.token_url,
+                    status_code=resp.status_code,
+                    body=f"Invalid JSON in token response: {resp.text[:200]}",
+                ) from exc
+
+        if "access_token" not in token_data:
+            raise TokenExchangeError(
+                url=self.token_url,
+                status_code=resp.status_code,
+                body=f"Missing access_token in response: {str(token_data)[:200]}",
+            )
 
         expires_at: int | None = None
         if "expires_in" in token_data:
@@ -134,7 +164,21 @@ class OAuthFlow:
                     status_code=exc.response.status_code,
                     body=exc.response.text[:2000],
                 ) from exc
-            token_data = resp.json()
+            try:
+                token_data = resp.json()
+            except (ValueError, json.JSONDecodeError) as exc:
+                raise TokenRefreshError(
+                    url=self.token_url,
+                    status_code=resp.status_code,
+                    body=f"Invalid JSON in refresh response: {resp.text[:200]}",
+                ) from exc
+
+        if "access_token" not in token_data:
+            raise TokenRefreshError(
+                url=self.token_url,
+                status_code=resp.status_code,
+                body=f"Missing access_token in refresh response: {str(token_data)[:200]}",
+            )
 
         expires_at: int | None = None
         if "expires_in" in token_data:
@@ -160,6 +204,7 @@ class OAuthFlow:
         redirect_mode: Literal["local_server", "manual"] = "local_server",
         scope: str | None = None,
     ) -> dict[str, str | int | None]:
+
         """Run the full authorization code flow end-to-end. Returns flat token dict."""
         if redirect_mode == "local_server":
             port = self._metadata.get("callback_port", 0)
@@ -180,8 +225,7 @@ class OAuthFlow:
         else:
             params = prompt_for_code(url)
 
-        if params.get("state") and params["state"] != state:
-            raise ValueError("OAuth state mismatch — possible CSRF attack")
+        self._validate_callback_state(params, state)
 
         return self.exchange_code(
             code=params["code"],
@@ -189,4 +233,5 @@ class OAuthFlow:
             client_id=client_id,
             client_secret=client_secret,
             scope=scope,
+            state=state,
         )
