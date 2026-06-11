@@ -207,3 +207,26 @@ class TestClientProperty:
     def test_client_property_none_before_connect(self):
         provider = FakeProvider()
         assert provider.client is None
+
+
+class TestCallbackServerPassthrough:
+    def test_connect_forwards_callback_server_to_authorize(self, monkeypatch, backend):
+        sentinel = object()
+        captured = {}
+
+        class FakeFlow:
+            def __init__(self, spec):
+                pass
+
+            def is_expired(self, value):
+                return False
+
+            def authorize(self, **kwargs):
+                captured.update(kwargs)
+                return {"access_token": "tok", "refresh_token": "", "token_expires_at": None}
+
+        monkeypatch.setattr(
+            "mountainash_auth_client.connections.oauth2.connection.OAuthFlow", FakeFlow)
+        provider = FakeProvider()
+        provider.connect(FakeAuth(), auto_authorize=True, callback_server=sentinel)
+        assert captured["callback_server"] is sentinel

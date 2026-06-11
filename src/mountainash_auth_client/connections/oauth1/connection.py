@@ -13,6 +13,7 @@ from mountainash_settings.secrets.registry import get_secrets_backend
 if TYPE_CHECKING:
     from mountainash_settings import ProfileSpec
     from ...schemas.oauth1 import OAuth1AuthProfile
+    from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
 class OAuth1Connection:
     _spec: ClassVar[ProfileSpec]
@@ -24,6 +25,7 @@ class OAuth1Connection:
         auth_profile: OAuth1AuthProfile,
         *,
         auto_authorize: bool = False,
+        callback_server: CallbackServerFactory | None = None,
     ) -> Self:
         provider = self._spec.name
 
@@ -40,6 +42,7 @@ class OAuth1Connection:
             new_tokens = flow.authorize(
                 consumer_key=auth_profile.CONSUMER_KEY,
                 consumer_secret=auth_profile.CONSUMER_SECRET.get_secret_value(),
+                callback_server=callback_server,
             )
             backend.set(key, new_tokens)
             self._build_client(new_tokens, auth_profile)
