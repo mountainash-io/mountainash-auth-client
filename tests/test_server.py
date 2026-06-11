@@ -87,6 +87,12 @@ class TestExtractCodeFromInput:
         assert result["code"] == "def456"
         assert result["state"] == "statetoken"
 
+    def test_oauth1_callback_url_extracts_verifier_and_token(self):
+        url = "http://localhost:8080/callback?oauth_token=tok123&oauth_verifier=ver456"
+        result = extract_code_from_input(url)
+        assert result["oauth_verifier"] == "ver456"
+        assert result["oauth_token"] == "tok123"
+
 
 class TestPromptForCode:
     def test_prompt_for_code_is_callable(self):
