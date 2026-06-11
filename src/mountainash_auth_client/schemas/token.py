@@ -3,7 +3,7 @@ from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["TokenAuth", "JWTAuth", "TOKEN_SPEC", "JWT_SPEC"]
+__all__ = ["TokenAuthProfile", "JWTAuthProfile", "TOKEN_SPEC", "JWT_SPEC"]
 
 TOKEN_SPEC = ProfileSpec(
     name="token",
@@ -15,7 +15,7 @@ TOKEN_SPEC = ProfileSpec(
 
 
 @register
-class TokenAuth(Profile):
+class TokenAuthProfile(Profile):
     __spec__ = TOKEN_SPEC
 
 
@@ -29,5 +29,5 @@ JWT_SPEC = ProfileSpec(
 
 
 @register
-class JWTAuth(Profile):
+class JWTAuthProfile(Profile):
     __spec__ = JWT_SPEC

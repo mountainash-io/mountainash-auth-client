@@ -3,7 +3,7 @@ from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["IAMAuth", "IAM_SPEC"]
+__all__ = ["IAMAuthProfile", "IAM_SPEC"]
 
 IAM_SPEC = ProfileSpec(
     name="iam",
@@ -19,5 +19,5 @@ IAM_SPEC = ProfileSpec(
 
 
 @register
-class IAMAuth(Profile):
+class IAMAuthProfile(Profile):
     __spec__ = IAM_SPEC

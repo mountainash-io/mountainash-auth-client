@@ -11,8 +11,8 @@ from mountainash_settings.secrets.registry import get_secrets_backend
 
 if TYPE_CHECKING:
     from mountainash_settings import ProfileSpec
-    from ...schemas.oauth2 import OAuth2Auth
-    from ...schemas.oauth2_authcode import OAuth2AuthCodeAuth
+    from ...schemas.oauth2 import OAuth2AuthProfile
+    from ...schemas.oauth2_authcode import OAuth2AuthCodeAuthProfile
 
 
 class OAuth2Connection:
@@ -26,15 +26,15 @@ class OAuth2Connection:
 
     def connect(
         self,
-        auth: OAuth2Auth | OAuth2AuthCodeAuth,
+        auth_profile: OAuth2AuthProfile | OAuth2AuthCodeAuthProfile,
         *,
         auto_authorize: bool = False,
     ) -> Self:
         provider = self._spec.name
         flow = OAuthFlow(self._spec)
 
-        backend = get_secrets_backend(auth.SETTINGS_SOURCE_SECRETS_PROVIDER)
-        key = auth.persist_key()
+        backend = get_secrets_backend(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER)
+        key = auth_profile.persist_key()
         tokens = backend.get(key)
 
         access_token: str | None = None
@@ -50,8 +50,8 @@ class OAuth2Connection:
                     try:
                         new_tokens = flow.refresh(
                             refresh_token=tokens["refresh_token"],
-                            client_id=auth.CLIENT_ID,
-                            client_secret=auth.CLIENT_SECRET.get_secret_value(),
+                            client_id=auth_profile.CLIENT_ID,
+                            client_secret=auth_profile.CLIENT_SECRET.get_secret_value(),
                         )
                     except Exception:
                         backend.delete(key)
@@ -64,9 +64,9 @@ class OAuth2Connection:
         if access_token is None:
             if auto_authorize:
                 new_tokens = flow.authorize(
-                    client_id=auth.CLIENT_ID,
-                    client_secret=auth.CLIENT_SECRET.get_secret_value(),
-                    scope=auth.SCOPE,
+                    client_id=auth_profile.CLIENT_ID,
+                    client_secret=auth_profile.CLIENT_SECRET.get_secret_value(),
+                    scope=auth_profile.SCOPE,
                 )
                 backend.set(key, new_tokens)
                 access_token = new_tokens["access_token"]

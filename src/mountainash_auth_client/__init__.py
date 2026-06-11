@@ -1,5 +1,5 @@
 """mountainash-auth-client — client-side authentication for the mountainash ecosystem."""
-from mountainash_auth_client.constants import CONST_AUTH_MODE
+from mountainash_auth_client.constants import CONST_AUTH_PROFILES
 from mountainash_auth_client.errors import (
     AuthorizationRequired,
     TokenExchangeError,
@@ -9,49 +9,50 @@ from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
 from mountainash_auth_client.connections.oauth2.connection import OAuth2Connection
 from mountainash_auth_client.schemas import (
     AUTH_REGISTRY,
-    AzureADAuth,
-    CertificateAuth,
-    IAMAuth,
-    JWTAuth,
-    KerberosAuth,
-    NoAuth,
-    OAuth1Auth,
-    OAuth2Auth,
-    OAuth2AuthCodeAuth,
-    PasswordAuth,
-    ServiceAccountAuth,
-    TokenAuth,
-    WindowsAuth,
+    AzureADAuthProfile,
+    CertificateAuthProfile,
+    IAMAuthProfile,
+    JWTAuthProfile,
+    KerberosAuthProfile,
+    NoAuthProfile,
+    OAuth1AuthProfile,
+    OAuth2AuthCodeAuthProfile,
+    OAuth2AuthProfile,
+    PasswordAuthProfile,
+    ServiceAccountAuthProfile,
+    TokenAuthProfile,
+    WindowsAuthProfile,
 )
 from mountainash_auth_client.connections.server.callback import LocalCallbackServer
 
 AuthProfile = (
-    NoAuth | PasswordAuth | TokenAuth | JWTAuth | OAuth1Auth | OAuth2Auth
-    | OAuth2AuthCodeAuth | IAMAuth | WindowsAuth | AzureADAuth
-    | KerberosAuth | CertificateAuth | ServiceAccountAuth
+    NoAuthProfile | PasswordAuthProfile | TokenAuthProfile | JWTAuthProfile
+    | OAuth1AuthProfile | OAuth2AuthProfile | OAuth2AuthCodeAuthProfile
+    | IAMAuthProfile | WindowsAuthProfile | AzureADAuthProfile
+    | KerberosAuthProfile | CertificateAuthProfile | ServiceAccountAuthProfile
 )
 
 __all__ = [
     "AUTH_REGISTRY",
     "AuthProfile",
     "AuthorizationRequired",
-    "AzureADAuth",
-    "CONST_AUTH_MODE",
-    "CertificateAuth",
-    "IAMAuth",
-    "JWTAuth",
-    "KerberosAuth",
+    "AzureADAuthProfile",
+    "CONST_AUTH_PROFILES",
+    "CertificateAuthProfile",
+    "IAMAuthProfile",
+    "JWTAuthProfile",
+    "KerberosAuthProfile",
     "LocalCallbackServer",
-    "NoAuth",
-    "OAuth1Auth",
-    "OAuth2Auth",
-    "OAuth2AuthCodeAuth",
+    "NoAuthProfile",
+    "OAuth1AuthProfile",
+    "OAuth2AuthCodeAuthProfile",
+    "OAuth2AuthProfile",
     "OAuth2Connection",
     "OAuthFlow",
-    "PasswordAuth",
-    "ServiceAccountAuth",
-    "TokenAuth",
+    "PasswordAuthProfile",
+    "ServiceAccountAuthProfile",
+    "TokenAuthProfile",
     "TokenExchangeError",
     "TokenRefreshError",
-    "WindowsAuth",
+    "WindowsAuthProfile",
 ]

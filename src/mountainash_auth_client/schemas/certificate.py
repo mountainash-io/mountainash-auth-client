@@ -5,7 +5,7 @@ from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["CertificateAuth", "CERTIFICATE_SPEC"]
+__all__ = ["CertificateAuthProfile", "CERTIFICATE_SPEC"]
 
 CERTIFICATE_SPEC = ProfileSpec(
     name="certificate",
@@ -19,5 +19,5 @@ CERTIFICATE_SPEC = ProfileSpec(
 
 
 @register
-class CertificateAuth(Profile):
+class CertificateAuthProfile(Profile):
     __spec__ = CERTIFICATE_SPEC

@@ -204,6 +204,7 @@ class OAuthFlow:
         redirect_mode: Literal["local_server", "manual"] = "local_server",
         scope: str | None = None,
     ) -> dict[str, str | int | None]:
+
         """Run the full authorization code flow end-to-end. Returns flat token dict."""
         if redirect_mode == "local_server":
             port = self._metadata.get("callback_port", 0)
