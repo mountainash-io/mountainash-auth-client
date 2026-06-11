@@ -250,3 +250,97 @@ class TestIsExpired:
         # Within the 300s buffer window
         near_future = int(time.time()) + 100
         assert OAuthFlow.is_expired(near_future) is True
+
+
+from urllib.parse import parse_qs, urlparse
+
+from mountainash_auth_client.errors import (
+    AuthorizationDeniedError,
+    MalformedCallbackError,
+)
+
+
+class _EchoServer:
+    """Test double: echoes the state from the authorize URL back as a callback."""
+
+    port = None
+
+    def __init__(self, redirect_uri="https://fake/cb", extra=None):
+        self.redirect_uri = redirect_uri
+        self._extra = extra or {}
+
+    def obtain_callback(self, authorize_url):
+        state = parse_qs(urlparse(authorize_url).query)["state"][0]
+        return {"code": "CODE", "state": state, **self._extra}
+
+
+def _no_http(flow, monkeypatch, sink):
+    monkeypatch.setattr(flow, "exchange_code",
+                        lambda **kw: sink.update(kw) or {"access_token": "tok"})
+
+
+class TestAuthorizeInjection:
+    def test_uses_injected_server_redirect_uri_and_params(self, monkeypatch):
+        flow = OAuthFlow(FakeSpec())
+        sink = {}
+        _no_http(flow, monkeypatch, sink)
+        result = flow.authorize("cid", "csec",
+                                callback_server=lambda: _EchoServer("https://INJECT/cb"))
+        assert sink["redirect_uri"] == "https://INJECT/cb"
+        assert sink["code"] == "CODE"
+        assert result["access_token"] == "tok"
+
+    def test_per_call_beats_construction_default(self, monkeypatch):
+        flow = OAuthFlow(FakeSpec(),
+                         callback_server=lambda: _EchoServer("https://CONSTRUCT/cb"))
+        sink = {}
+        _no_http(flow, monkeypatch, sink)
+        flow.authorize("cid", "csec",
+                       callback_server=lambda: _EchoServer("https://PERCALL/cb"))
+        assert sink["redirect_uri"] == "https://PERCALL/cb"
+
+    def test_construction_default_shadows_redirect_mode(self, monkeypatch):
+        flow = OAuthFlow(FakeSpec(),
+                         callback_server=lambda: _EchoServer("https://CONSTRUCT/cb"))
+        sink = {}
+        _no_http(flow, monkeypatch, sink)
+        flow.authorize("cid", "csec", redirect_mode="manual")
+        assert sink["redirect_uri"] == "https://CONSTRUCT/cb"
+
+    def test_default_uses_local_callback_server(self, monkeypatch):
+        import mountainash_auth_client.connections.server.factory as factory
+        monkeypatch.setattr(
+            factory, "LocalCallbackServer",
+            lambda port=0: _EchoServer(f"http://localhost/{port}/callback"))
+        flow = OAuthFlow(FakeSpec())
+        sink = {}
+        _no_http(flow, monkeypatch, sink)
+        flow.authorize("cid", "csec")
+        assert sink["redirect_uri"].startswith("http://localhost/")
+
+
+class TestAuthorizeCallbackValidation:
+    def test_denied_raises(self, monkeypatch):
+        # A real denial carries `error` and NO `code`; this also proves the
+        # `error` branch fires before the missing-`code` (MalformedCallbackError) path.
+        class _Denied(_EchoServer):
+            def obtain_callback(self, authorize_url):
+                state = parse_qs(urlparse(authorize_url).query)["state"][0]
+                return {"state": state, "error": "access_denied",
+                        "error_description": "user declined"}
+
+        flow = OAuthFlow(FakeSpec())
+        with pytest.raises(AuthorizationDeniedError) as ei:
+            flow.authorize("cid", "csec", callback_server=lambda: _Denied())
+        assert ei.value.error == "access_denied"
+        assert ei.value.description == "user declined"
+
+    def test_missing_code_raises_malformed(self, monkeypatch):
+        class _NoCode(_EchoServer):
+            def obtain_callback(self, authorize_url):
+                state = parse_qs(urlparse(authorize_url).query)["state"][0]
+                return {"state": state}
+
+        flow = OAuthFlow(FakeSpec())
+        with pytest.raises(MalformedCallbackError):
+            flow.authorize("cid", "csec", callback_server=lambda: _NoCode())
