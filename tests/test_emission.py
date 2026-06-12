@@ -207,3 +207,40 @@ class TestOAuth1:
             ACCESS_TOKEN="at", ACCESS_TOKEN_SECRET="ats",
         ).emit(TargetFamily.HTTP)
         assert "consumer_key" not in out and "consumer_secret" not in out
+
+
+@pytest.mark.unit
+class TestCertificate:
+    def test_paramiko_key_path(self):
+        from mountainash_auth_client import CertificateAuthProfile
+        out = CertificateAuthProfile(
+            PRIVATE_KEY_PATH="/home/u/.ssh/id_rsa", PASSPHRASE="pp"
+        ).emit(TargetFamily.PARAMIKO)
+        assert out == {"key_filename": "/home/u/.ssh/id_rsa", "passphrase": "pp"}
+
+    def test_paramiko_key_path_no_passphrase(self):
+        from mountainash_auth_client import CertificateAuthProfile
+        out = CertificateAuthProfile(
+            PRIVATE_KEY_PATH="/home/u/.ssh/id_rsa"
+        ).emit(TargetFamily.PARAMIKO)
+        assert out == {"key_filename": "/home/u/.ssh/id_rsa"}
+
+    def test_paramiko_raw_pem_parsed_to_pkey(self):
+        paramiko = pytest.importorskip("paramiko")
+        from mountainash_auth_client import CertificateAuthProfile
+        key = paramiko.RSAKey.generate(2048)
+        import io
+        buf = io.StringIO()
+        key.write_private_key(buf)
+        pem = buf.getvalue()
+        out = CertificateAuthProfile(PRIVATE_KEY=pem).emit(TargetFamily.PARAMIKO)
+        assert set(out) == {"pkey"}
+        assert isinstance(out["pkey"], paramiko.PKey)
+        assert out["pkey"].get_fingerprint() == key.get_fingerprint()
+
+    def test_no_key_material_raises(self):
+        # Fail-fast (matches old SSHKeyStrategy): no key path or PEM → error,
+        # not a silent keyless connect.
+        from mountainash_auth_client import CertificateAuthProfile
+        with pytest.raises(ValueError, match="PRIVATE_KEY_PATH or PRIVATE_KEY"):
+            CertificateAuthProfile().emit(TargetFamily.PARAMIKO)
