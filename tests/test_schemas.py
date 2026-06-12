@@ -150,13 +150,15 @@ class TestIAMAuth:
     def test_construction_ambient(self):
         cls = AUTH_REGISTRY.get_settings_class("iam")
         instance = cls()
-        assert instance._default_kwargs() == {}
+        assert instance._default_kwargs("boto") == {}
 
     def test_construction_with_role(self):
+        # ROLE_ARN is stored as a field but no longer emitted (config, not a
+        # boto3.client kwarg).
         cls = AUTH_REGISTRY.get_settings_class("iam")
         instance = cls(ROLE_ARN="arn:aws:iam::123:role/myrole")
-        result = instance._default_kwargs()
-        assert result["iam_role_arn"] == "arn:aws:iam::123:role/myrole"
+        assert instance.ROLE_ARN == "arn:aws:iam::123:role/myrole"
+        assert instance._default_kwargs("boto") == {}
 
     def test_construction_with_keys(self):
         cls = AUTH_REGISTRY.get_settings_class("iam")
@@ -165,7 +167,7 @@ class TestIAMAuth:
             SECRET_ACCESS_KEY="secret",
             SESSION_TOKEN="tok",
         )
-        result = instance._default_kwargs()
+        result = instance._default_kwargs("boto")
         assert result["aws_access_key_id"] == "AKID"
         assert result["aws_secret_access_key"] == "secret"
         assert result["aws_session_token"] == "tok"

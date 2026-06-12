@@ -117,3 +117,42 @@ class TestPassword:
         from mountainash_auth_client import PasswordAuthProfile
         with pytest.raises(ValueError, match="no emission for target"):
             PasswordAuthProfile(USERNAME="a", PASSWORD="b").emit(TargetFamily.BOTO)
+
+
+@pytest.mark.unit
+class TestIAM:
+    def test_boto_full_credentials(self):
+        from mountainash_auth_client import IAMAuthProfile
+        out = IAMAuthProfile(
+            ACCESS_KEY_ID="AKID", SECRET_ACCESS_KEY="secret", SESSION_TOKEN="tok"
+        ).emit(TargetFamily.BOTO)
+        assert out == {
+            "aws_access_key_id": "AKID",
+            "aws_secret_access_key": "secret",
+            "aws_session_token": "tok",
+        }
+
+    def test_boto_skips_unset(self):
+        from mountainash_auth_client import IAMAuthProfile
+        out = IAMAuthProfile(ACCESS_KEY_ID="AKID").emit(TargetFamily.BOTO)
+        assert out == {"aws_access_key_id": "AKID"}
+
+    def test_boto_ambient_is_empty(self):
+        from mountainash_auth_client import IAMAuthProfile
+        assert IAMAuthProfile().emit(TargetFamily.BOTO) == {}
+
+    def test_role_arn_not_emitted(self):
+        from mountainash_auth_client import IAMAuthProfile
+        # role_arn is config (storage-profile owned), not a boto3.client kwarg.
+        out = IAMAuthProfile(
+            ROLE_ARN="arn:aws:iam::123:role/r", ACCESS_KEY_ID="AKID"
+        ).emit(TargetFamily.BOTO)
+        assert "iam_role_arn" not in out
+        assert out == {"aws_access_key_id": "AKID"}
+
+    def test_layers_onto_base(self):
+        from mountainash_auth_client import IAMAuthProfile
+        out = IAMAuthProfile(ACCESS_KEY_ID="AKID").emit(
+            TargetFamily.BOTO, base={"region_name": "us-east-1"}
+        )
+        assert out == {"region_name": "us-east-1", "aws_access_key_id": "AKID"}
