@@ -86,3 +86,34 @@ class TestBearer:
         # Matches the old resolver truthiness: a falsy token yields no header.
         from mountainash_auth_client import TokenAuthProfile
         assert TokenAuthProfile(TOKEN="").emit(TargetFamily.HTTP) == {}
+
+
+@pytest.mark.unit
+class TestPassword:
+    def test_http_basic_header(self):
+        from mountainash_auth_client import PasswordAuthProfile
+        out = PasswordAuthProfile(USERNAME="alice", PASSWORD="hunter2").emit(
+            TargetFamily.HTTP
+        )
+        expected = base64.b64encode(b"alice:hunter2").decode()
+        assert out == {"headers": {"Authorization": f"Basic {expected}"}}
+
+    def test_paramiko_username_and_password(self):
+        from mountainash_auth_client import PasswordAuthProfile
+        out = PasswordAuthProfile(USERNAME="alice", PASSWORD="hunter2").emit(
+            TargetFamily.PARAMIKO
+        )
+        # Restores username the old SSHPasswordStrategy dropped.
+        assert out == {"username": "alice", "password": "hunter2"}
+
+    def test_http_no_stray_username_password(self):
+        from mountainash_auth_client import PasswordAuthProfile
+        out = PasswordAuthProfile(USERNAME="alice", PASSWORD="hunter2").emit(
+            TargetFamily.HTTP
+        )
+        assert "username" not in out and "password" not in out and "user" not in out
+
+    def test_unknown_target_raises(self):
+        from mountainash_auth_client import PasswordAuthProfile
+        with pytest.raises(ValueError, match="no emission for target"):
+            PasswordAuthProfile(USERNAME="a", PASSWORD="b").emit(TargetFamily.BOTO)

@@ -30,11 +30,14 @@ class TestPasswordAuth:
         assert instance.profile_name == "password"
 
     def test_default_kwargs(self):
+        # USERNAME/PASSWORD are PARAMIKO-scoped now; untargeted emit is empty.
         cls = AUTH_REGISTRY.get_settings_class("password")
         instance = cls(USERNAME="alice", PASSWORD="hunter2")
-        result = instance._default_kwargs()
-        assert result["user"] == "alice"
-        assert result["password"] == "hunter2"
+        assert instance._default_kwargs() == {}
+        assert instance._default_kwargs("paramiko") == {
+            "username": "alice",
+            "password": "hunter2",
+        }
 
 
 class TestTokenAuth:
