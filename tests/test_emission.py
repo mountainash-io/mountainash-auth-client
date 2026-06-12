@@ -265,3 +265,24 @@ class TestKerberos:
             TargetFamily.PARAMIKO, base={"hostname": "h"}
         )
         assert out == {"hostname": "h", "gss_auth": True, "gss_host": "trino"}
+
+
+@pytest.mark.unit
+class TestPlainOAuth2:
+    def test_http_bearer_from_token(self):
+        from mountainash_auth_client import OAuth2AuthProfile
+        out = OAuth2AuthProfile(TOKEN="access-tok").emit(TargetFamily.HTTP)
+        assert out == {"headers": {"Authorization": "Bearer access-tok"}}
+
+    def test_http_no_token_is_empty(self):
+        from mountainash_auth_client import OAuth2AuthProfile
+        # client-credentials-only (no token yet) → nothing to render statically.
+        out = OAuth2AuthProfile(CLIENT_ID="cid", CLIENT_SECRET="csec").emit(
+            TargetFamily.HTTP
+        )
+        assert out == {}
+
+    def test_no_stray_client_fields(self):
+        from mountainash_auth_client import OAuth2AuthProfile
+        out = OAuth2AuthProfile(TOKEN="access-tok").emit(TargetFamily.HTTP)
+        assert "client_id" not in out and "token" not in out

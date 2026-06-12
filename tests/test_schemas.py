@@ -81,17 +81,16 @@ class TestOAuth2Auth:
         assert instance.profile_name == "oauth2"
 
     def test_default_kwargs_token(self):
+        # TOKEN now renders via the HTTP Bearer adapter, not a bare driver_key.
         cls = AUTH_REGISTRY.get_settings_class("oauth2")
         instance = cls(TOKEN="access-tok")
-        result = instance._default_kwargs()
-        assert result["token"] == "access-tok"
+        assert instance._default_kwargs() == {}
 
     def test_default_kwargs_client_credentials(self):
         cls = AUTH_REGISTRY.get_settings_class("oauth2")
         instance = cls(CLIENT_ID="cid", CLIENT_SECRET="csec")
-        result = instance._default_kwargs()
-        assert result["client_id"] == "cid"
-        assert result["client_secret"] == "csec"
+        # client-credentials are flow inputs, not emitted kwargs.
+        assert instance._default_kwargs() == {}
 
     def test_all_fields_optional(self):
         cls = AUTH_REGISTRY.get_settings_class("oauth2")
