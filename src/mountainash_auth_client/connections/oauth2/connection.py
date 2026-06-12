@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from mountainash_settings import ProfileSpec
     from ...schemas.oauth2 import OAuth2AuthProfile
     from ...schemas.oauth2_authcode import OAuth2AuthCodeAuthProfile
+    from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
 
 class OAuth2Connection:
@@ -29,6 +30,7 @@ class OAuth2Connection:
         auth_profile: OAuth2AuthProfile | OAuth2AuthCodeAuthProfile,
         *,
         auto_authorize: bool = False,
+        callback_server: CallbackServerFactory | None = None,
     ) -> Self:
         provider = self._spec.name
         flow = OAuthFlow(self._spec)
@@ -67,6 +69,7 @@ class OAuth2Connection:
                     client_id=auth_profile.CLIENT_ID,
                     client_secret=auth_profile.CLIENT_SECRET.get_secret_value(),
                     scope=auth_profile.SCOPE,
+                    callback_server=callback_server,
                 )
                 backend.set(key, new_tokens)
                 access_token = new_tokens["access_token"]

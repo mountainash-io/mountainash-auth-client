@@ -5,28 +5,38 @@ import base64
 import json
 import secrets
 import time
-import webbrowser
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlencode
 
 import httpx
 
-from mountainash_auth_client.errors import TokenExchangeError, TokenRefreshError
-from mountainash_auth_client.connections.server.callback import LocalCallbackServer
-from mountainash_auth_client.connections.server.manual import prompt_for_code
+from mountainash_auth_client.errors import (
+    AuthorizationDeniedError,
+    MalformedCallbackError,
+    TokenExchangeError,
+    TokenRefreshError,
+)
+from mountainash_auth_client.connections.server.factory import resolve_callback_factory
 
 if TYPE_CHECKING:
     from mountainash_settings import ProfileSpec
+    from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
 
 class OAuthFlow:
     """Runs OAuth 2.0 Authorization Code flow for an OAuth2 provider."""
 
-    def __init__(self, spec: ProfileSpec) -> None:
+    def __init__(
+        self,
+        spec: ProfileSpec,
+        *,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> None:
         self._spec = spec
         self._metadata = spec.metadata
         self._pending_verifiers: dict[str, str] = {}
         self._last_state: str | None = None
+        self._callback_server = callback_server
 
     @property
     def authorize_url(self) -> str:
@@ -203,33 +213,33 @@ class OAuthFlow:
         client_secret: str,
         redirect_mode: Literal["local_server", "manual"] = "local_server",
         scope: str | None = None,
+        callback_server: CallbackServerFactory | None = None,
     ) -> dict[str, str | int | None]:
-
         """Run the full authorization code flow end-to-end. Returns flat token dict."""
-        if redirect_mode == "local_server":
-            port = self._metadata.get("callback_port", 0)
-            server = LocalCallbackServer(port=port)
-            redirect_uri = server.redirect_uri
-        else:
-            redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
-
+        factory = resolve_callback_factory(
+            redirect_mode=redirect_mode,
+            callback_server=callback_server,
+            instance_default=self._callback_server,
+            metadata=self._metadata,
+        )
+        server = factory()
         url, state = self.build_authorize_url(
             client_id=client_id,
-            redirect_uri=redirect_uri,
+            redirect_uri=server.redirect_uri,
             scope=scope,
         )
-
-        if redirect_mode == "local_server":
-            webbrowser.open(url)
-            params = server.wait_for_callback()
-        else:
-            params = prompt_for_code(url)
-
+        params = server.obtain_callback(url)
         self._validate_callback_state(params, state)
-
+        if "error" in params:
+            raise AuthorizationDeniedError(
+                error=params["error"],
+                description=params.get("error_description", ""),
+            )
+        if "code" not in params or params["code"] is None:
+            raise MalformedCallbackError("OAuth2 callback missing 'code'")
         return self.exchange_code(
             code=params["code"],
-            redirect_uri=redirect_uri,
+            redirect_uri=server.redirect_uri,
             client_id=client_id,
             client_secret=client_secret,
             scope=scope,

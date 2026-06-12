@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
+
+from mountainash_auth_client.errors import CallbackTimeoutError
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):
@@ -28,7 +31,7 @@ class LocalCallbackServer:
         self._timeout = timeout
 
     @property
-    def port(self) -> int:
+    def port(self) -> int | None:
         return self._server.server_address[1]
 
     @property
@@ -36,12 +39,25 @@ class LocalCallbackServer:
         return f"http://localhost:{self.port}/callback"
 
     def wait_for_callback(self) -> dict[str, str]:
-        """Block until a callback is received or timeout expires."""
+        """Block until a callback arrives or the timeout expires.
+
+        Pure blocking wait — resource cleanup is the caller's responsibility
+        (see :meth:`obtain_callback`).
+        """
         self._server.timeout = self._timeout
         self._server.handle_request()
         if self._server._callback_params is None:
-            raise TimeoutError("No callback received within timeout")
+            raise CallbackTimeoutError("No callback received within timeout")
+        return self._server._callback_params
+
+    def obtain_callback(self, authorize_url: str) -> dict[str, str]:
+        """Open the URL in a browser (or print it if none is available), then
+        wait for the callback. Always releases the socket — on success or
+        failure.
+        """
+        if not webbrowser.open(authorize_url):
+            print(f"Open this URL to authorize:\n\n  {authorize_url}\n")
         try:
-            return self._server._callback_params
+            return self.wait_for_callback()
         finally:
             self._server.server_close()
