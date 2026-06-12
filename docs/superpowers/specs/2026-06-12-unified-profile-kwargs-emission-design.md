@@ -128,13 +128,19 @@ this enum — it stores adapters under an opaque `Hashable` key.
 `__adapter__`) and `emit()` / `_default_kwargs()` learn an optional `target`:
 
 ```python
-# mountainash-settings — generic, no domain knowledge
-Adapter = t.Callable[["Profile", dict[str, t.Any]], dict[str, t.Any]]
+# mountainash-settings — generic, no domain knowledge.
+# Two DISTINCT adapter signatures — do not collapse them:
+Adapter       = t.Callable[["Profile", dict[str, t.Any]], dict[str, t.Any]]  # new: 2-arg compose
+LegacyAdapter = t.Callable[["Profile"], dict[str, t.Any]]                    # existing: 1-arg, owns pipeline
 _UNSET = object()  # distinguishes "no target passed" from an explicit None target
 
 class Profile(MountainAshBaseSettings):
     __adapters__: t.ClassVar[dict[t.Hashable, Adapter]] = {}
-    __adapter__:  t.ClassVar[Adapter | None] = None   # retained: default for all targets
+    # Retained AS-IS. The pre-existing single hook is 1-arg and owns the whole
+    # output pipeline (it calls _default_kwargs() itself and ignores `base`).
+    # It is the all-targets fallback in emit(), but its signature is NOT the
+    # same as __adapters__ — they are dispatched separately below.
+    __adapter__:  t.ClassVar[LegacyAdapter | None] = None
 
     def _is_targeted(self) -> bool:
         """True if this profile's emission depends on a target (any dict-scoped
@@ -157,15 +163,21 @@ class Profile(MountainAshBaseSettings):
             # emission is a programming error, not a silent no-op.
             raise ValueError(
                 f"{type(self).__name__} has no emission for target {target!r}; "
-                f"known: {sorted(self._known_targets())}."
+                f"known: {sorted(self._known_targets(), key=repr)}."
             )
         base_kwargs = {**(base or {})}
         rename_kwargs = self._default_kwargs(target)
         # Disjointness guard: tier-1 driver_keys and the adapter must own distinct
         # output keys (see Emission safety contract). Overlap is a spec error.
         merged = {**base_kwargs, **rename_kwargs}
-        adapter = self.__adapters__.get(target, self.__adapter__)
-        return adapter(self, merged) if adapter is not None else merged
+        # Dispatch by signature: per-target adapter (2-arg compose) →
+        # legacy __adapter__ (1-arg, owns pipeline, ignores merged) → merged.
+        adapter = self.__adapters__.get(target)
+        if adapter is not None:
+            return adapter(self, merged)
+        if self.__adapter__ is not None:
+            return self.__adapter__(self)
+        return merged
 ```
 
 `_knows_target`/`_known_targets` enumerate `__adapters__` keys ∪ every
