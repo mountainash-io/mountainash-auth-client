@@ -156,3 +156,28 @@ class TestIAM:
             TargetFamily.BOTO, base={"region_name": "us-east-1"}
         )
         assert out == {"region_name": "us-east-1", "aws_access_key_id": "AKID"}
+
+
+@pytest.mark.unit
+class TestOAuth2AuthCode:
+    def test_http_bearer_from_access_token(self):
+        from mountainash_auth_client import OAuth2AuthCodeAuthProfile
+        out = OAuth2AuthCodeAuthProfile(
+            CLIENT_ID="cid", CLIENT_SECRET="csec", ACCESS_TOKEN="at"
+        ).emit(TargetFamily.HTTP)
+        assert out == {"headers": {"Authorization": "Bearer at"}}
+
+    def test_http_no_token_is_empty(self):
+        from mountainash_auth_client import OAuth2AuthCodeAuthProfile
+        # No access token in hand → nothing static to render (flow acquires it).
+        out = OAuth2AuthCodeAuthProfile(CLIENT_ID="cid", CLIENT_SECRET="csec").emit(
+            TargetFamily.HTTP
+        )
+        assert out == {}
+
+    def test_no_stray_client_fields(self):
+        from mountainash_auth_client import OAuth2AuthCodeAuthProfile
+        out = OAuth2AuthCodeAuthProfile(
+            CLIENT_ID="cid", CLIENT_SECRET="csec", ACCESS_TOKEN="at"
+        ).emit(TargetFamily.HTTP)
+        assert "client_id" not in out and "access_token" not in out
