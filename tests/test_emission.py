@@ -244,3 +244,24 @@ class TestCertificate:
         from mountainash_auth_client import CertificateAuthProfile
         with pytest.raises(ValueError, match="PRIVATE_KEY_PATH or PRIVATE_KEY"):
             CertificateAuthProfile().emit(TargetFamily.PARAMIKO)
+
+
+@pytest.mark.unit
+class TestKerberos:
+    def test_paramiko_gss_flags_default_service(self):
+        from mountainash_auth_client import KerberosAuthProfile
+        out = KerberosAuthProfile().emit(TargetFamily.PARAMIKO)
+        # SERVICE_NAME defaults to "postgres"; mirrors SSHKerberosStrategy(gss_host=SERVICE_NAME).
+        assert out == {"gss_auth": True, "gss_host": "postgres"}
+
+    def test_paramiko_gss_flags_custom_service(self):
+        from mountainash_auth_client import KerberosAuthProfile
+        out = KerberosAuthProfile(SERVICE_NAME="trino").emit(TargetFamily.PARAMIKO)
+        assert out == {"gss_auth": True, "gss_host": "trino"}
+
+    def test_layers_onto_base(self):
+        from mountainash_auth_client import KerberosAuthProfile
+        out = KerberosAuthProfile(SERVICE_NAME="trino").emit(
+            TargetFamily.PARAMIKO, base={"hostname": "h"}
+        )
+        assert out == {"hostname": "h", "gss_auth": True, "gss_host": "trino"}

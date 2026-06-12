@@ -3,9 +3,23 @@ from pathlib import Path
 
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
+from ..targets import TargetFamily
 from .registry import register
 
 __all__ = ["KerberosAuthProfile", "KERBEROS_SPEC"]
+
+
+def _gss_flags(profile, kw):
+    """Render paramiko GSS/Kerberos connect flags.
+
+    Mirrors the old ``SSHKerberosStrategy(gss_host=SERVICE_NAME)``: enable
+    ``gss_auth`` and set ``gss_host`` from SERVICE_NAME (gss_kex stays off).
+    """
+    out = {**kw, "gss_auth": True}
+    if profile.SERVICE_NAME is not None:
+        out["gss_host"] = profile.SERVICE_NAME
+    return out
+
 
 KERBEROS_SPEC = ProfileSpec(
     name="kerberos",
@@ -21,3 +35,4 @@ KERBEROS_SPEC = ProfileSpec(
 @register
 class KerberosAuthProfile(Profile):
     __spec__ = KERBEROS_SPEC
+    __adapters__ = {TargetFamily.PARAMIKO: _gss_flags}
