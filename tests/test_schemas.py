@@ -47,10 +47,10 @@ class TestTokenAuth:
         assert instance.profile_name == "token"
 
     def test_default_kwargs(self):
+        # token is now adapter-only (HTTP Bearer); no bare driver_key.
         cls = AUTH_REGISTRY.get_settings_class("token")
         instance = cls(TOKEN="my-bearer-token")
-        result = instance._default_kwargs()
-        assert result["token"] == "my-bearer-token"
+        assert instance._default_kwargs() == {}
 
 
 class TestJWTAuth:
@@ -65,8 +65,7 @@ class TestJWTAuth:
     def test_default_kwargs(self):
         cls = AUTH_REGISTRY.get_settings_class("jwt")
         instance = cls(TOKEN="eyJhbGciOi...")
-        result = instance._default_kwargs()
-        assert result["token"] == "eyJhbGciOi..."
+        assert instance._default_kwargs() == {}
 
 
 class TestOAuth2Auth:

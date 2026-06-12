@@ -54,3 +54,35 @@ class TestRequireParamiko:
         msg = str(exc_info.value)
         assert "SSH key/Kerberos auth requires paramiko" in msg
         assert "pip install mountainash-auth-client[sftp]" in msg
+
+
+@pytest.mark.unit
+class TestBearer:
+    def test_token_http(self):
+        from mountainash_auth_client import TokenAuthProfile
+        out = TokenAuthProfile(TOKEN="abc").emit(TargetFamily.HTTP)
+        assert out == {"headers": {"Authorization": "Bearer abc"}}
+
+    def test_jwt_http(self):
+        from mountainash_auth_client import JWTAuthProfile
+        out = JWTAuthProfile(TOKEN="eyJ").emit(TargetFamily.HTTP)
+        assert out == {"headers": {"Authorization": "Bearer eyJ"}}
+
+    def test_layers_onto_base_headers_copy_on_write(self):
+        from mountainash_auth_client import TokenAuthProfile
+        base = {"headers": {"X-Trace": "1"}, "timeout": 5}
+        out = TokenAuthProfile(TOKEN="abc").emit(TargetFamily.HTTP, base=base)
+        assert out["headers"] == {"X-Trace": "1", "Authorization": "Bearer abc"}
+        assert out["timeout"] == 5
+        # base untouched (copy-on-write).
+        assert base["headers"] == {"X-Trace": "1"}
+
+    def test_targeted_no_target_raises(self):
+        from mountainash_auth_client import TokenAuthProfile
+        with pytest.raises(ValueError, match="target-scoped"):
+            TokenAuthProfile(TOKEN="abc").emit()
+
+    def test_empty_token_emits_nothing(self):
+        # Matches the old resolver truthiness: a falsy token yields no header.
+        from mountainash_auth_client import TokenAuthProfile
+        assert TokenAuthProfile(TOKEN="").emit(TargetFamily.HTTP) == {}
