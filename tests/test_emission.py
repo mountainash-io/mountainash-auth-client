@@ -181,3 +181,29 @@ class TestOAuth2AuthCode:
             CLIENT_ID="cid", CLIENT_SECRET="csec", ACCESS_TOKEN="at"
         ).emit(TargetFamily.HTTP)
         assert "client_id" not in out and "access_token" not in out
+
+
+@pytest.mark.unit
+class TestOAuth1:
+    def test_http_installs_authlib_signer(self):
+        from mountainash_auth_client import OAuth1AuthProfile
+        OAuth1Auth = pytest.importorskip(
+            "authlib.integrations.httpx_client"
+        ).OAuth1Auth
+        out = OAuth1AuthProfile(
+            CONSUMER_KEY="ck", CONSUMER_SECRET="cs",
+            ACCESS_TOKEN="at", ACCESS_TOKEN_SECRET="ats",
+        ).emit(TargetFamily.HTTP)
+        assert set(out) == {"auth"}
+        assert isinstance(out["auth"], OAuth1Auth)
+        # authlib stores the consumer key as client_id.
+        assert out["auth"].client_id == "ck"
+
+    def test_no_stray_consumer_fields(self):
+        from mountainash_auth_client import OAuth1AuthProfile
+        pytest.importorskip("authlib.integrations.httpx_client")
+        out = OAuth1AuthProfile(
+            CONSUMER_KEY="ck", CONSUMER_SECRET="cs",
+            ACCESS_TOKEN="at", ACCESS_TOKEN_SECRET="ats",
+        ).emit(TargetFamily.HTTP)
+        assert "consumer_key" not in out and "consumer_secret" not in out
