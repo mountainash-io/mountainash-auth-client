@@ -79,24 +79,25 @@ def backend():
     return b
 
 
-class TestCallbackServerPassthrough:
-    def test_connect_forwards_callback_server_to_authorize(self, monkeypatch, backend):
-        sentinel = object()
+class TestConnectUsesResolver:
+    def test_connect_builds_client_from_resolved_pair(self, monkeypatch, backend):
         captured = {}
 
-        class FakeFlow:
-            def __init__(self, spec):
-                pass
-
-            def authorize(self, **kwargs):
-                captured.update(kwargs)
-                return {"oauth_token": "AT", "oauth_token_secret": "ATS"}
+        def fake_resolve(self, auth_profile, *, auto_authorize=False, callback_server=None):
+            captured["callback_server"] = callback_server
+            return ("AT", "ATS")
 
         monkeypatch.setattr(
-            "mountainash_auth_client.connections.oauth1.connection.OAuth1Flow", FakeFlow
+            "mountainash_auth_client.connections.oauth1.flow.OAuth1Flow.resolve_token_pair",
+            fake_resolve,
         )
-        monkeypatch.setattr(FakeProvider, "_build_client", lambda self, tokens, auth: None)
-
+        built = {}
+        monkeypatch.setattr(
+            FakeProvider, "_build_client",
+            lambda self, tokens, auth: built.update(tokens),
+        )
+        sentinel = object()
         provider = FakeProvider()
         provider.connect(FakeAuth(), auto_authorize=True, callback_server=sentinel)
+        assert built == {"oauth_token": "AT", "oauth_token_secret": "ATS"}
         assert captured["callback_server"] is sentinel
