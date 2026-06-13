@@ -6,9 +6,14 @@ from urllib.parse import urlencode
 
 import httpx
 
-from mountainash_auth_client.errors import MalformedCallbackError, TokenExchangeError
+from mountainash_auth_client.errors import (
+    AuthorizationRequired,
+    MalformedCallbackError,
+    TokenExchangeError,
+)
 from mountainash_auth_client.connections._optional import require_authlib
 from mountainash_auth_client.connections.server.factory import resolve_callback_factory
+from mountainash_settings.secrets.registry import get_secrets_backend
 
 if TYPE_CHECKING:
     from mountainash_settings import ProfileSpec
@@ -24,6 +29,7 @@ class OAuth1Flow:
         *,
         callback_server: CallbackServerFactory | None = None,
     ) -> None:
+        self._spec = spec
         self._metadata = spec.metadata
         self._callback_server = callback_server
 
@@ -91,6 +97,38 @@ class OAuth1Flow:
             "oauth_token": token["oauth_token"],
             "oauth_token_secret": token["oauth_token_secret"],
         }
+
+    def resolve_token_pair(
+        self,
+        auth_profile,
+        *,
+        auto_authorize: bool = False,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> tuple[str, str]:
+        """Resolve an OAuth1 access token pair: cached → authorize → persist.
+
+        Returns ``(oauth_token, oauth_token_secret)``. Raises
+        ``AuthorizationRequired`` when no cached pair exists and
+        ``auto_authorize`` is False.
+        """
+        provider = self._spec.name
+        backend = get_secrets_backend(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER)
+        key = auth_profile.persist_key()
+        tokens = backend.get(key)
+
+        if tokens and tokens.get("oauth_token"):
+            return tokens["oauth_token"], tokens["oauth_token_secret"]
+
+        if auto_authorize:
+            new_tokens = self.authorize(
+                consumer_key=auth_profile.CONSUMER_KEY,
+                consumer_secret=auth_profile.CONSUMER_SECRET.get_secret_value(),
+                callback_server=callback_server,
+            )
+            backend.set(key, new_tokens)
+            return new_tokens["oauth_token"], new_tokens["oauth_token_secret"]
+
+        raise AuthorizationRequired(provider=provider, user="default")
 
     def authorize(
         self,
