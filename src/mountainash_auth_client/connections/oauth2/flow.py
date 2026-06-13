@@ -12,11 +12,13 @@ import httpx
 
 from mountainash_auth_client.errors import (
     AuthorizationDeniedError,
+    AuthorizationRequired,
     MalformedCallbackError,
     TokenExchangeError,
     TokenRefreshError,
 )
 from mountainash_auth_client.connections.server.factory import resolve_callback_factory
+from mountainash_settings.secrets.registry import get_secrets_backend
 
 if TYPE_CHECKING:
     from mountainash_settings import ProfileSpec
@@ -206,6 +208,66 @@ class OAuthFlow:
         if token_expires_at is None:
             return False
         return time.time() >= (token_expires_at - buffer_seconds)
+
+    def resolve_access_token(
+        self,
+        auth_profile,
+        *,
+        auto_authorize: bool = False,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> str:
+        """Resolve a valid access token: cached → refresh → authorize → persist.
+
+        Client construction is the caller's responsibility. Raises
+        ``AuthorizationRequired`` when no usable token exists and
+        ``auto_authorize`` is False. Uses the fail-closed ``if not
+        access_token`` guard — an empty cached token is never returned.
+        """
+        provider = self._spec.name
+        backend = get_secrets_backend(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER)
+        key = auth_profile.persist_key()
+        tokens = backend.get(key)
+
+        access_token: str | None = None
+
+        if tokens and not self.is_expired(tokens.get("token_expires_at")):
+            access_token = tokens["access_token"]
+        elif tokens and tokens.get("refresh_token"):
+            with backend.transaction(key):
+                tokens = backend.get(key)
+                if tokens and not self.is_expired(tokens.get("token_expires_at")):
+                    access_token = tokens["access_token"]
+                else:
+                    try:
+                        new_tokens = self.refresh(
+                            refresh_token=tokens["refresh_token"],
+                            client_id=auth_profile.CLIENT_ID,
+                            client_secret=auth_profile.CLIENT_SECRET.get_secret_value(),
+                        )
+                    except Exception:
+                        backend.delete(key)
+                        if not auto_authorize:
+                            raise AuthorizationRequired(provider=provider, user="default")
+                    else:
+                        backend.set(key, new_tokens)
+                        access_token = new_tokens["access_token"]
+
+        if not access_token and auto_authorize:
+            new_tokens = self.authorize(
+                client_id=auth_profile.CLIENT_ID,
+                client_secret=auth_profile.CLIENT_SECRET.get_secret_value(),
+                scope=auth_profile.SCOPE,
+                callback_server=callback_server,
+            )
+            backend.set(key, new_tokens)
+            access_token = new_tokens["access_token"]
+
+        # Fail closed: no usable token — nothing cached/refreshed, authorize
+        # disabled, OR authorize itself returned an empty token → raise.
+        if not access_token:
+            raise AuthorizationRequired(provider=provider, user="default")
+
+        return access_token
 
     def authorize(
         self,
