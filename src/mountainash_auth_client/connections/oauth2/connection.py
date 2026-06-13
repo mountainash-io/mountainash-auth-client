@@ -5,9 +5,7 @@ from typing import TYPE_CHECKING, ClassVar, Self
 
 import httpx
 
-from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
-from mountainash_settings.secrets.registry import get_secrets_backend
 
 if TYPE_CHECKING:
     from mountainash_settings import ProfileSpec
@@ -32,50 +30,11 @@ class OAuth2Connection:
         auto_authorize: bool = False,
         callback_server: CallbackServerFactory | None = None,
     ) -> Self:
-        provider = self._spec.name
-        flow = OAuthFlow(self._spec)
-
-        backend = get_secrets_backend(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER)
-        key = auth_profile.persist_key()
-        tokens = backend.get(key)
-
-        access_token: str | None = None
-
-        if tokens and not flow.is_expired(tokens.get("token_expires_at")):
-            access_token = tokens["access_token"]
-        elif tokens and tokens.get("refresh_token"):
-            with backend.transaction(key):
-                tokens = backend.get(key)
-                if tokens and not flow.is_expired(tokens.get("token_expires_at")):
-                    access_token = tokens["access_token"]
-                else:
-                    try:
-                        new_tokens = flow.refresh(
-                            refresh_token=tokens["refresh_token"],
-                            client_id=auth_profile.CLIENT_ID,
-                            client_secret=auth_profile.CLIENT_SECRET.get_secret_value(),
-                        )
-                    except Exception:
-                        backend.delete(key)
-                        if not auto_authorize:
-                            raise AuthorizationRequired(provider=provider, user="default")
-                    else:
-                        backend.set(key, new_tokens)
-                        access_token = new_tokens["access_token"]
-
-        if access_token is None:
-            if auto_authorize:
-                new_tokens = flow.authorize(
-                    client_id=auth_profile.CLIENT_ID,
-                    client_secret=auth_profile.CLIENT_SECRET.get_secret_value(),
-                    scope=auth_profile.SCOPE,
-                    callback_server=callback_server,
-                )
-                backend.set(key, new_tokens)
-                access_token = new_tokens["access_token"]
-            else:
-                raise AuthorizationRequired(provider=provider, user="default")
-
+        access_token = OAuthFlow(self._spec).resolve_access_token(
+            auth_profile,
+            auto_authorize=auto_authorize,
+            callback_server=callback_server,
+        )
         self._client = httpx.Client(
             base_url=self._base_url,
             headers={"Authorization": f"Bearer {access_token}"},

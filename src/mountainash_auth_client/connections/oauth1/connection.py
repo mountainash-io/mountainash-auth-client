@@ -5,10 +5,8 @@ from typing import TYPE_CHECKING, ClassVar, Self
 
 import httpx
 
-from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.connections._optional import require_authlib
 from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
-from mountainash_settings.secrets.registry import get_secrets_backend
 
 if TYPE_CHECKING:
     from mountainash_settings import ProfileSpec
@@ -27,28 +25,16 @@ class OAuth1Connection:
         auto_authorize: bool = False,
         callback_server: CallbackServerFactory | None = None,
     ) -> Self:
-        provider = self._spec.name
-
-        backend = get_secrets_backend(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER)
-        key = auth_profile.persist_key()
-        tokens = backend.get(key)
-
-        if tokens and tokens.get("oauth_token"):
-            self._build_client(tokens, auth_profile)
-            return self
-
-        if auto_authorize:
-            flow = OAuth1Flow(self._spec)
-            new_tokens = flow.authorize(
-                consumer_key=auth_profile.CONSUMER_KEY,
-                consumer_secret=auth_profile.CONSUMER_SECRET.get_secret_value(),
-                callback_server=callback_server,
-            )
-            backend.set(key, new_tokens)
-            self._build_client(new_tokens, auth_profile)
-            return self
-
-        raise AuthorizationRequired(provider=provider, user="default")
+        oauth_token, oauth_token_secret = OAuth1Flow(self._spec).resolve_token_pair(
+            auth_profile,
+            auto_authorize=auto_authorize,
+            callback_server=callback_server,
+        )
+        self._build_client(
+            {"oauth_token": oauth_token, "oauth_token_secret": oauth_token_secret},
+            auth_profile,
+        )
+        return self
 
     def _build_client(self, tokens: dict[str, str], auth_profile: OAuth1AuthProfile) -> None:
         OAuth1Auth = require_authlib("OAuth1Auth")
