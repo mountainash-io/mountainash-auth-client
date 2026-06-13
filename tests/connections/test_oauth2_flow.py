@@ -346,9 +346,7 @@ class TestAuthorizeCallbackValidation:
             flow.authorize("cid", "csec", callback_server=lambda: _NoCode())
 
 
-import time as _time  # noqa: E402 — already imported at top; deduplicated below
 from contextlib import contextmanager
-from unittest.mock import patch
 
 from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_settings.secrets.registry import clear_secrets_registry, register_secrets_backend
