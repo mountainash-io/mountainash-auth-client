@@ -50,3 +50,13 @@ def require_authlib(*attrs: str) -> Any:
         extra="oauth1",
         feature="OAuth1",
     )
+
+
+def require_paramiko(*attrs: str) -> Any:
+    """Load paramiko (or named attributes), behind the ``[sftp]`` extra."""
+    return require(
+        "paramiko",
+        *attrs,
+        extra="sftp",
+        feature="SSH key/Kerberos auth",
+    )

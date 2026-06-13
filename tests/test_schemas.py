@@ -30,11 +30,14 @@ class TestPasswordAuth:
         assert instance.profile_name == "password"
 
     def test_default_kwargs(self):
+        # USERNAME/PASSWORD are PARAMIKO-scoped now; untargeted emit is empty.
         cls = AUTH_REGISTRY.get_settings_class("password")
         instance = cls(USERNAME="alice", PASSWORD="hunter2")
-        result = instance._default_kwargs()
-        assert result["user"] == "alice"
-        assert result["password"] == "hunter2"
+        assert instance._default_kwargs() == {}
+        assert instance._default_kwargs("paramiko") == {
+            "username": "alice",
+            "password": "hunter2",
+        }
 
 
 class TestTokenAuth:
@@ -47,10 +50,10 @@ class TestTokenAuth:
         assert instance.profile_name == "token"
 
     def test_default_kwargs(self):
+        # token is now adapter-only (HTTP Bearer); no bare driver_key.
         cls = AUTH_REGISTRY.get_settings_class("token")
         instance = cls(TOKEN="my-bearer-token")
-        result = instance._default_kwargs()
-        assert result["token"] == "my-bearer-token"
+        assert instance._default_kwargs() == {}
 
 
 class TestJWTAuth:
@@ -65,8 +68,7 @@ class TestJWTAuth:
     def test_default_kwargs(self):
         cls = AUTH_REGISTRY.get_settings_class("jwt")
         instance = cls(TOKEN="eyJhbGciOi...")
-        result = instance._default_kwargs()
-        assert result["token"] == "eyJhbGciOi..."
+        assert instance._default_kwargs() == {}
 
 
 class TestOAuth2Auth:
@@ -79,17 +81,16 @@ class TestOAuth2Auth:
         assert instance.profile_name == "oauth2"
 
     def test_default_kwargs_token(self):
+        # TOKEN now renders via the HTTP Bearer adapter, not a bare driver_key.
         cls = AUTH_REGISTRY.get_settings_class("oauth2")
         instance = cls(TOKEN="access-tok")
-        result = instance._default_kwargs()
-        assert result["token"] == "access-tok"
+        assert instance._default_kwargs() == {}
 
     def test_default_kwargs_client_credentials(self):
         cls = AUTH_REGISTRY.get_settings_class("oauth2")
         instance = cls(CLIENT_ID="cid", CLIENT_SECRET="csec")
-        result = instance._default_kwargs()
-        assert result["client_id"] == "cid"
-        assert result["client_secret"] == "csec"
+        # client-credentials are flow inputs, not emitted kwargs.
+        assert instance._default_kwargs() == {}
 
     def test_all_fields_optional(self):
         cls = AUTH_REGISTRY.get_settings_class("oauth2")
@@ -148,13 +149,15 @@ class TestIAMAuth:
     def test_construction_ambient(self):
         cls = AUTH_REGISTRY.get_settings_class("iam")
         instance = cls()
-        assert instance._default_kwargs() == {}
+        assert instance._default_kwargs("boto") == {}
 
     def test_construction_with_role(self):
+        # ROLE_ARN is stored as a field but no longer emitted (config, not a
+        # boto3.client kwarg).
         cls = AUTH_REGISTRY.get_settings_class("iam")
         instance = cls(ROLE_ARN="arn:aws:iam::123:role/myrole")
-        result = instance._default_kwargs()
-        assert result["iam_role_arn"] == "arn:aws:iam::123:role/myrole"
+        assert instance.ROLE_ARN == "arn:aws:iam::123:role/myrole"
+        assert instance._default_kwargs("boto") == {}
 
     def test_construction_with_keys(self):
         cls = AUTH_REGISTRY.get_settings_class("iam")
@@ -163,7 +166,7 @@ class TestIAMAuth:
             SECRET_ACCESS_KEY="secret",
             SESSION_TOKEN="tok",
         )
-        result = instance._default_kwargs()
+        result = instance._default_kwargs("boto")
         assert result["aws_access_key_id"] == "AKID"
         assert result["aws_secret_access_key"] == "secret"
         assert result["aws_session_token"] == "tok"

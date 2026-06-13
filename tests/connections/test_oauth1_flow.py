@@ -38,30 +38,33 @@ class TestOAuth1FlowAuthlib:
 
     def test_request_token_requires_authlib(self, monkeypatch):
         """If authlib is not installed, request_token raises ImportError."""
-        import builtins
-        real_import = builtins.__import__
+        # Patch importlib.import_module (the seam require_authlib uses): a
+        # builtins.__import__ patch is bypassed once authlib is cached in
+        # sys.modules, which it is when authlib is installed in the test env.
+        import importlib
+        real_import_module = importlib.import_module
 
-        def mock_import(name, *args, **kwargs):
+        def mock_import_module(name, *args, **kwargs):
             if name == "authlib.integrations.httpx_client":
                 raise ImportError("No module named 'authlib'")
-            return real_import(name, *args, **kwargs)
+            return real_import_module(name, *args, **kwargs)
 
-        monkeypatch.setattr(builtins, "__import__", mock_import)
+        monkeypatch.setattr(importlib, "import_module", mock_import_module)
         flow = OAuth1Flow(FakeSpec())
         with pytest.raises(ImportError, match="authlib"):
             flow.request_token("consumer_key", "consumer_secret")
 
     def test_exchange_verifier_requires_authlib(self, monkeypatch):
         """If authlib is not installed, exchange_verifier raises ImportError."""
-        import builtins
-        real_import = builtins.__import__
+        import importlib
+        real_import_module = importlib.import_module
 
-        def mock_import(name, *args, **kwargs):
+        def mock_import_module(name, *args, **kwargs):
             if name == "authlib.integrations.httpx_client":
                 raise ImportError("No module named 'authlib'")
-            return real_import(name, *args, **kwargs)
+            return real_import_module(name, *args, **kwargs)
 
-        monkeypatch.setattr(builtins, "__import__", mock_import)
+        monkeypatch.setattr(importlib, "import_module", mock_import_module)
         flow = OAuth1Flow(FakeSpec())
         with pytest.raises(ImportError, match="authlib"):
             flow.exchange_verifier("ck", "cs", "tok", "tok_sec", "verifier")

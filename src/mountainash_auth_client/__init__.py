@@ -1,5 +1,6 @@
 """mountainash-auth-client — client-side authentication for the mountainash ecosystem."""
 from mountainash_auth_client.constants import CONST_AUTH_PROFILES
+from mountainash_auth_client.targets import TargetFamily
 from mountainash_auth_client.errors import (
     AuthorizationDeniedError,
     AuthorizationRequired,
@@ -67,6 +68,7 @@ __all__ = [
     "OAuthFlow",
     "PasswordAuthProfile",
     "ServiceAccountAuthProfile",
+    "TargetFamily",
     "TokenAuthProfile",
     "TokenExchangeError",
     "TokenRefreshError",
