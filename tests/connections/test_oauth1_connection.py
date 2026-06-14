@@ -59,6 +59,11 @@ class TestConnect:
         captured = {}
 
         def fake_resolve(self, auth_profile, *, auto_authorize=False, callback_server=None):
+            # `self` is the OAuth1Flow instance connect() built; capturing its
+            # resolver proves the connection forwarded resolver= into the flow
+            # constructor (this test mocks resolve_token_pair, so the flow's own
+            # None-guard can't catch a dropped forward — assert it directly).
+            captured["flow_resolver"] = self._resolver
             captured["auto_authorize"] = auto_authorize
             captured["callback_server"] = callback_server
             return ("AT", "ATS")
@@ -82,6 +87,7 @@ class TestConnect:
             auto_authorize=True, callback_server=sentinel)
         conn.connect()
 
+        assert captured["flow_resolver"] is resolver
         assert captured["auto_authorize"] is True
         assert captured["callback_server"] is sentinel
         assert str(conn.client.base_url) == "https://api.example.com"

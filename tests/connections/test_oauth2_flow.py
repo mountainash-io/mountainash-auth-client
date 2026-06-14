@@ -410,6 +410,25 @@ class TestResolveAccessToken:
         assert token == "new_tok"
         assert rat_env.tokens.get("rat.oauth2")["access_token"] == "new_tok"
 
+    def test_persists_under_oauth_namespace_in_raw_store(self, rat_env):
+        # Lock the on-store key the flow actually writes: NamespacedStore("oauth")
+        # must dot-prefix so the key stays FilesystemStore-compatible (its
+        # _key_to_paths splits on "." and rejects "/" segments). Reading through
+        # rat_env.tokens hides the delimiter; inspect the RAW store to pin it.
+        rat_env.tokens.set("rat.oauth2", {
+            "access_token": "old",
+            "refresh_token": "r_xyz",
+            "token_expires_at": int(time.time()) - 1000,
+        })
+        with patch.object(OAuthFlow, "refresh", return_value={
+            "access_token": "new_tok",
+            "refresh_token": "new_r",
+            "token_expires_at": int(time.time()) + 3600,
+        }):
+            OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+        assert rat_env.store.get("oauth.rat.oauth2")["access_token"] == "new_tok"
+        assert rat_env.store.get("rat.oauth2") is None
+
     def test_persist_failure_after_refresh_propagates_and_keeps_token(self, rat_env):
         rat_env.tokens.set("rat.oauth2", {
             "access_token": "old",
