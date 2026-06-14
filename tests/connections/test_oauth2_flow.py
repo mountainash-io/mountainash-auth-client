@@ -340,28 +340,10 @@ class TestAuthorizeCallbackValidation:
             flow.authorize("cid", "csec", callback_server=lambda: _NoCode())
 
 
-from contextlib import contextmanager
+from types import SimpleNamespace
 
 from mountainash_auth_client.errors import AuthorizationRequired
-from mountainash_settings.secrets.registry import clear_secrets_registry, register_secrets_backend
-
-
-class _MemBackend:
-    def __init__(self):
-        self._store = {}
-
-    def get(self, key):
-        return self._store.get(key)
-
-    def set(self, key, data):
-        self._store[key] = data
-
-    def delete(self, key):
-        self._store.pop(key, None)
-
-    @contextmanager
-    def transaction(self, key):
-        yield
+from mountainash_secrets import InMemoryStore, NamespacedStore, RegistryResolver
 
 
 class _Auth:
@@ -376,46 +358,45 @@ class _Auth:
         return "rat.oauth2"
 
 
-@pytest.fixture(autouse=True)
-def _clean_rat():
-    clear_secrets_registry()
-    yield
-    clear_secrets_registry()
-
-
 @pytest.fixture
-def rat_backend():
-    b = _MemBackend()
-    register_secrets_backend("rat_mem", b)
-    return b
+def rat_env():
+    # A real mountainash-secrets store resolved by name exactly as the flow does.
+    # `tokens` is the "oauth"-namespaced view the flow writes through, so tests
+    # seed/read with the bare persist_key and the prefix is handled for them.
+    store = InMemoryStore()
+    return SimpleNamespace(
+        resolver=RegistryResolver({"rat_mem": store}),
+        tokens=NamespacedStore(store, "oauth"),
+        store=store,
+    )
 
 
 class TestResolveAccessToken:
-    def test_returns_cached_unexpired_token(self, rat_backend):
-        rat_backend.set("rat.oauth2", {
+    def test_returns_cached_unexpired_token(self, rat_env):
+        rat_env.tokens.set("rat.oauth2", {
             "access_token": "cached_tok",
             "refresh_token": "r",
             "token_expires_at": int(time.time()) + 3600,
         })
-        token = OAuthFlow(_provider()).resolve_access_token(_Auth())
+        token = OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
         assert token == "cached_tok"
 
-    def test_raises_when_no_token_and_not_auto(self, rat_backend):
+    def test_raises_when_no_token_and_not_auto(self, rat_env):
         with pytest.raises(AuthorizationRequired) as exc:
-            OAuthFlow(_provider()).resolve_access_token(_Auth())
+            OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
         assert exc.value.provider == "testprovider"
 
-    def test_raises_when_expired_and_no_refresh(self, rat_backend):
-        rat_backend.set("rat.oauth2", {
+    def test_raises_when_expired_and_no_refresh(self, rat_env):
+        rat_env.tokens.set("rat.oauth2", {
             "access_token": "old",
             "refresh_token": None,
             "token_expires_at": int(time.time()) - 1000,
         })
         with pytest.raises(AuthorizationRequired):
-            OAuthFlow(_provider()).resolve_access_token(_Auth())
+            OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
 
-    def test_refresh_persists_and_returns_new_token(self, rat_backend):
-        rat_backend.set("rat.oauth2", {
+    def test_refresh_persists_and_returns_new_token(self, rat_env):
+        rat_env.tokens.set("rat.oauth2", {
             "access_token": "old",
             "refresh_token": "r_xyz",
             "token_expires_at": int(time.time()) - 1000,
@@ -425,12 +406,31 @@ class TestResolveAccessToken:
             "refresh_token": "new_r",
             "token_expires_at": int(time.time()) + 3600,
         }):
-            token = OAuthFlow(_provider()).resolve_access_token(_Auth())
+            token = OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
         assert token == "new_tok"
-        assert rat_backend.get("rat.oauth2")["access_token"] == "new_tok"
+        assert rat_env.tokens.get("rat.oauth2")["access_token"] == "new_tok"
 
-    def test_persist_failure_after_refresh_propagates_and_keeps_token(self, rat_backend):
-        rat_backend.set("rat.oauth2", {
+    def test_persists_under_oauth_namespace_in_raw_store(self, rat_env):
+        # Lock the on-store key the flow actually writes: NamespacedStore("oauth")
+        # must dot-prefix so the key stays FilesystemStore-compatible (its
+        # _key_to_paths splits on "." and rejects "/" segments). Reading through
+        # rat_env.tokens hides the delimiter; inspect the RAW store to pin it.
+        rat_env.tokens.set("rat.oauth2", {
+            "access_token": "old",
+            "refresh_token": "r_xyz",
+            "token_expires_at": int(time.time()) - 1000,
+        })
+        with patch.object(OAuthFlow, "refresh", return_value={
+            "access_token": "new_tok",
+            "refresh_token": "new_r",
+            "token_expires_at": int(time.time()) + 3600,
+        }):
+            OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+        assert rat_env.store.get("oauth.rat.oauth2")["access_token"] == "new_tok"
+        assert rat_env.store.get("rat.oauth2") is None
+
+    def test_persist_failure_after_refresh_propagates_and_keeps_token(self, rat_env):
+        rat_env.tokens.set("rat.oauth2", {
             "access_token": "old",
             "refresh_token": "r_xyz",
             "token_expires_at": int(time.time()) - 1000,
@@ -439,17 +439,17 @@ class TestResolveAccessToken:
         def boom(key, data):
             raise RuntimeError("disk full")
 
-        rat_backend.set = boom
+        rat_env.store.set = boom
         with patch.object(OAuthFlow, "refresh", return_value={
             "access_token": "new_tok",
             "refresh_token": "new_r",
             "token_expires_at": int(time.time()) + 3600,
         }):
             with pytest.raises(RuntimeError, match="disk full"):
-                OAuthFlow(_provider()).resolve_access_token(_Auth())
-        assert rat_backend.get("rat.oauth2")["refresh_token"] == "r_xyz"
+                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+        assert rat_env.tokens.get("rat.oauth2")["refresh_token"] == "r_xyz"
 
-    def test_auto_authorize_forwards_callback_server(self, rat_backend):
+    def test_auto_authorize_forwards_callback_server(self, rat_env):
         sentinel = object()
         captured = {}
 
@@ -458,27 +458,28 @@ class TestResolveAccessToken:
             return {"access_token": "auth_tok", "refresh_token": "", "token_expires_at": None}
 
         with patch.object(OAuthFlow, "authorize", side_effect=fake_authorize):
-            token = OAuthFlow(_provider()).resolve_access_token(
+            token = OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(
                 _Auth(), auto_authorize=True, callback_server=sentinel)
         assert token == "auth_tok"
         assert captured["callback_server"] is sentinel
 
-    def test_empty_cached_token_is_failclosed(self, rat_backend):
+    def test_empty_cached_token_is_failclosed(self, rat_env):
         # An empty-string access_token with no refresh path must NOT be returned;
         # it fails closed to AuthorizationRequired (the `if not access_token` guard).
-        rat_backend.set("rat.oauth2", {
+        rat_env.tokens.set("rat.oauth2", {
             "access_token": "",
             "refresh_token": None,
             "token_expires_at": int(time.time()) + 3600,
         })
         with pytest.raises(AuthorizationRequired):
-            OAuthFlow(_provider()).resolve_access_token(_Auth())
+            OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
 
-    def test_empty_token_from_authorize_is_failclosed(self, rat_backend):
+    def test_empty_token_from_authorize_is_failclosed(self, rat_env):
         # Even when authorize() succeeds, an empty access_token must fail closed
         # rather than be handed back as a valid Bearer (post-authorize guard).
         with patch.object(OAuthFlow, "authorize", return_value={
             "access_token": "", "refresh_token": "", "token_expires_at": None,
         }):
             with pytest.raises(AuthorizationRequired):
-                OAuthFlow(_provider()).resolve_access_token(_Auth(), auto_authorize=True)
+                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(
+                    _Auth(), auto_authorize=True)

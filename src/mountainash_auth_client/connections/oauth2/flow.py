@@ -18,9 +18,10 @@ from mountainash_auth_client.errors import (
     TokenRefreshError,
 )
 from mountainash_auth_client.connections.server.factory import resolve_callback_factory
-from mountainash_settings.secrets.registry import get_secrets_backend
+from mountainash_secrets import ClearableStore, NamespacedStore
 
 if TYPE_CHECKING:
+    from mountainash_secrets import SecretStoreResolver
     from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
@@ -32,9 +33,11 @@ class OAuthFlow:
         self,
         provider: OAuth2ProviderProfile,
         *,
+        resolver: SecretStoreResolver | None = None,
         callback_server: CallbackServerFactory | None = None,
     ) -> None:
         self._provider = provider
+        self._resolver = resolver
         self._pending_verifiers: dict[str, str] = {}
         self._last_state: str | None = None
         self._callback_server = callback_server
@@ -223,7 +226,12 @@ class OAuthFlow:
         access_token`` guard — an empty cached token is never returned.
         """
         provider = self._provider.NAME
-        backend = get_secrets_backend(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER)
+        if self._resolver is None:
+            raise RuntimeError("OAuthFlow.resolve_access_token requires a resolver")
+        store = self._resolver.resolve_as(
+            auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER, ClearableStore
+        )
+        backend = NamespacedStore(store, "oauth")
         key = auth_profile.persist_key()
         tokens = backend.get(key)
 
