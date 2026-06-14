@@ -1,12 +1,14 @@
-"""Tests for OAuth1Connection."""
+"""Tests for the parameterised OAuth1Connection."""
 from __future__ import annotations
 
 import typing as t
 from contextlib import contextmanager
 
+import httpx
 import pytest
 
 from mountainash_auth_client.connections.oauth1.connection import OAuth1Connection
+from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
 from mountainash_settings.secrets.registry import (
     clear_secrets_registry,
     register_secrets_backend,
@@ -17,30 +19,28 @@ class _InMemoryBackend:
     def __init__(self):
         self._store: dict[str, dict[str, t.Any]] = {}
 
-    def get(self, key: str) -> dict[str, t.Any] | None:
+    def get(self, key):
         return self._store.get(key)
 
-    def set(self, key: str, data: dict[str, t.Any]) -> None:
+    def set(self, key, data):
         self._store[key] = data
 
-    def delete(self, key: str) -> None:
+    def delete(self, key):
         self._store.pop(key, None)
 
     @contextmanager
-    def transaction(self, key: str):
+    def transaction(self, key):
         yield
 
 
-class FakeSpec:
-    name = "testprovider_oauth1"
-
-    @property
-    def metadata(self):
-        return {
-            "request_token_url": "https://auth.example.com/request_token",
-            "authorize_url": "https://auth.example.com/authorize",
-            "access_token_url": "https://auth.example.com/access_token",
-        }
+def _provider():
+    return OAuth1ProviderProfile(
+        NAME="testprovider_oauth1",
+        REQUEST_TOKEN_URL="https://auth.example.com/request_token",
+        AUTHORIZE_URL="https://auth.example.com/authorize",
+        ACCESS_TOKEN_URL="https://auth.example.com/access_token",
+        BASE_URL="https://api.example.com",
+    )
 
 
 class FakeAuth:
@@ -52,17 +52,6 @@ class FakeAuth:
 
     def persist_key(self):
         return "test.oauth1"
-
-
-class FakeProvider(OAuth1Connection):
-    _spec = FakeSpec()
-    _base_url = "https://api.example.com"
-    _client = None
-
-    def disconnect(self):
-        if self._client:
-            self._client.close()
-        self._client = None
 
 
 @pytest.fixture(autouse=True)
@@ -79,11 +68,31 @@ def backend():
     return b
 
 
-class TestConnectUsesResolver:
-    def test_connect_builds_client_from_resolved_pair(self, monkeypatch, backend):
+class _StubSigner(httpx.Auth):
+    """A valid httpx auth object standing in for authlib's OAuth1Auth.
+
+    authlib is an OPTIONAL `[oauth1]` extra and is NOT installed in the local
+    dev venv, so the connection's real emit path (which calls
+    `require_authlib("OAuth1Auth")` inside `_oauth1_signer`) would raise
+    ImportError rather than build a client. Patching the `require_authlib`
+    seam to return this stub lets the wiring (resolved pair -> emit -> client
+    with provider base_url + an `auth` signer) be verified green in any env,
+    while still exercising the genuine two-stage emit.
+    """
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+    def auth_flow(self, request):
+        yield request
+
+
+class TestConnect:
+    def test_connect_builds_signed_client_from_resolved_pair(self, monkeypatch, backend):
         captured = {}
 
         def fake_resolve(self, auth_profile, *, auto_authorize=False, callback_server=None):
+            captured["auto_authorize"] = auto_authorize
             captured["callback_server"] = callback_server
             return ("AT", "ATS")
 
@@ -91,13 +100,26 @@ class TestConnectUsesResolver:
             "mountainash_auth_client.connections.oauth1.flow.OAuth1Flow.resolve_token_pair",
             fake_resolve,
         )
-        built = {}
+        def _stub_require_authlib(name):
+            assert name == "OAuth1Auth"
+            return _StubSigner
+
         monkeypatch.setattr(
-            FakeProvider, "_build_client",
-            lambda self, tokens, auth: built.update(tokens),
+            "mountainash_auth_client.schemas.oauth1.require_authlib",
+            _stub_require_authlib,
         )
         sentinel = object()
-        provider = FakeProvider()
-        provider.connect(FakeAuth(), auto_authorize=True, callback_server=sentinel)
-        assert built == {"oauth_token": "AT", "oauth_token_secret": "ATS"}
+        conn = OAuth1Connection(
+            _provider(), FakeAuth(), auto_authorize=True, callback_server=sentinel)
+        conn.connect()
+
+        assert captured["auto_authorize"] is True
         assert captured["callback_server"] is sentinel
+        assert str(conn.client.base_url) == "https://api.example.com"
+        assert isinstance(conn.client.auth, _StubSigner)
+        assert conn.client.auth.kwargs["token"] == "AT"
+        assert conn.client.auth.kwargs["token_secret"] == "ATS"
+
+    def test_client_none_before_connect(self):
+        conn = OAuth1Connection(_provider(), FakeAuth())
+        assert conn.client is None

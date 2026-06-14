@@ -9,19 +9,23 @@ import pytest
 
 from mountainash_auth_client.errors import TokenExchangeError, TokenRefreshError
 from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
+from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
 
 
-class FakeSpec:
-    def __init__(self, metadata=None):
-        self.metadata = metadata or {
-            "authorize_url": "https://auth.example.com/authorize",
-            "token_url": "https://auth.example.com/token",
-        }
+def _provider(**overrides):
+    base = dict(
+        NAME="testprovider",
+        AUTHORIZE_URL="https://auth.example.com/authorize",
+        TOKEN_URL="https://auth.example.com/token",
+        BASE_URL="https://api.example.com",
+    )
+    base.update(overrides)
+    return OAuth2ProviderProfile(**base)
 
 
 class TestBuildAuthorizeUrl:
     def test_returns_url_with_client_id(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         url, state = flow.build_authorize_url(
             client_id="my_client",
             redirect_uri="http://localhost:8080/callback",
@@ -30,7 +34,7 @@ class TestBuildAuthorizeUrl:
         assert "https://auth.example.com/authorize" in url
 
     def test_returns_url_with_state(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         url, state = flow.build_authorize_url(
             client_id="my_client",
             redirect_uri="http://localhost:8080/callback",
@@ -39,7 +43,7 @@ class TestBuildAuthorizeUrl:
         assert len(state) > 0
 
     def test_no_pkce_by_default(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         url, _ = flow.build_authorize_url(
             client_id="my_client",
             redirect_uri="http://localhost:8080/callback",
@@ -47,12 +51,7 @@ class TestBuildAuthorizeUrl:
         assert "code_challenge" not in url
 
     def test_pkce_adds_code_challenge_and_s256(self):
-        spec = FakeSpec(metadata={
-            "authorize_url": "https://auth.example.com/authorize",
-            "token_url": "https://auth.example.com/token",
-            "use_pkce": True,
-        })
-        flow = OAuthFlow(spec)
+        flow = OAuthFlow(_provider(USE_PKCE=True))
         url, _ = flow.build_authorize_url(
             client_id="pkce_client",
             redirect_uri="http://localhost:8080/callback",
@@ -61,7 +60,7 @@ class TestBuildAuthorizeUrl:
         assert "code_challenge_method=S256" in url
 
     def test_scope_included_when_provided(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         url, _ = flow.build_authorize_url(
             client_id="my_client",
             redirect_uri="http://localhost/cb",
@@ -72,7 +71,7 @@ class TestBuildAuthorizeUrl:
 
 class TestExchangeCode:
     def test_raises_token_exchange_error_on_http_error(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         mock_response = MagicMock()
         mock_response.status_code = 400
         mock_response.text = "Bad Request"
@@ -94,7 +93,7 @@ class TestExchangeCode:
             assert exc_info.value.url == "https://auth.example.com/token"
 
     def test_returns_token_dict_on_success(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -119,7 +118,7 @@ class TestExchangeCode:
         assert result["token_expires_at"] is not None
 
     def test_raises_on_invalid_json_response(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.text = "<html>not json</html>"
@@ -140,7 +139,7 @@ class TestExchangeCode:
             assert "Invalid JSON" in exc_info.value.body
 
     def test_raises_when_access_token_missing(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"error": "invalid_grant"}
@@ -160,12 +159,7 @@ class TestExchangeCode:
             assert "access_token" in exc_info.value.body
 
     def test_pkce_verifier_keyed_by_state_survives_second_authorize(self):
-        spec = FakeSpec(metadata={
-            "authorize_url": "https://auth.example.com/authorize",
-            "token_url": "https://auth.example.com/token",
-            "use_pkce": True,
-        })
-        flow = OAuthFlow(spec)
+        flow = OAuthFlow(_provider(USE_PKCE=True))
 
         # First flow generates a verifier bound to state_a.
         _, state_a = flow.build_authorize_url(
@@ -197,23 +191,23 @@ class TestExchangeCode:
 
 class TestValidateCallbackState:
     def test_matching_state_passes(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         flow._validate_callback_state({"state": "abc"}, "abc")
 
     def test_mismatched_state_raises(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         with pytest.raises(ValueError, match="CSRF"):
             flow._validate_callback_state({"state": "evil"}, "abc")
 
     def test_missing_state_raises(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         with pytest.raises(ValueError, match="CSRF"):
             flow._validate_callback_state({}, "abc")
 
 
 class TestRefresh:
     def test_raises_token_refresh_error_on_http_error(self):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         mock_response = MagicMock()
         mock_response.status_code = 401
         mock_response.text = "Unauthorized"
@@ -281,7 +275,7 @@ def _no_http(flow, monkeypatch, sink):
 
 class TestAuthorizeInjection:
     def test_uses_injected_server_redirect_uri_and_params(self, monkeypatch):
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         sink = {}
         _no_http(flow, monkeypatch, sink)
         result = flow.authorize("cid", "csec",
@@ -291,7 +285,7 @@ class TestAuthorizeInjection:
         assert result["access_token"] == "tok"
 
     def test_per_call_beats_construction_default(self, monkeypatch):
-        flow = OAuthFlow(FakeSpec(),
+        flow = OAuthFlow(_provider(),
                          callback_server=lambda: _EchoServer("https://CONSTRUCT/cb"))
         sink = {}
         _no_http(flow, monkeypatch, sink)
@@ -300,7 +294,7 @@ class TestAuthorizeInjection:
         assert sink["redirect_uri"] == "https://PERCALL/cb"
 
     def test_construction_default_shadows_redirect_mode(self, monkeypatch):
-        flow = OAuthFlow(FakeSpec(),
+        flow = OAuthFlow(_provider(),
                          callback_server=lambda: _EchoServer("https://CONSTRUCT/cb"))
         sink = {}
         _no_http(flow, monkeypatch, sink)
@@ -312,7 +306,7 @@ class TestAuthorizeInjection:
         monkeypatch.setattr(
             factory, "LocalCallbackServer",
             lambda port=0: _EchoServer(f"http://localhost/{port}/callback"))
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         sink = {}
         _no_http(flow, monkeypatch, sink)
         flow.authorize("cid", "csec")
@@ -329,7 +323,7 @@ class TestAuthorizeCallbackValidation:
                 return {"state": state, "error": "access_denied",
                         "error_description": "user declined"}
 
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         with pytest.raises(AuthorizationDeniedError) as ei:
             flow.authorize("cid", "csec", callback_server=lambda: _Denied())
         assert ei.value.error == "access_denied"
@@ -341,7 +335,7 @@ class TestAuthorizeCallbackValidation:
                 state = parse_qs(urlparse(authorize_url).query)["state"][0]
                 return {"state": state}
 
-        flow = OAuthFlow(FakeSpec())
+        flow = OAuthFlow(_provider())
         with pytest.raises(MalformedCallbackError):
             flow.authorize("cid", "csec", callback_server=lambda: _NoCode())
 
@@ -368,17 +362,6 @@ class _MemBackend:
     @contextmanager
     def transaction(self, key):
         yield
-
-
-class _Spec:
-    name = "testprovider"
-
-    @property
-    def metadata(self):
-        return {
-            "authorize_url": "https://auth.example.com/authorize",
-            "token_url": "https://auth.example.com/token",
-        }
 
 
 class _Auth:
@@ -414,12 +397,12 @@ class TestResolveAccessToken:
             "refresh_token": "r",
             "token_expires_at": int(time.time()) + 3600,
         })
-        token = OAuthFlow(_Spec()).resolve_access_token(_Auth())
+        token = OAuthFlow(_provider()).resolve_access_token(_Auth())
         assert token == "cached_tok"
 
     def test_raises_when_no_token_and_not_auto(self, rat_backend):
         with pytest.raises(AuthorizationRequired) as exc:
-            OAuthFlow(_Spec()).resolve_access_token(_Auth())
+            OAuthFlow(_provider()).resolve_access_token(_Auth())
         assert exc.value.provider == "testprovider"
 
     def test_raises_when_expired_and_no_refresh(self, rat_backend):
@@ -429,7 +412,7 @@ class TestResolveAccessToken:
             "token_expires_at": int(time.time()) - 1000,
         })
         with pytest.raises(AuthorizationRequired):
-            OAuthFlow(_Spec()).resolve_access_token(_Auth())
+            OAuthFlow(_provider()).resolve_access_token(_Auth())
 
     def test_refresh_persists_and_returns_new_token(self, rat_backend):
         rat_backend.set("rat.oauth2", {
@@ -442,7 +425,7 @@ class TestResolveAccessToken:
             "refresh_token": "new_r",
             "token_expires_at": int(time.time()) + 3600,
         }):
-            token = OAuthFlow(_Spec()).resolve_access_token(_Auth())
+            token = OAuthFlow(_provider()).resolve_access_token(_Auth())
         assert token == "new_tok"
         assert rat_backend.get("rat.oauth2")["access_token"] == "new_tok"
 
@@ -463,7 +446,7 @@ class TestResolveAccessToken:
             "token_expires_at": int(time.time()) + 3600,
         }):
             with pytest.raises(RuntimeError, match="disk full"):
-                OAuthFlow(_Spec()).resolve_access_token(_Auth())
+                OAuthFlow(_provider()).resolve_access_token(_Auth())
         assert rat_backend.get("rat.oauth2")["refresh_token"] == "r_xyz"
 
     def test_auto_authorize_forwards_callback_server(self, rat_backend):
@@ -475,7 +458,7 @@ class TestResolveAccessToken:
             return {"access_token": "auth_tok", "refresh_token": "", "token_expires_at": None}
 
         with patch.object(OAuthFlow, "authorize", side_effect=fake_authorize):
-            token = OAuthFlow(_Spec()).resolve_access_token(
+            token = OAuthFlow(_provider()).resolve_access_token(
                 _Auth(), auto_authorize=True, callback_server=sentinel)
         assert token == "auth_tok"
         assert captured["callback_server"] is sentinel
@@ -489,7 +472,7 @@ class TestResolveAccessToken:
             "token_expires_at": int(time.time()) + 3600,
         })
         with pytest.raises(AuthorizationRequired):
-            OAuthFlow(_Spec()).resolve_access_token(_Auth())
+            OAuthFlow(_provider()).resolve_access_token(_Auth())
 
     def test_empty_token_from_authorize_is_failclosed(self, rat_backend):
         # Even when authorize() succeeds, an empty access_token must fail closed
@@ -498,4 +481,4 @@ class TestResolveAccessToken:
             "access_token": "", "refresh_token": "", "token_expires_at": None,
         }):
             with pytest.raises(AuthorizationRequired):
-                OAuthFlow(_Spec()).resolve_access_token(_Auth(), auto_authorize=True)
+                OAuthFlow(_provider()).resolve_access_token(_Auth(), auto_authorize=True)

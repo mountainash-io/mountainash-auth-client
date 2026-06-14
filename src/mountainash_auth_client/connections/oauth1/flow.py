@@ -16,7 +16,7 @@ from mountainash_auth_client.connections.server.factory import resolve_callback_
 from mountainash_settings.secrets.registry import get_secrets_backend
 
 if TYPE_CHECKING:
-    from mountainash_settings import ProfileSpec
+    from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
 
@@ -25,25 +25,24 @@ class OAuth1Flow:
 
     def __init__(
         self,
-        spec: ProfileSpec,
+        provider: OAuth1ProviderProfile,
         *,
         callback_server: CallbackServerFactory | None = None,
     ) -> None:
-        self._spec = spec
-        self._metadata = spec.metadata
+        self._provider = provider
         self._callback_server = callback_server
 
     @property
     def request_token_url(self) -> str:
-        return self._metadata["request_token_url"]
+        return self._provider.REQUEST_TOKEN_URL
 
     @property
     def authorize_url(self) -> str:
-        return self._metadata["authorize_url"]
+        return self._provider.AUTHORIZE_URL
 
     @property
     def access_token_url(self) -> str:
-        return self._metadata["access_token_url"]
+        return self._provider.ACCESS_TOKEN_URL
 
     def build_authorize_url(self, oauth_token: str) -> str:
         return f"{self.authorize_url}?{urlencode({'oauth_token': oauth_token})}"
@@ -111,7 +110,7 @@ class OAuth1Flow:
         ``AuthorizationRequired`` when no cached pair exists and
         ``auto_authorize`` is False.
         """
-        provider = self._spec.name
+        provider = self._provider.NAME
         backend = get_secrets_backend(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER)
         key = auth_profile.persist_key()
         tokens = backend.get(key)
@@ -141,7 +140,7 @@ class OAuth1Flow:
             redirect_mode=redirect_mode,
             callback_server=callback_server,
             instance_default=self._callback_server,
-            metadata=self._metadata,
+            callback_port=self._provider.CALLBACK_PORT,
             manual_redirect_uri="oob",
         )
         server = factory()
