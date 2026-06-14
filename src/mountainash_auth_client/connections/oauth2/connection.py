@@ -1,46 +1,60 @@
-"""OAuth2Connection — reusable connect/refresh for OAuth2 providers."""
+"""OAuth2Connection — parameterised connect for any OAuth2 provider.
+
+Composes the unified two-stage HTTP emission: the provider emits its resource
+config (base_url), then a TokenAuthProfile emits the Bearer header onto it.
+No ClassVars, no subclass-per-provider.
+"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Self
+from typing import TYPE_CHECKING, Self
 
 import httpx
 
+from mountainash_auth_client.targets import TargetFamily
 from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
+from mountainash_auth_client.schemas.token import TokenAuthProfile
 
 if TYPE_CHECKING:
-    from mountainash_settings import ProfileSpec
-    from ...schemas.oauth2 import OAuth2AuthProfile
-    from ...schemas.oauth2_authcode import OAuth2AuthCodeAuthProfile
+    from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
+    from mountainash_auth_client.schemas.oauth2 import OAuth2AuthProfile
+    from mountainash_auth_client.schemas.oauth2_authcode import OAuth2AuthCodeAuthProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
 
 class OAuth2Connection:
-    _spec: ClassVar[ProfileSpec]
-    _base_url: ClassVar[str]
-    _client: httpx.Client | None
+    def __init__(
+        self,
+        provider: OAuth2ProviderProfile,
+        auth_profile: OAuth2AuthProfile | OAuth2AuthCodeAuthProfile,
+        *,
+        auto_authorize: bool = False,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> None:
+        self._provider = provider
+        self._auth = auth_profile
+        self._auto_authorize = auto_authorize
+        self._callback_server = callback_server
+        self._client: httpx.Client | None = None
 
     @property
     def client(self) -> httpx.Client | None:
         return self._client
 
-    def connect(
-        self,
-        auth_profile: OAuth2AuthProfile | OAuth2AuthCodeAuthProfile,
-        *,
-        auto_authorize: bool = False,
-        callback_server: CallbackServerFactory | None = None,
-    ) -> Self:
-        access_token = OAuthFlow(self._spec).resolve_access_token(
-            auth_profile,
-            auto_authorize=auto_authorize,
-            callback_server=callback_server,
+    def connect(self) -> Self:
+        token = OAuthFlow(self._provider).resolve_access_token(
+            self._auth,
+            auto_authorize=self._auto_authorize,
+            callback_server=self._callback_server,
         )
-        self._client = httpx.Client(
-            base_url=self._base_url,
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=30.0,
-        )
+        base = self._provider.emit(TargetFamily.HTTP)
+        merged = TokenAuthProfile(TOKEN=token).emit(TargetFamily.HTTP, base=base)
+        self._client = httpx.Client(timeout=30.0, **merged)
         return self
+
+    def disconnect(self) -> None:
+        if self._client is not None:
+            self._client.close()
+        self._client = None
 
     def __enter__(self) -> Self:
         return self
