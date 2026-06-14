@@ -18,10 +18,11 @@ from mountainash_auth_client.errors import (
     TokenRefreshError,
 )
 from mountainash_auth_client.connections.server.factory import resolve_callback_factory
-from mountainash_secrets import ClearableStore, NamespacedStore
+from mountainash_auth_client.persistence import token_store
 
 if TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
+    from mountainash_auth_client.persistence import PersistableAuthProfile
     from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
@@ -213,7 +214,7 @@ class OAuthFlow:
 
     def resolve_access_token(
         self,
-        auth_profile,
+        auth_profile: PersistableAuthProfile,
         *,
         auto_authorize: bool = False,
         callback_server: CallbackServerFactory | None = None,
@@ -228,10 +229,7 @@ class OAuthFlow:
         provider = self._provider.NAME
         if self._resolver is None:
             raise RuntimeError("OAuthFlow.resolve_access_token requires a resolver")
-        store = self._resolver.resolve_as(
-            auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER, ClearableStore
-        )
-        backend = NamespacedStore(store, "oauth")
+        backend = token_store(self._resolver, auth_profile)
         key = auth_profile.persist_key()
         tokens = backend.get(key)
 
@@ -266,7 +264,8 @@ class OAuthFlow:
                 scope=auth_profile.SCOPE,
                 callback_server=callback_server,
             )
-            backend.set(key, new_tokens)
+            with backend.transaction(key):
+                backend.set(key, new_tokens)
             access_token = new_tokens["access_token"]
 
         # Fail closed: no usable token — nothing cached/refreshed, authorize
