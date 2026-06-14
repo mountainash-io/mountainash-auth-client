@@ -40,6 +40,13 @@ from mountainash_auth_client.connections.protocols import (
     CallbackServerProtocol,
 )
 from mountainash_auth_client.connections.server.manual import ManualCallbackServer
+from mountainash_auth_client.persistence import PersistableAuthProfile
+from mountainash_auth_client.lifecycle import (
+    OAuth1TokenManager,
+    OAuth2TokenManager,
+    TokenState,
+    TokenStatus,
+)
 
 AuthProfile = (
     NoAuthProfile | PasswordAuthProfile | TokenAuthProfile | JWTAuthProfile
@@ -71,16 +78,21 @@ __all__ = [
     "OAuth1Connection",
     "OAuth1Flow",
     "OAuth1ProviderProfile",
+    "OAuth1TokenManager",
     "OAuth2AuthCodeAuthProfile",
     "OAuth2AuthProfile",
     "OAuth2Connection",
     "OAuth2ProviderProfile",
+    "OAuth2TokenManager",
     "OAuthFlow",
     "PasswordAuthProfile",
+    "PersistableAuthProfile",
     "ServiceAccountAuthProfile",
     "TargetFamily",
     "TokenAuthProfile",
     "TokenExchangeError",
     "TokenRefreshError",
+    "TokenState",
+    "TokenStatus",
     "WindowsAuthProfile",
 ]
