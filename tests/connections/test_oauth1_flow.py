@@ -4,30 +4,34 @@ from __future__ import annotations
 import pytest
 
 from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
+from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
 
 
-class FakeSpec:
-    def __init__(self, metadata=None):
-        self.metadata = metadata or {
-            "request_token_url": "https://auth.example.com/oauth/request_token",
-            "authorize_url": "https://auth.example.com/oauth/authorize",
-            "access_token_url": "https://auth.example.com/oauth/access_token",
-        }
+def _provider(**overrides):
+    base = dict(
+        NAME="testprovider_oauth1",
+        REQUEST_TOKEN_URL="https://auth.example.com/oauth/request_token",
+        AUTHORIZE_URL="https://auth.example.com/oauth/authorize",
+        ACCESS_TOKEN_URL="https://auth.example.com/oauth/access_token",
+        BASE_URL="https://api.example.com",
+    )
+    base.update(overrides)
+    return OAuth1ProviderProfile(**base)
 
 
 class TestOAuth1FlowBuildAuthorizeUrl:
     def test_contains_oauth_token_param(self):
-        flow = OAuth1Flow(FakeSpec())
+        flow = OAuth1Flow(_provider())
         url = flow.build_authorize_url("test_oauth_token_123")
         assert "oauth_token=test_oauth_token_123" in url
 
     def test_contains_authorize_base_url(self):
-        flow = OAuth1Flow(FakeSpec())
+        flow = OAuth1Flow(_provider())
         url = flow.build_authorize_url("tok")
         assert "https://auth.example.com/oauth/authorize" in url
 
-    def test_properties_read_from_metadata(self):
-        flow = OAuth1Flow(FakeSpec())
+    def test_properties_read_from_provider(self):
+        flow = OAuth1Flow(_provider())
         assert flow.request_token_url == "https://auth.example.com/oauth/request_token"
         assert flow.authorize_url == "https://auth.example.com/oauth/authorize"
         assert flow.access_token_url == "https://auth.example.com/oauth/access_token"
@@ -50,7 +54,7 @@ class TestOAuth1FlowAuthlib:
             return real_import_module(name, *args, **kwargs)
 
         monkeypatch.setattr(importlib, "import_module", mock_import_module)
-        flow = OAuth1Flow(FakeSpec())
+        flow = OAuth1Flow(_provider())
         with pytest.raises(ImportError, match="authlib"):
             flow.request_token("consumer_key", "consumer_secret")
 
@@ -65,7 +69,7 @@ class TestOAuth1FlowAuthlib:
             return real_import_module(name, *args, **kwargs)
 
         monkeypatch.setattr(importlib, "import_module", mock_import_module)
-        flow = OAuth1Flow(FakeSpec())
+        flow = OAuth1Flow(_provider())
         with pytest.raises(ImportError, match="authlib"):
             flow.exchange_verifier("ck", "cs", "tok", "tok_sec", "verifier")
 
@@ -101,7 +105,7 @@ def _stub_oauth1(flow, monkeypatch, sink):
 
 class TestOAuth1Authorize:
     def test_injected_server_drives_callback_url_and_verifier(self, monkeypatch):
-        flow = OAuth1Flow(FakeSpec())
+        flow = OAuth1Flow(_provider())
         sink = {}
         _stub_oauth1(flow, monkeypatch, sink)
         flow.authorize("ckey", "csec",
@@ -110,7 +114,7 @@ class TestOAuth1Authorize:
         assert sink["verifier"] == "VERIF"
 
     def test_manual_builtin_uses_literal_oob(self, monkeypatch):
-        flow = OAuth1Flow(FakeSpec())
+        flow = OAuth1Flow(_provider())
         sink = {}
         _stub_oauth1(flow, monkeypatch, sink)
         monkeypatch.setattr(
@@ -121,7 +125,7 @@ class TestOAuth1Authorize:
         assert sink["verifier"] == "BAREVERIF"
 
     def test_missing_verifier_raises_malformed(self, monkeypatch):
-        flow = OAuth1Flow(FakeSpec())
+        flow = OAuth1Flow(_provider())
         sink = {}
         _stub_oauth1(flow, monkeypatch, sink)
         with pytest.raises(MalformedCallbackError):
@@ -129,7 +133,7 @@ class TestOAuth1Authorize:
                            callback_server=lambda: _OAuth1Echo(params={"oauth_token": "REQTOKEN"}))
 
     def test_token_mismatch_raises_value_error(self, monkeypatch):
-        flow = OAuth1Flow(FakeSpec())
+        flow = OAuth1Flow(_provider())
         sink = {}
         _stub_oauth1(flow, monkeypatch, sink)
         with pytest.raises(ValueError, match="mismatch"):
@@ -163,18 +167,6 @@ class _Mem1Backend:
         yield
 
 
-class _Spec1:
-    name = "testprovider_oauth1"
-
-    @property
-    def metadata(self):
-        return {
-            "request_token_url": "https://auth.example.com/request_token",
-            "authorize_url": "https://auth.example.com/authorize",
-            "access_token_url": "https://auth.example.com/access_token",
-        }
-
-
 class _Auth1:
     CONSUMER_KEY = "ck"
     CONSUMER_SECRET = property(
@@ -203,19 +195,19 @@ def rtp_backend():
 class TestResolveTokenPair:
     def test_returns_cached_pair(self, rtp_backend):
         rtp_backend.set("rtp.oauth1", {"oauth_token": "AT", "oauth_token_secret": "ATS"})
-        pair = OAuth1Flow(_Spec1()).resolve_token_pair(_Auth1())
+        pair = OAuth1Flow(_provider()).resolve_token_pair(_Auth1())
         assert pair == ("AT", "ATS")
 
     def test_raises_when_no_token_and_not_auto(self, rtp_backend):
         with pytest.raises(AuthorizationRequired) as exc:
-            OAuth1Flow(_Spec1()).resolve_token_pair(_Auth1())
+            OAuth1Flow(_provider()).resolve_token_pair(_Auth1())
         assert exc.value.provider == "testprovider_oauth1"
 
     def test_auto_authorize_persists_and_returns_pair(self, rtp_backend):
         with patch.object(OAuth1Flow, "authorize", return_value={
             "oauth_token": "newAT", "oauth_token_secret": "newATS",
         }):
-            pair = OAuth1Flow(_Spec1()).resolve_token_pair(_Auth1(), auto_authorize=True)
+            pair = OAuth1Flow(_provider()).resolve_token_pair(_Auth1(), auto_authorize=True)
         assert pair == ("newAT", "newATS")
         assert rtp_backend.get("rtp.oauth1")["oauth_token"] == "newAT"
 
@@ -228,6 +220,6 @@ class TestResolveTokenPair:
             return {"oauth_token": "AT", "oauth_token_secret": "ATS"}
 
         with patch.object(OAuth1Flow, "authorize", side_effect=fake_authorize):
-            OAuth1Flow(_Spec1()).resolve_token_pair(
+            OAuth1Flow(_provider()).resolve_token_pair(
                 _Auth1(), auto_authorize=True, callback_server=sentinel)
         assert captured["callback_server"] is sentinel
