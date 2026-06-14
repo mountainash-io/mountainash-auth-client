@@ -68,10 +68,7 @@ from pydantic import ValidationError
 
 from mountainash_settings import ParameterSpec, ProfileSpec
 from mountainash_auth_client.targets import TargetFamily
-from mountainash_auth_client.providers.oauth2 import (
-    OAUTH2_PROVIDER_PARAMS,
-    OAuth2ProviderProfile,
-)
+from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
 from mountainash_auth_client.providers.oauth1 import (
     OAUTH1_PROVIDER_PARAMS,
     OAuth1ProviderProfile,
@@ -161,12 +158,10 @@ class TestExtension:
     """Esoteric providers extend the base param list + subclass the base."""
 
     def test_subclass_adds_field_and_keeps_base(self):
-        from mountainash_settings import Profile
-
         EXT_SPEC = ProfileSpec(
             name="garmin_health_provider",
             provider_type="garmin_health_provider",
-            parameters=[*OAUTH1_PROVIDER_PARAMS, ParameterSpec(name="USER_INFO_URL", type=str)],
+            parameters=[*OAUTH1_PROVIDER_PARAMS, ParameterSpec(name="USER_INFO_URL", type=str, tier="core")],
         )
 
         class GarminHealthProvider(OAuth1ProviderProfile):
