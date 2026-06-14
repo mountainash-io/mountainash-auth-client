@@ -1,54 +1,64 @@
-"""OAuth1Connection — connect/auth for OAuth1 providers."""
+"""OAuth1Connection — parameterised connect for any OAuth1 provider.
+
+Resolves the access token pair, then dogfoods the unified emission: a fresh
+OAuth1AuthProfile populated with the resolved pair emits the authlib signer
+onto the provider's base_url.
+"""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Self
+from typing import TYPE_CHECKING, Self
 
 import httpx
 
-from mountainash_auth_client.connections._optional import require_authlib
+from mountainash_auth_client.targets import TargetFamily
 from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
+from mountainash_auth_client.schemas.oauth1 import OAuth1AuthProfile
 
 if TYPE_CHECKING:
-    from mountainash_settings import ProfileSpec
-    from ...schemas.oauth1 import OAuth1AuthProfile
+    from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
-class OAuth1Connection:
-    _spec: ClassVar[ProfileSpec]
-    _base_url: ClassVar[str]
-    _client: httpx.Client | None
 
-    def connect(
+class OAuth1Connection:
+    def __init__(
         self,
+        provider: OAuth1ProviderProfile,
         auth_profile: OAuth1AuthProfile,
         *,
         auto_authorize: bool = False,
         callback_server: CallbackServerFactory | None = None,
-    ) -> Self:
-        oauth_token, oauth_token_secret = OAuth1Flow(self._spec).resolve_token_pair(
-            auth_profile,
-            auto_authorize=auto_authorize,
-            callback_server=callback_server,
+    ) -> None:
+        self._provider = provider
+        self._auth = auth_profile
+        self._auto_authorize = auto_authorize
+        self._callback_server = callback_server
+        self._client: httpx.Client | None = None
+
+    @property
+    def client(self) -> httpx.Client | None:
+        return self._client
+
+    def connect(self) -> Self:
+        oauth_token, oauth_token_secret = OAuth1Flow(self._provider).resolve_token_pair(
+            self._auth,
+            auto_authorize=self._auto_authorize,
+            callback_server=self._callback_server,
         )
-        self._build_client(
-            {"oauth_token": oauth_token, "oauth_token_secret": oauth_token_secret},
-            auth_profile,
+        base = self._provider.emit(TargetFamily.HTTP)
+        signed = OAuth1AuthProfile(
+            CONSUMER_KEY=self._auth.CONSUMER_KEY,
+            CONSUMER_SECRET=self._auth.CONSUMER_SECRET.get_secret_value(),
+            ACCESS_TOKEN=oauth_token,
+            ACCESS_TOKEN_SECRET=oauth_token_secret,
         )
+        merged = signed.emit(TargetFamily.HTTP, base=base)
+        self._client = httpx.Client(timeout=30.0, **merged)
         return self
 
-    def _build_client(self, tokens: dict[str, str], auth_profile: OAuth1AuthProfile) -> None:
-        OAuth1Auth = require_authlib("OAuth1Auth")
-
-        self._client = httpx.Client(
-            base_url=self._base_url,
-            auth=OAuth1Auth(
-                client_id=auth_profile.CONSUMER_KEY,
-                client_secret=auth_profile.CONSUMER_SECRET.get_secret_value(),
-                token=tokens["oauth_token"],
-                token_secret=tokens["oauth_token_secret"],
-            ),
-            timeout=30.0,
-        )
+    def disconnect(self) -> None:
+        if self._client is not None:
+            self._client.close()
+        self._client = None
 
     def __enter__(self) -> Self:
         return self
