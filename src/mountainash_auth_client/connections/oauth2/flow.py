@@ -21,7 +21,7 @@ from mountainash_auth_client.connections.server.factory import resolve_callback_
 from mountainash_settings.secrets.registry import get_secrets_backend
 
 if TYPE_CHECKING:
-    from mountainash_settings import ProfileSpec
+    from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
 
@@ -30,31 +30,30 @@ class OAuthFlow:
 
     def __init__(
         self,
-        spec: ProfileSpec,
+        provider: OAuth2ProviderProfile,
         *,
         callback_server: CallbackServerFactory | None = None,
     ) -> None:
-        self._spec = spec
-        self._metadata = spec.metadata
+        self._provider = provider
         self._pending_verifiers: dict[str, str] = {}
         self._last_state: str | None = None
         self._callback_server = callback_server
 
     @property
     def authorize_url(self) -> str:
-        return self._metadata["authorize_url"]
+        return self._provider.AUTHORIZE_URL
 
     @property
     def token_url(self) -> str:
-        return self._metadata["token_url"]
+        return self._provider.TOKEN_URL
 
     @property
     def use_pkce(self) -> bool:
-        return self._metadata.get("use_pkce", False)
+        return self._provider.USE_PKCE
 
     @property
     def default_scope(self) -> str | None:
-        return self._metadata.get("default_scope")
+        return self._provider.DEFAULT_SCOPE
 
     def build_authorize_url(
         self,
@@ -223,7 +222,7 @@ class OAuthFlow:
         ``auto_authorize`` is False. Uses the fail-closed ``if not
         access_token`` guard — an empty cached token is never returned.
         """
-        provider = self._spec.name
+        provider = self._provider.NAME
         backend = get_secrets_backend(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER)
         key = auth_profile.persist_key()
         tokens = backend.get(key)
@@ -282,7 +281,7 @@ class OAuthFlow:
             redirect_mode=redirect_mode,
             callback_server=callback_server,
             instance_default=self._callback_server,
-            metadata=self._metadata,
+            callback_port=self._provider.CALLBACK_PORT,
         )
         server = factory()
         url, state = self.build_authorize_url(
