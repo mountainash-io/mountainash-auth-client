@@ -15,6 +15,7 @@ from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
 from mountainash_auth_client.schemas.oauth1 import OAuth1AuthProfile
 
 if TYPE_CHECKING:
+    from mountainash_secrets import SecretStoreResolver
     from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
@@ -25,11 +26,13 @@ class OAuth1Connection:
         provider: OAuth1ProviderProfile,
         auth_profile: OAuth1AuthProfile,
         *,
+        resolver: SecretStoreResolver,
         auto_authorize: bool = False,
         callback_server: CallbackServerFactory | None = None,
     ) -> None:
         self._provider = provider
         self._auth = auth_profile
+        self._resolver = resolver
         self._auto_authorize = auto_authorize
         self._callback_server = callback_server
         self._client: httpx.Client | None = None
@@ -39,7 +42,7 @@ class OAuth1Connection:
         return self._client
 
     def connect(self) -> Self:
-        oauth_token, oauth_token_secret = OAuth1Flow(self._provider).resolve_token_pair(
+        oauth_token, oauth_token_secret = OAuth1Flow(self._provider, resolver=self._resolver).resolve_token_pair(
             self._auth,
             auto_authorize=self._auto_authorize,
             callback_server=self._callback_server,

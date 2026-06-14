@@ -1,36 +1,14 @@
 """Tests for the parameterised OAuth1Connection."""
 from __future__ import annotations
 
-import typing as t
-from contextlib import contextmanager
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
 from mountainash_auth_client.connections.oauth1.connection import OAuth1Connection
 from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
-from mountainash_settings.secrets.registry import (
-    clear_secrets_registry,
-    register_secrets_backend,
-)
-
-
-class _InMemoryBackend:
-    def __init__(self):
-        self._store: dict[str, dict[str, t.Any]] = {}
-
-    def get(self, key):
-        return self._store.get(key)
-
-    def set(self, key, data):
-        self._store[key] = data
-
-    def delete(self, key):
-        self._store.pop(key, None)
-
-    @contextmanager
-    def transaction(self, key):
-        yield
+from mountainash_secrets import InMemoryStore, RegistryResolver
 
 
 def _provider():
@@ -54,18 +32,9 @@ class FakeAuth:
         return "test.oauth1"
 
 
-@pytest.fixture(autouse=True)
-def clean():
-    clear_secrets_registry()
-    yield
-    clear_secrets_registry()
-
-
 @pytest.fixture
-def backend():
-    b = _InMemoryBackend()
-    register_secrets_backend("test_mem_oauth1", b)
-    return b
+def resolver():
+    return RegistryResolver({"test_mem_oauth1": InMemoryStore()})
 
 
 class _StubSigner(httpx.Auth):
@@ -88,7 +57,7 @@ class _StubSigner(httpx.Auth):
 
 
 class TestConnect:
-    def test_connect_builds_signed_client_from_resolved_pair(self, monkeypatch, backend):
+    def test_connect_builds_signed_client_from_resolved_pair(self, monkeypatch, resolver):
         captured = {}
 
         def fake_resolve(self, auth_profile, *, auto_authorize=False, callback_server=None):
@@ -100,6 +69,7 @@ class TestConnect:
             "mountainash_auth_client.connections.oauth1.flow.OAuth1Flow.resolve_token_pair",
             fake_resolve,
         )
+
         def _stub_require_authlib(name):
             assert name == "OAuth1Auth"
             return _StubSigner
@@ -110,7 +80,8 @@ class TestConnect:
         )
         sentinel = object()
         conn = OAuth1Connection(
-            _provider(), FakeAuth(), auto_authorize=True, callback_server=sentinel)
+            _provider(), FakeAuth(), resolver=resolver,
+            auto_authorize=True, callback_server=sentinel)
         conn.connect()
 
         assert captured["auto_authorize"] is True
@@ -120,6 +91,6 @@ class TestConnect:
         assert conn.client.auth.kwargs["token"] == "AT"
         assert conn.client.auth.kwargs["token_secret"] == "ATS"
 
-    def test_client_none_before_connect(self):
-        conn = OAuth1Connection(_provider(), FakeAuth())
+    def test_client_none_before_connect(self, resolver):
+        conn = OAuth1Connection(_provider(), FakeAuth(), resolver=resolver)
         assert conn.client is None
