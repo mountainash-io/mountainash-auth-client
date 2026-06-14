@@ -100,9 +100,13 @@ class TestConnect:
             "mountainash_auth_client.connections.oauth1.flow.OAuth1Flow.resolve_token_pair",
             fake_resolve,
         )
+        def _stub_require_authlib(name):
+            assert name == "OAuth1Auth"
+            return _StubSigner
+
         monkeypatch.setattr(
             "mountainash_auth_client.schemas.oauth1.require_authlib",
-            lambda name: _StubSigner,
+            _stub_require_authlib,
         )
         sentinel = object()
         conn = OAuth1Connection(

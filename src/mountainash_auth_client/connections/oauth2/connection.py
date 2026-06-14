@@ -48,7 +48,8 @@ class OAuth2Connection:
         )
         base = self._provider.emit(TargetFamily.HTTP)
         merged = TokenAuthProfile(TOKEN=token).emit(TargetFamily.HTTP, base=base)
-        self._client = httpx.Client(timeout=30.0, **merged)
+        merged.setdefault("timeout", 30.0)
+        self._client = httpx.Client(**merged)
         return self
 
     def disconnect(self) -> None:

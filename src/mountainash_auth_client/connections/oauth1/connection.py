@@ -52,7 +52,8 @@ class OAuth1Connection:
             ACCESS_TOKEN_SECRET=oauth_token_secret,
         )
         merged = signed.emit(TargetFamily.HTTP, base=base)
-        self._client = httpx.Client(timeout=30.0, **merged)
+        merged.setdefault("timeout", 30.0)
+        self._client = httpx.Client(**merged)
         return self
 
     def disconnect(self) -> None:
