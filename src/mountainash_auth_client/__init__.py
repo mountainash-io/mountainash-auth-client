@@ -12,6 +12,12 @@ from mountainash_auth_client.errors import (
 )
 from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
 from mountainash_auth_client.connections.oauth2.connection import OAuth2Connection
+from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
+from mountainash_auth_client.connections.oauth1.connection import OAuth1Connection
+from mountainash_auth_client.providers import (
+    OAuth1ProviderProfile,
+    OAuth2ProviderProfile,
+)
 from mountainash_auth_client.schemas import (
     AUTH_REGISTRY,
     AzureADAuthProfile,
@@ -62,9 +68,13 @@ __all__ = [
     "ManualCallbackServer",
     "NoAuthProfile",
     "OAuth1AuthProfile",
+    "OAuth1Connection",
+    "OAuth1Flow",
+    "OAuth1ProviderProfile",
     "OAuth2AuthCodeAuthProfile",
     "OAuth2AuthProfile",
     "OAuth2Connection",
+    "OAuth2ProviderProfile",
     "OAuthFlow",
     "PasswordAuthProfile",
     "ServiceAccountAuthProfile",
