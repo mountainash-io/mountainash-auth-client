@@ -15,7 +15,7 @@ def resolve_callback_factory(
     redirect_mode: str,
     callback_server: CallbackServerFactory | None,
     instance_default: CallbackServerFactory | None,
-    metadata: dict,
+    callback_port: int | None = None,
     manual_redirect_uri: str | None = None,
 ) -> CallbackServerFactory:
     """Resolve the callback-server factory to use for one authorize() call.
@@ -32,5 +32,5 @@ def resolve_callback_factory(
         if manual_redirect_uri is not None:
             return lambda: ManualCallbackServer(redirect_uri=manual_redirect_uri)
         return ManualCallbackServer
-    port = metadata.get("callback_port", 0)
+    port = callback_port or 0
     return lambda: LocalCallbackServer(port=port)
