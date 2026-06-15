@@ -13,10 +13,11 @@ from mountainash_auth_client.errors import (
 )
 from mountainash_auth_client.connections._optional import require_authlib
 from mountainash_auth_client.connections.server.factory import resolve_callback_factory
-from mountainash_secrets import ClearableStore, NamespacedStore
+from mountainash_auth_client.persistence import token_store
 
 if TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
+    from mountainash_auth_client.persistence import PersistableAuthProfile
     from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
@@ -102,7 +103,7 @@ class OAuth1Flow:
 
     def resolve_token_pair(
         self,
-        auth_profile,
+        auth_profile: PersistableAuthProfile,
         *,
         auto_authorize: bool = False,
         callback_server: CallbackServerFactory | None = None,
@@ -116,10 +117,7 @@ class OAuth1Flow:
         provider = self._provider.NAME
         if self._resolver is None:
             raise RuntimeError("OAuth1Flow.resolve_token_pair requires a resolver")
-        store = self._resolver.resolve_as(
-            auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER, ClearableStore
-        )
-        backend = NamespacedStore(store, "oauth")
+        backend = token_store(self._resolver, auth_profile)
         key = auth_profile.persist_key()
         tokens = backend.get(key)
 
@@ -132,7 +130,8 @@ class OAuth1Flow:
                 consumer_secret=auth_profile.CONSUMER_SECRET.get_secret_value(),
                 callback_server=callback_server,
             )
-            backend.set(key, new_tokens)
+            with backend.transaction(key):
+                backend.set(key, new_tokens)
             return new_tokens["oauth_token"], new_tokens["oauth_token_secret"]
 
         raise AuthorizationRequired(provider=provider, user="default")
