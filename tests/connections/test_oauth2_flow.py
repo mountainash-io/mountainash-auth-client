@@ -449,6 +449,43 @@ class TestResolveAccessToken:
                 OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
         assert rat_env.tokens.get("rat.oauth2")["refresh_token"] == "r_xyz"
 
+    def test_refresh_branch_leaves_concurrent_record_when_refresh_token_vanished(self, rat_env):
+        # Stale-read race: pre-lock we read an expired token WITH a refresh_token
+        # and commit to the refresh branch. Under the lock, a concurrent writer has
+        # replaced the record with one that has NO refresh_token (e.g. provider
+        # rotation). The fix re-derives the decision from the re-read record: with
+        # no refresh_token it must NOT subscript a missing key, must NOT delete the
+        # concurrent writer's record, and must NOT attempt a refresh — it just fails
+        # closed. (Old code did `tokens["refresh_token"]` -> KeyError -> except ->
+        # backend.delete(key), destroying the other writer's record.)
+        pre_lock = {"access_token": "old", "refresh_token": "r_xyz",
+                    "token_expires_at": int(time.time()) - 1000}
+        concurrent = {"access_token": "concurrent",
+                      "token_expires_at": int(time.time()) - 1000}  # no refresh_token key
+
+        n = {"get": 0}
+
+        def racing_get(key):
+            n["get"] += 1
+            return pre_lock if n["get"] == 1 else concurrent
+
+        rat_env.store.get = racing_get
+
+        deleted = {"called": False}
+        real_delete = rat_env.store.delete
+
+        def spy_delete(key):
+            deleted["called"] = True
+            return real_delete(key)
+
+        rat_env.store.delete = spy_delete
+
+        with patch.object(OAuthFlow, "refresh") as mock_refresh:
+            with pytest.raises(AuthorizationRequired):
+                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+            mock_refresh.assert_not_called()
+        assert deleted["called"] is False
+
     def test_auto_authorize_forwards_callback_server(self, rat_env):
         sentinel = object()
         captured = {}
