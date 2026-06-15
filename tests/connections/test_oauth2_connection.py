@@ -10,7 +10,7 @@ import pytest
 from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.connections.oauth2.connection import OAuth2Connection
 from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
-from mountainash_secrets import InMemoryStore, NamespacedStore, RegistryResolver
+from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
 
 
 def _provider():
@@ -35,10 +35,10 @@ class FakeAuth:
 @pytest.fixture
 def env():
     # `tokens` is the "oauth"-namespaced view the flow persists through.
-    store = InMemoryStore()
+    store = InMemorySecretStore()
     return SimpleNamespace(
-        resolver=RegistryResolver({"test_mem": store}),
-        tokens=NamespacedStore(store, "oauth"),
+        resolver=SecretRegistryResolver({"test_mem": store}),
+        tokens=NamespacedSecretStore(store, "oauth"),
         store=store,
     )
 

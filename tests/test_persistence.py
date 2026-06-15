@@ -4,10 +4,10 @@ import pytest
 
 from mountainash_auth_client.persistence import PersistableAuthProfile, token_store
 from mountainash_secrets import (
-    CapabilityError,
-    InMemoryStore,
-    NamespacedStore,
-    RegistryResolver,
+    SecretCapabilityError,
+    InMemorySecretStore,
+    NamespacedSecretStore,
+    SecretRegistryResolver,
 )
 
 
@@ -19,7 +19,7 @@ class _Auth:
 
 
 class _ReadOnly:
-    """Satisfies SecretReader (get only) — NOT ClearableStore."""
+    """Satisfies SecretReader (get only) — NOT ClearableSecretStore."""
 
     def get(self, key):
         return None
@@ -30,16 +30,16 @@ def test_satisfies_persistable_protocol():
 
 
 def test_token_store_namespaces_under_oauth():
-    store = InMemoryStore()
-    resolver = RegistryResolver({"mem": store})
+    store = InMemorySecretStore()
+    resolver = SecretRegistryResolver({"mem": store})
     ts = token_store(resolver, _Auth())
-    assert isinstance(ts, NamespacedStore)
+    assert isinstance(ts, NamespacedSecretStore)
     ts.set("k", {"v": 1})
     # The raw underlying key carries the dot-prefixed "oauth" namespace.
     assert store.get("oauth.k") == {"v": 1}
 
 
 def test_token_store_capability_error_for_read_only_store():
-    resolver = RegistryResolver({"mem": _ReadOnly()})
-    with pytest.raises(CapabilityError):
+    resolver = SecretRegistryResolver({"mem": _ReadOnly()})
+    with pytest.raises(SecretCapabilityError):
         token_store(resolver, _Auth())

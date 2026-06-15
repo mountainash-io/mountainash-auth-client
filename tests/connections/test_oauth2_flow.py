@@ -343,7 +343,7 @@ class TestAuthorizeCallbackValidation:
 from types import SimpleNamespace
 
 from mountainash_auth_client.errors import AuthorizationRequired
-from mountainash_secrets import InMemoryStore, NamespacedStore, RegistryResolver
+from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
 
 
 class _Auth:
@@ -363,10 +363,10 @@ def rat_env():
     # A real mountainash-secrets store resolved by name exactly as the flow does.
     # `tokens` is the "oauth"-namespaced view the flow writes through, so tests
     # seed/read with the bare persist_key and the prefix is handled for them.
-    store = InMemoryStore()
+    store = InMemorySecretStore()
     return SimpleNamespace(
-        resolver=RegistryResolver({"rat_mem": store}),
-        tokens=NamespacedStore(store, "oauth"),
+        resolver=SecretRegistryResolver({"rat_mem": store}),
+        tokens=NamespacedSecretStore(store, "oauth"),
         store=store,
     )
 
@@ -411,8 +411,8 @@ class TestResolveAccessToken:
         assert rat_env.tokens.get("rat.oauth2")["access_token"] == "new_tok"
 
     def test_persists_under_oauth_namespace_in_raw_store(self, rat_env):
-        # Lock the on-store key the flow actually writes: NamespacedStore("oauth")
-        # must dot-prefix so the key stays FilesystemStore-compatible (its
+        # Lock the on-store key the flow actually writes: NamespacedSecretStore("oauth")
+        # must dot-prefix so the key stays FilesystemSecretStore-compatible (its
         # _key_to_paths splits on "." and rejects "/" segments). Reading through
         # rat_env.tokens hides the delimiter; inspect the RAW store to pin it.
         rat_env.tokens.set("rat.oauth2", {
