@@ -16,7 +16,7 @@ from mountainash_auth_client.schemas.token import TokenAuthProfile
 
 if TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
-    from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
+    from mountainash_auth_client.providers.protocols import OAuth2ProviderProfileProtocol
     from mountainash_auth_client.schemas.oauth2 import OAuth2AuthProfile
     from mountainash_auth_client.schemas.oauth2_authcode import OAuth2AuthCodeAuthProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 class OAuth2Connection:
     def __init__(
         self,
-        provider: OAuth2ProviderProfile,
+        provider: OAuth2ProviderProfileProtocol,
         auth_profile: OAuth2AuthProfile | OAuth2AuthCodeAuthProfile,
         *,
         resolver: SecretStoreResolver,
