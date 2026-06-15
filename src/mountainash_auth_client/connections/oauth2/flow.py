@@ -239,10 +239,14 @@ class OAuthFlow:
             access_token = tokens["access_token"]
         elif tokens and tokens.get("refresh_token"):
             with backend.transaction(key):
+                # Re-derive the decision from the under-lock record, not the stale
+                # pre-lock read: a concurrent writer may have refreshed, revoked, or
+                # rotated it while we waited for the lock.
                 tokens = backend.get(key)
                 if tokens and not self.is_expired(tokens.get("token_expires_at")):
+                    # A concurrent caller already produced a valid token — use it.
                     access_token = tokens["access_token"]
-                else:
+                elif tokens and tokens.get("refresh_token"):
                     try:
                         new_tokens = self.refresh(
                             refresh_token=tokens["refresh_token"],
@@ -256,6 +260,10 @@ class OAuthFlow:
                     else:
                         backend.set(key, new_tokens)
                         access_token = new_tokens["access_token"]
+                # else: the record vanished or lost its refresh_token under the lock
+                # (concurrent revoke/rotate). Don't subscript a possibly-None record
+                # or delete another writer's data — fall through to the authorize /
+                # fail-closed tail below.
 
         if not access_token and auto_authorize:
             new_tokens = self.authorize(
