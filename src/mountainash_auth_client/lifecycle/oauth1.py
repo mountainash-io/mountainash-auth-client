@@ -14,7 +14,7 @@ from mountainash_auth_client.persistence import token_store
 
 if t.TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
-    from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
+    from mountainash_auth_client.providers.protocols import OAuth1ProviderProfileProtocol
     from mountainash_auth_client.persistence import PersistableAuthProfile
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
@@ -24,7 +24,7 @@ __all__ = ["OAuth1TokenManager"]
 class OAuth1TokenManager:
     def __init__(
         self,
-        provider: OAuth1ProviderProfile,
+        provider: OAuth1ProviderProfileProtocol,
         auth_profile: PersistableAuthProfile,
         *,
         resolver: SecretStoreResolver,

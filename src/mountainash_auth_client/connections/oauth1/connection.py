@@ -16,14 +16,14 @@ from mountainash_auth_client.schemas.oauth1 import OAuth1AuthProfile
 
 if TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
-    from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
+    from mountainash_auth_client.providers.protocols import OAuth1ProviderProfileProtocol
     from mountainash_auth_client.connections.protocols import CallbackServerFactory
 
 
 class OAuth1Connection:
     def __init__(
         self,
-        provider: OAuth1ProviderProfile,
+        provider: OAuth1ProviderProfileProtocol,
         auth_profile: OAuth1AuthProfile,
         *,
         resolver: SecretStoreResolver,
