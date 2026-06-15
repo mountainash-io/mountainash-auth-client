@@ -7,7 +7,7 @@ import pytest
 from mountainash_auth_client.lifecycle.oauth1 import OAuth1TokenManager
 from mountainash_auth_client.lifecycle.status import TokenState
 from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
-from mountainash_secrets import InMemoryStore, NamespacedStore, RegistryResolver
+from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
 
 
 def _provider():
@@ -32,10 +32,10 @@ class _Auth:
 
 
 def _env():
-    store = InMemoryStore()
+    store = InMemorySecretStore()
     return (
-        OAuth1TokenManager(_provider(), _Auth(), resolver=RegistryResolver({"mem": store})),
-        NamespacedStore(store, "oauth"),
+        OAuth1TokenManager(_provider(), _Auth(), resolver=SecretRegistryResolver({"mem": store})),
+        NamespacedSecretStore(store, "oauth"),
     )
 
 

@@ -9,8 +9,8 @@ from mountainash_auth_client.lifecycle.oauth2 import OAuth2TokenManager
 from mountainash_auth_client.lifecycle.status import TokenState
 from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
 from mountainash_auth_client.connections.server.manual import ManualCallbackServer
-from mountainash_secrets import InMemoryStore, NamespacedStore, RegistryResolver
-from mountainash_secrets.stores.filesystem import FilesystemStore
+from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
+from mountainash_secrets.stores.filesystem import FilesystemSecretStore
 
 
 def _provider():
@@ -35,10 +35,10 @@ class _Auth:
 
 
 def _env():
-    store = InMemoryStore()
+    store = InMemorySecretStore()
     return (
-        OAuth2TokenManager(_provider(), _Auth(), resolver=RegistryResolver({"mem": store})),
-        NamespacedStore(store, "oauth"),  # the "oauth"-namespaced view to seed/read
+        OAuth2TokenManager(_provider(), _Auth(), resolver=SecretRegistryResolver({"mem": store})),
+        NamespacedSecretStore(store, "oauth"),  # the "oauth"-namespaced view to seed/read
     )
 
 
@@ -117,14 +117,14 @@ def test_authorize_manual_mode_uses_manual_callback_server():
 @pytest.mark.parametrize("bad_key", ["bad/key", "a..b"])
 def test_bad_persist_key_is_rejected_by_filesystem(tmp_path, bad_key):
     # "/" (illegal char) and ".." (empty segment) both violate the §4 grammar;
-    # FilesystemStore._key_to_paths validates each segment and raises ValueError.
+    # FilesystemSecretStore._key_to_paths validates each segment and raises ValueError.
     class _BadAuth(_Auth):
         SETTINGS_SOURCE_SECRETS_PROVIDER = "fs"
 
         def persist_key(self) -> str:
             return bad_key
 
-    resolver = RegistryResolver({"fs": FilesystemStore(base_dir=tmp_path)})
+    resolver = SecretRegistryResolver({"fs": FilesystemSecretStore(base_dir=tmp_path)})
     mgr = OAuth2TokenManager(_provider(), _BadAuth(), resolver=resolver)
     with pytest.raises(ValueError):
         mgr.status()  # opens transaction(key) -> _key_to_paths validates the segment

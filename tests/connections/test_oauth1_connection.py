@@ -6,7 +6,7 @@ import pytest
 
 from mountainash_auth_client.connections.oauth1.connection import OAuth1Connection
 from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
-from mountainash_secrets import InMemoryStore, RegistryResolver
+from mountainash_secrets import InMemorySecretStore, SecretRegistryResolver
 
 
 def _provider():
@@ -32,7 +32,7 @@ class FakeAuth:
 
 @pytest.fixture
 def resolver():
-    return RegistryResolver({"test_mem_oauth1": InMemoryStore()})
+    return SecretRegistryResolver({"test_mem_oauth1": InMemorySecretStore()})
 
 
 class _StubSigner(httpx.Auth):

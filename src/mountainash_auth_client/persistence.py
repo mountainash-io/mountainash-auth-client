@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import typing as t
 
-from mountainash_secrets import ClearableStore, NamespacedStore
+from mountainash_secrets import ClearableSecretStore, NamespacedSecretStore
 
 if t.TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
@@ -35,14 +35,14 @@ class PersistableAuthProfile(t.Protocol):
 def token_store(
     resolver: SecretStoreResolver,
     auth_profile: PersistableAuthProfile,
-) -> NamespacedStore:
+) -> NamespacedSecretStore:
     """Resolve the OAuth token store for an auth profile.
 
-    Resolves the named store as a ClearableStore (raising CapabilityError if it
+    Resolves the named store as a ClearableSecretStore (raising SecretCapabilityError if it
     cannot clear), then namespaces it under "oauth". Every OAuth-token read or
     write — flow OR manager — goes through this, so the namespace/capability
     decision lives in one place. Mutation *ordering* is the caller's job, via
     `transaction(key)` (see the design spec §5.1).
     """
-    store = resolver.resolve_as(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER, ClearableStore)
-    return NamespacedStore(store, "oauth")
+    store = resolver.resolve_as(auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER, ClearableSecretStore)
+    return NamespacedSecretStore(store, "oauth")

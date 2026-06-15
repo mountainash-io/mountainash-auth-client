@@ -146,7 +146,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from mountainash_auth_client.errors import AuthorizationRequired
-from mountainash_secrets import InMemoryStore, NamespacedStore, RegistryResolver
+from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
 
 
 class _Auth1:
@@ -162,10 +162,10 @@ class _Auth1:
 
 @pytest.fixture
 def rtp_env():
-    store = InMemoryStore()
+    store = InMemorySecretStore()
     return SimpleNamespace(
-        resolver=RegistryResolver({"rtp_mem": store}),
-        tokens=NamespacedStore(store, "oauth"),
+        resolver=SecretRegistryResolver({"rtp_mem": store}),
+        tokens=NamespacedSecretStore(store, "oauth"),
         store=store,
     )
 
