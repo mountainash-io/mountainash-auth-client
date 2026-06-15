@@ -16,7 +16,10 @@ from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
 from mountainash_auth_client.connections.oauth1.connection import OAuth1Connection
 from mountainash_auth_client.providers import (
     OAuth1ProviderProfile,
+    OAuth1ProviderProfileProtocol,
     OAuth2ProviderProfile,
+    OAuth2ProviderProfileProtocol,
+    ProviderProfileProtocol,
 )
 from mountainash_auth_client.schemas import (
     AUTH_REGISTRY,
@@ -78,15 +81,18 @@ __all__ = [
     "OAuth1Connection",
     "OAuth1Flow",
     "OAuth1ProviderProfile",
+    "OAuth1ProviderProfileProtocol",
     "OAuth1TokenManager",
     "OAuth2AuthCodeAuthProfile",
     "OAuth2AuthProfile",
     "OAuth2Connection",
     "OAuth2ProviderProfile",
+    "OAuth2ProviderProfileProtocol",
     "OAuth2TokenManager",
     "OAuthFlow",
     "PasswordAuthProfile",
     "PersistableAuthProfile",
+    "ProviderProfileProtocol",
     "ServiceAccountAuthProfile",
     "TargetFamily",
     "TokenAuthProfile",

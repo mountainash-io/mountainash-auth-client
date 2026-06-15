@@ -60,3 +60,21 @@ def test_emit_http_returns_base_url():
     # Locks the resource-emit contract the connection relies on.
     assert _oauth2().emit(TargetFamily.HTTP) == {"base_url": "https://api"}
     assert _oauth1().emit(TargetFamily.HTTP) == {"base_url": "https://api"}
+
+
+def test_protocols_exported_at_package_root():
+    import mountainash_auth_client as ac
+    from mountainash_auth_client import (
+        OAuth1ProviderProfileProtocol,
+        OAuth2ProviderProfileProtocol,
+        ProviderProfileProtocol,
+    )
+
+    exported = {
+        "ProviderProfileProtocol": ProviderProfileProtocol,
+        "OAuth2ProviderProfileProtocol": OAuth2ProviderProfileProtocol,
+        "OAuth1ProviderProfileProtocol": OAuth1ProviderProfileProtocol,
+    }
+    for name, obj in exported.items():
+        assert name in ac.__all__
+        assert getattr(ac, name) is obj
