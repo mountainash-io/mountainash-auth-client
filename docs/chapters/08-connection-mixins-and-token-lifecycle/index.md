@@ -12,44 +12,6 @@ version: 0.08
 
 This chapter covers the OAuth2ConnectionMixin that provides automatic token lifecycle management. It explains the connect method, auto-authorize flag, client property, context manager support, and profile parameter. It then covers the complete five-state token lifecycle (no-token, valid, expired-with-refresh, expired-no-refresh, cleared), file-locked refresh for concurrent-safe token renewal, and the end-to-end authorize orchestration. The chapter concludes with the AuthorizationRequired exception and provider/user context for targeted re-authorization prompts.
 
-## Concepts Covered
-
-- End To End Authorize
-- OAuth2ConnectionMixin
-- Connect Method
-- Auto Authorize Flag
-- Client Property
-- Context Manager Support
-- Profile Parameter
-- Token Lifecycle Overview
-- No Token State
-- Valid Token State
-- Expired With Refresh State
-- Expired No Refresh State
-- Cleared State
-- File Locked Refresh
-- AuthorizationRequired
-- Provider User Context
-
-## Prerequisites
-
-- Chapter 1: Foundations (Context Managers)
-- Chapter 5: OAuth 2.0 Flow (OAuthFlow Class, Build Authorize URL, Exchange Code, Refresh Token, Token Expiry Check)
-- Chapter 6: Secret Storage (SecretStore Protocol, Clear Method, Lock Method)
-- Chapter 7: Callback Server and Token Errors (LocalCallbackServer)
-
-## Learning Objectives
-
-After completing this chapter, you will be able to:
-
-- Configure and use OAuth2ConnectionMixin for automatic token management
-- Trace the token lifecycle through all five states and their transitions
-- Implement auto-authorize logic for seamless re-authentication
-- Use context managers for connection lifecycle management
-- Apply file-locked refresh for concurrent-safe token renewal
-- Orchestrate end-to-end authorization combining all flow components
-- Raise and catch AuthorizationRequired to trigger re-authorization flows
-
 ---
 
 ## Bringing It All Together

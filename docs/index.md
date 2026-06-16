@@ -3,6 +3,8 @@ title: 'Mountainash Auth Client'
 description: 'An intelligent textbook for the mountainash-auth-client type-safe multi-provider authentication library'
 ---
 
+
+[← Back to Ecosystem](../)
 # Mountainash Auth Client
 
 An intelligent textbook for the mountainash-auth-client type-safe multi-provider authentication library

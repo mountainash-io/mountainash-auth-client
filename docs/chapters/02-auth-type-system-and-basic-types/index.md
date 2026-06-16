@@ -12,31 +12,6 @@ version: 0.08
 
 This chapter covers the foundational type system architecture of mountainash-auth-client. It explains how the AuthSpec base model provides a common interface, how the discriminated union pattern enables type-safe polymorphism with a Literal kind discriminator, and introduces the first five auth type variants: NoAuth, PasswordAuth, TokenAuth, JWTAuth, and OAuth2Auth.
 
-## Concepts Covered
-
-- AuthSpec Base Model
-- Discriminated Union
-- Literal Kind Discriminator
-- NoAuth Type
-- PasswordAuth Type
-- TokenAuth Type
-- JWTAuth Type
-- OAuth2Auth Type
-
-## Prerequisites
-
-- Chapter 1: Foundations (Pydantic Models, Frozen Models, OAuth 2.0 Basics, Bearer Tokens)
-
-## Learning Objectives
-
-After completing this chapter, you will be able to:
-
-- Explain the role of AuthSpec as the frozen base model for all auth types
-- Describe how discriminated unions enable type-safe auth type polymorphism
-- Implement a Literal kind discriminator for automatic variant selection
-- Configure NoAuth, PasswordAuth, TokenAuth, JWTAuth, and OAuth2Auth types
-- Choose the appropriate basic auth type for common API authentication scenarios
-
 ---
 
 ## The Problem of Diverse Authentication

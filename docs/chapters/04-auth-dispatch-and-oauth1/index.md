@@ -12,37 +12,6 @@ version: 0.08
 
 This chapter covers two related subsystems. First, the auth dispatch mechanism that maps auth types to driver-specific keyword arguments through a registry, type-based dispatch, and backend-specific handling of unmapped types. Second, the OAuth 1.0a flow implementation including the OAuth1Flow class, request token acquisition, the three-legged authorization flow, verifier exchange, and the optional authlib dependency with its import guard pattern.
 
-## Concepts Covered
-
-- Auth Dispatch Registry
-- Auth To Driver Kwargs
-- Auth Kwargs Function
-- Type Based Dispatch
-- Unmapped Auth Types
-- Backend Specific Handling
-- OAuth1Flow Class
-- Request Token
-- Three Legged Flow
-- Verifier Exchange
-- Authlib Dependency
-- Optional Import Guard
-
-## Prerequisites
-
-- Chapter 1: Foundations (OAuth 1.0a Basics)
-- Chapter 2: Auth Type System and Basic Types (Discriminated Union)
-- Chapter 3: Advanced Auth Type Variants (AzureADAuth Type, WindowsAuth Type, KerberosAuth Type, CertificateAuth Type, ServiceAccountAuth Type)
-
-## Learning Objectives
-
-After completing this chapter, you will be able to:
-
-- Describe how the dispatch registry maps auth types to driver kwargs
-- Trace a dispatch call from auth type through to driver-specific output
-- Handle unmapped auth types gracefully in custom backends
-- Implement the three-legged OAuth 1.0a authorization flow
-- Apply the optional import guard pattern for graceful dependency degradation
-
 ---
 
 ## Part 1: Auth Dispatch

@@ -12,34 +12,6 @@ version: 0.08
 
 This chapter introduces the core prerequisite concepts needed to understand the mountainash-auth-client library. It covers the basics of OAuth 2.0 and OAuth 1.0a protocols, Bearer tokens, API keys, Pydantic model fundamentals including frozen models, Python protocols for structural subtyping, context managers for resource lifecycle, and file security primitives including permissions and atomic writes.
 
-## Concepts Covered
-
-- OAuth 2.0 Basics
-- OAuth 1.0a Basics
-- Bearer Tokens
-- API Keys
-- Pydantic Models
-- Frozen Models
-- Python Protocols
-- Context Managers
-- File Permissions
-- Atomic File Writes
-
-## Prerequisites
-
-None. This is the introductory chapter.
-
-## Learning Objectives
-
-After completing this chapter, you will be able to:
-
-- Explain the purpose and high-level flow of OAuth 2.0 and OAuth 1.0a
-- Distinguish between Bearer tokens and API keys as authentication mechanisms
-- Create and validate Pydantic models with frozen configuration
-- Define Python protocols for structural subtyping
-- Use context managers for resource lifecycle management
-- Apply file permissions and atomic write patterns for secure credential storage
-
 ---
 
 ## Why Authentication Matters in Data Libraries

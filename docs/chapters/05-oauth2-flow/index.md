@@ -12,35 +12,6 @@ version: 0.08
 
 This chapter covers the complete OAuth 2.0 implementation. It introduces the OAuthFlow class, the Authorization Code grant type, the PKCE extension with code verifier and challenge generation, building authorize URLs with state parameters for CSRF protection, exchanging authorization codes for tokens, token exchange mechanics, refresh token handling, and token expiry detection.
 
-## Concepts Covered
-
-- OAuthFlow Class
-- Authorization Code Grant
-- PKCE Extension
-- Code Verifier
-- Code Challenge
-- Build Authorize URL
-- State Parameter
-- Exchange Code
-- Token Exchange
-- Refresh Token
-- Token Expiry Check
-
-## Prerequisites
-
-- Chapter 1: Foundations (OAuth 2.0 Basics, Bearer Tokens, Pydantic Models)
-
-## Learning Objectives
-
-After completing this chapter, you will be able to:
-
-- Construct an OAuthFlow instance for any OAuth 2.0 provider
-- Implement Authorization Code grant with PKCE for enhanced security
-- Generate code verifiers and challenges for PKCE flows
-- Build authorize URLs with state parameters for CSRF protection
-- Exchange authorization codes for access tokens
-- Implement token refresh logic with expiry detection
-
 ---
 
 ## From Protocol to Implementation
