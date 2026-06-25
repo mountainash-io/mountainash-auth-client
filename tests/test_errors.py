@@ -25,15 +25,11 @@ class TestTokenExchangeError:
         err = TokenExchangeError(url="https://example.com/token", status_code=400, body="bad")
         assert "https://example.com/token" in str(err)
 
-    def test_str_contains_body_excerpt(self):
-        err = TokenExchangeError(url="https://example.com/token", status_code=400, body="invalid_grant")
-        assert "invalid_grant" in str(err)
-
-    def test_body_truncated_in_str(self):
-        long_body = "Z" * 500
-        err = TokenExchangeError(url="https://auth.test/token", status_code=400, body=long_body)
-        # str should not include the full 500 chars (body[:200])
-        assert str(err).count("Z") <= 200
+    def test_str_excludes_body_but_attr_keeps_it(self):
+        err = TokenExchangeError(url="https://example.com/token", status_code=400, body='{"error":"invalid_grant"}')
+        assert "invalid_grant" not in str(err)
+        assert err.body == '{"error":"invalid_grant"}'
+        assert err.error_code == "invalid_grant"
 
     def test_is_exception(self):
         err = TokenExchangeError(url="https://example.com/token", status_code=400, body="err")
@@ -60,9 +56,11 @@ class TestTokenRefreshError:
         err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="expired")
         assert "https://example.com/refresh" in str(err)
 
-    def test_str_contains_body_excerpt(self):
+    def test_str_excludes_body_but_attr_keeps_it(self):
         err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="token_expired")
-        assert "token_expired" in str(err)
+        assert "token_expired" not in str(err)
+        assert err.body == "token_expired"
+        assert err.error_code is None   # non-JSON body
 
     def test_is_exception(self):
         err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="err")
