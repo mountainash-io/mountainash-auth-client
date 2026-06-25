@@ -299,6 +299,8 @@ class OAuthFlow:
                             backend.delete(key)
                             if not auto_authorize:
                                 raise AuthorizationRequired(provider=provider, user="default")
+                            # auto_authorize: record cleared, no raise — access_token stays
+                            # None so control falls through to the re-authorize tail below.
                         else:
                             raise  # transient/server error: keep the record, surface retryably
                     except Exception:
