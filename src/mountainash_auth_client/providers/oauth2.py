@@ -21,6 +21,9 @@ OAUTH2_PROVIDER_PARAMS = [
     ParameterSpec(name="DEFAULT_SCOPE", type=str | None, tier="advanced", default=None),
     ParameterSpec(name="USE_PKCE", type=bool, tier="advanced", default=False),
     ParameterSpec(name="CALLBACK_PORT", type=int | None, tier="advanced", default=None),
+    ParameterSpec(name="TOKEN_ENDPOINT_AUTH_METHOD", type=str, tier="advanced", default="client_secret_post"),
+    ParameterSpec(name="TOKEN_REQUEST_HEADERS", type=dict | None, tier="advanced", default=None),
+    ParameterSpec(name="TOKEN_REQUEST_CONTENT_TYPE", type=str, tier="advanced", default="application/x-www-form-urlencoded"),
 ]
 
 

@@ -88,6 +88,26 @@ class TestOAuth1ProviderProfile:
             OAuth1ProviderProfile(NAME="x", AUTHORIZE_URL="a", BASE_URL="b")
 
 
+def test_new_client_auth_params_default_to_standard():
+    from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
+    p = OAuth2ProviderProfile(NAME="x", AUTHORIZE_URL="a", TOKEN_URL="t", BASE_URL="b")
+    assert p.TOKEN_ENDPOINT_AUTH_METHOD == "client_secret_post"
+    assert p.TOKEN_REQUEST_HEADERS is None
+    assert p.TOKEN_REQUEST_CONTENT_TYPE == "application/x-www-form-urlencoded"
+
+
+def test_new_client_auth_params_overridable():
+    from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
+    p = OAuth2ProviderProfile(
+        NAME="privy", AUTHORIZE_URL="", TOKEN_URL="t", BASE_URL="b",
+        TOKEN_ENDPOINT_AUTH_METHOD="none",
+        TOKEN_REQUEST_HEADERS={"privy-app-id": "abc", "Origin": "https://x"},
+        TOKEN_REQUEST_CONTENT_TYPE="application/json",
+    )
+    assert p.TOKEN_ENDPOINT_AUTH_METHOD == "none"
+    assert p.TOKEN_REQUEST_HEADERS["privy-app-id"] == "abc"
+
+
 class TestExtension:
     """Esoteric providers extend the base param list + subclass the base."""
 
