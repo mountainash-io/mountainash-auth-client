@@ -148,6 +148,9 @@ class OAuthFlow:
         expires_at: int | None = None
         if "expires_in" in token_data:
             expires_at = int(time.time()) + int(token_data["expires_in"])
+        if expires_at is None:
+            from mountainash_auth_client.lifecycle.status import jwt_exp
+            expires_at = jwt_exp(token_data["access_token"])
 
         return {
             "access_token": token_data["access_token"],
@@ -198,6 +201,9 @@ class OAuthFlow:
         expires_at: int | None = None
         if "expires_in" in token_data:
             expires_at = int(time.time()) + int(token_data["expires_in"])
+        if expires_at is None:
+            from mountainash_auth_client.lifecycle.status import jwt_exp
+            expires_at = jwt_exp(token_data["access_token"])
 
         return {
             "access_token": token_data["access_token"],
