@@ -521,6 +521,34 @@ class TestResolveAccessToken:
                 OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(
                     _Auth(), auto_authorize=True)
 
+    def test_transient_refresh_failure_keeps_record(self, rat_env):
+        rat_env.tokens.set("rat.oauth2", {
+            "access_token": "old", "refresh_token": "r_xyz",
+            "token_expires_at": int(time.time()) - 1000,
+        })
+        deleted = {"called": False}
+        real_delete = rat_env.store.delete
+        def spy_delete(key):
+            deleted["called"] = True
+            return real_delete(key)
+        rat_env.store.delete = spy_delete
+        with patch.object(OAuthFlow, "refresh", side_effect=httpx.ConnectError("down")):
+            with pytest.raises(httpx.ConnectError):
+                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+        assert deleted["called"] is False
+        assert rat_env.tokens.get("rat.oauth2")["refresh_token"] == "r_xyz"
+
+    def test_invalid_grant_clears_record(self, rat_env):
+        rat_env.tokens.set("rat.oauth2", {
+            "access_token": "old", "refresh_token": "r_xyz",
+            "token_expires_at": int(time.time()) - 1000,
+        })
+        err = TokenRefreshError(url="https://t", status_code=401, body='{"error":"invalid_grant"}')
+        with patch.object(OAuthFlow, "refresh", side_effect=err):
+            with pytest.raises(AuthorizationRequired):
+                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+        assert rat_env.tokens.get("rat.oauth2") is None
+
 
 def test_refresh_derives_expiry_from_jwt_when_no_expires_in():
     import base64, json, time

@@ -294,10 +294,15 @@ class OAuthFlow:
                             client_id=_cid,
                             client_secret=_csec,
                         )
+                    except TokenRefreshError as exc:
+                        if exc.error_code in {"invalid_grant", "invalid_token"}:
+                            backend.delete(key)
+                            if not auto_authorize:
+                                raise AuthorizationRequired(provider=provider, user="default")
+                        else:
+                            raise  # transient/server error: keep the record, surface retryably
                     except Exception:
-                        backend.delete(key)
-                        if not auto_authorize:
-                            raise AuthorizationRequired(provider=provider, user="default")
+                        raise  # network/parse error: never destroy a valid refresh token
                     else:
                         backend.set(key, new_tokens)
                         access_token = new_tokens["access_token"]
