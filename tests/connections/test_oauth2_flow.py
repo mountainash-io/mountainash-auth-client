@@ -520,3 +520,91 @@ class TestResolveAccessToken:
             with pytest.raises(AuthorizationRequired):
                 OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(
                     _Auth(), auto_authorize=True)
+
+    def test_transient_refresh_failure_keeps_record(self, rat_env):
+        rat_env.tokens.set("rat.oauth2", {
+            "access_token": "old", "refresh_token": "r_xyz",
+            "token_expires_at": int(time.time()) - 1000,
+        })
+        deleted = {"called": False}
+        real_delete = rat_env.store.delete
+        def spy_delete(key):
+            deleted["called"] = True
+            return real_delete(key)
+        rat_env.store.delete = spy_delete
+        with patch.object(OAuthFlow, "refresh", side_effect=httpx.ConnectError("down")):
+            with pytest.raises(httpx.ConnectError):
+                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+        assert deleted["called"] is False
+        assert rat_env.tokens.get("rat.oauth2")["refresh_token"] == "r_xyz"
+
+    def test_invalid_grant_clears_record(self, rat_env):
+        rat_env.tokens.set("rat.oauth2", {
+            "access_token": "old", "refresh_token": "r_xyz",
+            "token_expires_at": int(time.time()) - 1000,
+        })
+        err = TokenRefreshError(url="https://t", status_code=401, body='{"error":"invalid_grant"}')
+        with patch.object(OAuthFlow, "refresh", side_effect=err):
+            with pytest.raises(AuthorizationRequired):
+                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+        assert rat_env.tokens.get("rat.oauth2") is None
+
+
+def test_refresh_derives_expiry_from_jwt_when_no_expires_in():
+    import base64, json, time
+    def _jwt(payload):
+        def seg(d): return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
+        return f"{seg({'alg':'ES256'})}.{seg(payload)}.{seg({'s':'x'})}"
+    future = int(time.time()) + 900
+    flow = OAuthFlow(_provider())
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"access_token": _jwt({"exp": future}), "refresh_token": "r2"}
+    resp.raise_for_status.return_value = None
+    with patch("httpx.Client") as Client:
+        Client.return_value.__enter__.return_value.post.return_value = resp
+        out = flow.refresh(refresh_token="r1", client_id="c", client_secret="s")
+    assert out["token_expires_at"] == future
+
+
+def _privy_provider():
+    return _provider(
+        TOKEN_URL="https://auth.privy.io/api/oauth/v2/token",
+        TOKEN_ENDPOINT_AUTH_METHOD="none",
+        TOKEN_REQUEST_HEADERS={"privy-app-id": "cm6", "Origin": "https://superteam.fun"},
+        TOKEN_REQUEST_CONTENT_TYPE="application/json",
+    )
+
+
+def _capture_post():
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"access_token": "AT", "refresh_token": "RT2", "expires_in": 900}
+    resp.raise_for_status.return_value = None
+    client = MagicMock()
+    client.__enter__.return_value.post.return_value = resp
+    return client
+
+
+def test_refresh_none_method_sends_headers_no_client_creds_json_body():
+    flow = OAuthFlow(_privy_provider())
+    client = _capture_post()
+    with patch("httpx.Client", return_value=client):
+        flow.refresh(refresh_token="RT1", client_id=None, client_secret=None)
+    _, kwargs = client.__enter__.return_value.post.call_args
+    assert kwargs["headers"]["privy-app-id"] == "cm6"
+    assert kwargs["headers"]["Origin"] == "https://superteam.fun"
+    assert kwargs["json"] == {"grant_type": "refresh_token", "refresh_token": "RT1"}
+    assert "client_id" not in kwargs.get("json", {}) and "data" not in kwargs
+
+
+def test_refresh_default_method_is_byte_identical():
+    flow = OAuthFlow(_provider())
+    client = _capture_post()
+    with patch("httpx.Client", return_value=client):
+        flow.refresh(refresh_token="RT1", client_id="c", client_secret="s")
+    _, kwargs = client.__enter__.return_value.post.call_args
+    assert kwargs["data"] == {
+        "grant_type": "refresh_token", "refresh_token": "RT1",
+        "client_id": "c", "client_secret": "s",
+    }
+    assert "headers" not in kwargs or kwargs["headers"] == {}
+    assert "json" not in kwargs

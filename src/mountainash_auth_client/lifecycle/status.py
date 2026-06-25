@@ -5,7 +5,10 @@ import enum
 import time
 from dataclasses import dataclass
 
-__all__ = ["TokenState", "TokenStatus", "classify_oauth2"]
+from mountainash_auth_client.schemas.token import _decode_jwt_claims
+from mountainash_auth_client.errors import MalformedJWTError
+
+__all__ = ["TokenState", "TokenStatus", "classify_oauth2", "jwt_exp"]
 
 
 class TokenState(str, enum.Enum):
@@ -23,6 +26,15 @@ class TokenStatus:
     expires_at: int | None = None
     expires_in_seconds: int | None = None
     has_refresh_token: bool = False
+
+
+def jwt_exp(access_token: str) -> int | None:
+    """Best-effort `exp` from a JWT access token; None for opaque tokens or missing exp."""
+    try:
+        v = _decode_jwt_claims(access_token).get("exp")
+    except MalformedJWTError:
+        return None
+    return int(v) if v is not None else None
 
 
 def classify_oauth2(

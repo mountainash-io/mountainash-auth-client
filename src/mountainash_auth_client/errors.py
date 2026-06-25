@@ -1,6 +1,8 @@
 """Auth-specific exceptions for mountainash-auth-client."""
 from __future__ import annotations
 
+import json as _json
+
 
 class TokenExchangeError(Exception):
     """OAuth token endpoint returned an error during code exchange."""
@@ -9,7 +11,12 @@ class TokenExchangeError(Exception):
         self.url = url
         self.status_code = status_code
         self.body = body
-        super().__init__(f"Token exchange failed: HTTP {status_code} POST {url} — {body[:200]}")
+        try:
+            parsed = _json.loads(body)
+            self.error_code = parsed.get("error") if isinstance(parsed, dict) else None
+        except (ValueError, TypeError):
+            self.error_code = None
+        super().__init__(f"Token exchange failed: HTTP {status_code} POST {url}")
 
 
 class TokenRefreshError(Exception):
@@ -19,7 +26,12 @@ class TokenRefreshError(Exception):
         self.url = url
         self.status_code = status_code
         self.body = body
-        super().__init__(f"Token refresh failed: HTTP {status_code} POST {url} — {body[:200]}")
+        try:
+            parsed = _json.loads(body)
+            self.error_code = parsed.get("error") if isinstance(parsed, dict) else None
+        except (ValueError, TypeError):
+            self.error_code = None
+        super().__init__(f"Token refresh failed: HTTP {status_code} POST {url}")
 
 
 class AuthorizationRequired(Exception):
@@ -57,3 +69,11 @@ class CallbackTimeoutError(CallbackError, TimeoutError):
     Subclasses the builtin ``TimeoutError`` so existing ``except TimeoutError``
     handlers keep working while callers can also catch ``CallbackError``.
     """
+
+
+class MalformedJWTError(Exception):
+    """A token expected to be a compact JWS was not three base64url segments / did not decode."""
+
+    def __init__(self, *, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Malformed JWT: {reason}")

@@ -1,8 +1,28 @@
 """Bearer-token and JWT authentication."""
+import base64 as _b64
+import json as _json
+
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
+from ..errors import MalformedJWTError
 from ..targets import TargetFamily
 from .registry import register
+
+
+def _b64url_json(seg: str) -> dict:
+    seg += "=" * (-len(seg) % 4)  # restore base64url padding
+    return _json.loads(_b64.urlsafe_b64decode(seg))
+
+
+def _decode_jwt_claims(token: str) -> dict:
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise MalformedJWTError(reason="expected three '.'-separated segments")
+    try:
+        _b64url_json(parts[0])  # header must decode too (spec: validate header + payload)
+        return _b64url_json(parts[1])
+    except (ValueError, TypeError) as exc:
+        raise MalformedJWTError(reason=f"header/payload did not decode: {exc}") from exc
 
 __all__ = ["TokenAuthProfile", "JWTAuthProfile", "TOKEN_SPEC", "JWT_SPEC"]
 
@@ -48,3 +68,11 @@ JWT_SPEC = ProfileSpec(
 class JWTAuthProfile(Profile):
     __spec__ = JWT_SPEC
     __adapters__ = {TargetFamily.HTTP: _bearer_header}
+
+    def claims(self) -> dict:
+        return _decode_jwt_claims(self.TOKEN.get_secret_value())
+
+    @property
+    def exp(self) -> int | None:
+        v = self.claims().get("exp")
+        return int(v) if v is not None else None

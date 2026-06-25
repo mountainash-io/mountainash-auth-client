@@ -97,31 +97,62 @@ class OAuthFlow:
         if params.get("state") != expected_state:
             raise ValueError("OAuth state mismatch — possible CSRF attack")
 
+    def _build_token_request(self, base_data: dict, client_id, client_secret) -> dict:
+        """Return kwargs for httpx post: shaped by the provider's client-auth config.
+
+        Defaults reproduce today's behaviour exactly: client_secret_post + form body + no headers.
+        """
+        method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
+        headers = dict(getattr(self._provider, "TOKEN_REQUEST_HEADERS", None) or {})
+        content_type = getattr(self._provider, "TOKEN_REQUEST_CONTENT_TYPE",
+                               "application/x-www-form-urlencoded")
+        data = dict(base_data)
+        if method == "client_secret_post":
+            if client_id is not None:
+                data["client_id"] = client_id
+            if client_secret is not None:
+                data["client_secret"] = client_secret
+        elif method == "client_secret_basic":
+            import base64
+            token = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+            headers["Authorization"] = f"Basic {token}"
+        elif method == "none":
+            pass
+        else:
+            raise ValueError(f"unknown TOKEN_ENDPOINT_AUTH_METHOD: {method}")
+        kwargs: dict = {}
+        if content_type == "application/json":
+            kwargs["json"] = data
+        else:
+            kwargs["data"] = data
+        if headers:
+            kwargs["headers"] = headers
+        return kwargs
+
     def exchange_code(
         self,
         code: str,
         redirect_uri: str,
-        client_id: str,
-        client_secret: str,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         scope: str | None = None,
         state: str | None = None,
     ) -> dict[str, str | int | None]:
         """Exchange authorization code for tokens. Returns flat token dict."""
-        data: dict[str, str] = {
+        base_data: dict[str, str] = {
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": redirect_uri,
-            "client_id": client_id,
-            "client_secret": client_secret,
         }
 
         lookup_state = state or self._last_state
         if self.use_pkce and lookup_state and lookup_state in self._pending_verifiers:
-            data["code_verifier"] = self._pending_verifiers.pop(lookup_state)
+            base_data["code_verifier"] = self._pending_verifiers.pop(lookup_state)
 
+        post_kwargs = self._build_token_request(base_data, client_id, client_secret)
         with httpx.Client() as client:
             try:
-                resp = client.post(self.token_url, data=data)
+                resp = client.post(self.token_url, **post_kwargs)
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 raise TokenExchangeError(
@@ -148,6 +179,9 @@ class OAuthFlow:
         expires_at: int | None = None
         if "expires_in" in token_data:
             expires_at = int(time.time()) + int(token_data["expires_in"])
+        if expires_at is None:
+            from mountainash_auth_client.lifecycle.status import jwt_exp
+            expires_at = jwt_exp(token_data["access_token"])
 
         return {
             "access_token": token_data["access_token"],
@@ -159,19 +193,17 @@ class OAuthFlow:
     def refresh(
         self,
         refresh_token: str,
-        client_id: str,
-        client_secret: str,
+        client_id: str | None = None,
+        client_secret: str | None = None,
     ) -> dict[str, str | int | None]:
         """Refresh an expired access token. Returns flat token dict."""
-        data = {
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": client_id,
-            "client_secret": client_secret,
-        }
+        post_kwargs = self._build_token_request(
+            {"grant_type": "refresh_token", "refresh_token": refresh_token},
+            client_id, client_secret,
+        )
         with httpx.Client() as client:
             try:
-                resp = client.post(self.token_url, data=data)
+                resp = client.post(self.token_url, **post_kwargs)
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 raise TokenRefreshError(
@@ -198,6 +230,9 @@ class OAuthFlow:
         expires_at: int | None = None
         if "expires_in" in token_data:
             expires_at = int(time.time()) + int(token_data["expires_in"])
+        if expires_at is None:
+            from mountainash_auth_client.lifecycle.status import jwt_exp
+            expires_at = jwt_exp(token_data["access_token"])
 
         return {
             "access_token": token_data["access_token"],
@@ -247,16 +282,29 @@ class OAuthFlow:
                     # A concurrent caller already produced a valid token — use it.
                     access_token = tokens["access_token"]
                 elif tokens and tokens.get("refresh_token"):
+                    _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
+                    if _method == "none":
+                        _cid = _csec = None
+                    else:
+                        _cid = auth_profile.CLIENT_ID
+                        _csec = auth_profile.CLIENT_SECRET.get_secret_value() if auth_profile.CLIENT_SECRET else None
                     try:
                         new_tokens = self.refresh(
                             refresh_token=tokens["refresh_token"],
-                            client_id=auth_profile.CLIENT_ID,
-                            client_secret=auth_profile.CLIENT_SECRET.get_secret_value(),
+                            client_id=_cid,
+                            client_secret=_csec,
                         )
+                    except TokenRefreshError as exc:
+                        if exc.error_code in {"invalid_grant", "invalid_token"}:
+                            backend.delete(key)
+                            if not auto_authorize:
+                                raise AuthorizationRequired(provider=provider, user="default")
+                            # auto_authorize: record cleared, no raise — access_token stays
+                            # None so control falls through to the re-authorize tail below.
+                        else:
+                            raise  # transient/server error: keep the record, surface retryably
                     except Exception:
-                        backend.delete(key)
-                        if not auto_authorize:
-                            raise AuthorizationRequired(provider=provider, user="default")
+                        raise  # network/parse error: never destroy a valid refresh token
                     else:
                         backend.set(key, new_tokens)
                         access_token = new_tokens["access_token"]
@@ -266,9 +314,15 @@ class OAuthFlow:
                 # fail-closed tail below.
 
         if not access_token and auto_authorize:
+            _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
+            if _method == "none":
+                _cid = _csec = None
+            else:
+                _cid = auth_profile.CLIENT_ID
+                _csec = auth_profile.CLIENT_SECRET.get_secret_value() if auth_profile.CLIENT_SECRET else None
             new_tokens = self.authorize(
-                client_id=auth_profile.CLIENT_ID,
-                client_secret=auth_profile.CLIENT_SECRET.get_secret_value(),
+                client_id=_cid,
+                client_secret=_csec,
                 scope=auth_profile.SCOPE,
                 callback_server=callback_server,
             )
