@@ -536,3 +536,47 @@ def test_refresh_derives_expiry_from_jwt_when_no_expires_in():
         Client.return_value.__enter__.return_value.post.return_value = resp
         out = flow.refresh(refresh_token="r1", client_id="c", client_secret="s")
     assert out["token_expires_at"] == future
+
+
+def _privy_provider():
+    return _provider(
+        TOKEN_URL="https://auth.privy.io/api/oauth/v2/token",
+        TOKEN_ENDPOINT_AUTH_METHOD="none",
+        TOKEN_REQUEST_HEADERS={"privy-app-id": "cm6", "Origin": "https://superteam.fun"},
+        TOKEN_REQUEST_CONTENT_TYPE="application/json",
+    )
+
+
+def _capture_post():
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"access_token": "AT", "refresh_token": "RT2", "expires_in": 900}
+    resp.raise_for_status.return_value = None
+    client = MagicMock()
+    client.__enter__.return_value.post.return_value = resp
+    return client
+
+
+def test_refresh_none_method_sends_headers_no_client_creds_json_body():
+    flow = OAuthFlow(_privy_provider())
+    client = _capture_post()
+    with patch("httpx.Client", return_value=client):
+        flow.refresh(refresh_token="RT1", client_id=None, client_secret=None)
+    _, kwargs = client.__enter__.return_value.post.call_args
+    assert kwargs["headers"]["privy-app-id"] == "cm6"
+    assert kwargs["headers"]["Origin"] == "https://superteam.fun"
+    assert kwargs["json"] == {"grant_type": "refresh_token", "refresh_token": "RT1"}
+    assert "client_id" not in kwargs.get("json", {}) and "data" not in kwargs
+
+
+def test_refresh_default_method_is_byte_identical():
+    flow = OAuthFlow(_provider())
+    client = _capture_post()
+    with patch("httpx.Client", return_value=client):
+        flow.refresh(refresh_token="RT1", client_id="c", client_secret="s")
+    _, kwargs = client.__enter__.return_value.post.call_args
+    assert kwargs["data"] == {
+        "grant_type": "refresh_token", "refresh_token": "RT1",
+        "client_id": "c", "client_secret": "s",
+    }
+    assert "headers" not in kwargs or kwargs["headers"] == {}
+    assert "json" not in kwargs
