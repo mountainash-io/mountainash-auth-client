@@ -57,3 +57,11 @@ class CallbackTimeoutError(CallbackError, TimeoutError):
     Subclasses the builtin ``TimeoutError`` so existing ``except TimeoutError``
     handlers keep working while callers can also catch ``CallbackError``.
     """
+
+
+class MalformedJWTError(Exception):
+    """A token expected to be a compact JWS was not three base64url segments / did not decode."""
+
+    def __init__(self, *, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Malformed JWT: {reason}")
