@@ -8,6 +8,8 @@ from ..errors import MalformedJWTError
 from ..targets import TargetFamily
 from .registry import register
 
+__all__ = ["TokenAuthProfile", "JWTAuthProfile", "TOKEN_SPEC", "JWT_SPEC"]
+
 
 def _b64url_json(seg: str) -> dict:
     seg += "=" * (-len(seg) % 4)  # restore base64url padding
@@ -23,8 +25,6 @@ def _decode_jwt_claims(token: str) -> dict:
         return _b64url_json(parts[1])
     except (ValueError, TypeError) as exc:
         raise MalformedJWTError(reason=f"header/payload did not decode: {exc}") from exc
-
-__all__ = ["TokenAuthProfile", "JWTAuthProfile", "TOKEN_SPEC", "JWT_SPEC"]
 
 
 def _bearer_header(profile, kw):
