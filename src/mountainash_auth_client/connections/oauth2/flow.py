@@ -113,7 +113,6 @@ class OAuthFlow:
             if client_secret is not None:
                 data["client_secret"] = client_secret
         elif method == "client_secret_basic":
-            import base64
             token = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
             headers["Authorization"] = f"Basic {token}"
         elif method == "none":
