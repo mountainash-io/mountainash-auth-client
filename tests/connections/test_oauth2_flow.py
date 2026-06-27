@@ -566,6 +566,25 @@ def test_refresh_derives_expiry_from_jwt_when_no_expires_in():
     assert out["token_expires_at"] == future
 
 
+def test_exchange_code_derives_expiry_from_jwt_when_no_expires_in():
+    # Symmetric to the refresh test: when the token response omits `expires_in`,
+    # exchange_code falls back to the access token's JWT `exp` claim.
+    import base64, json, time
+    def _jwt(payload):
+        def seg(d): return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
+        return f"{seg({'alg':'ES256'})}.{seg(payload)}.{seg({'s':'x'})}"
+    future = int(time.time()) + 900
+    flow = OAuthFlow(_provider())
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"access_token": _jwt({"exp": future}), "refresh_token": "r2"}
+    resp.raise_for_status.return_value = None
+    with patch("httpx.Client") as Client:
+        Client.return_value.__enter__.return_value.post.return_value = resp
+        out = flow.exchange_code(code="authcode", redirect_uri="https://app/callback",
+                                 client_id="c", client_secret="s")
+    assert out["token_expires_at"] == future
+
+
 def _privy_provider():
     return _provider(
         TOKEN_URL="https://auth.privy.io/api/oauth/v2/token",
