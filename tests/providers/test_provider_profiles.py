@@ -6,10 +6,10 @@ from pydantic import ValidationError
 
 from mountainash_settings import ParameterSpec, ProfileSpec
 from mountainash_auth_client.targets import TargetFamily
-from mountainash_auth_client.providers.oauth2 import (
+from mountainash_auth_client.oauth.providers.oauth2 import (
     OAuth2ProviderProfile,
 )
-from mountainash_auth_client.providers.oauth1 import (
+from mountainash_auth_client.oauth.providers.oauth1 import (
     OAUTH1_PROVIDER_PARAMS,
     OAuth1ProviderProfile,
 )
@@ -89,7 +89,7 @@ class TestOAuth1ProviderProfile:
 
 
 def test_new_client_auth_params_default_to_standard():
-    from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
+    from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
     p = OAuth2ProviderProfile(NAME="x", AUTHORIZE_URL="a", TOKEN_URL="t", BASE_URL="b")
     assert p.TOKEN_ENDPOINT_AUTH_METHOD == "client_secret_post"
     assert p.TOKEN_REQUEST_HEADERS is None
@@ -97,7 +97,7 @@ def test_new_client_auth_params_default_to_standard():
 
 
 def test_new_client_auth_params_overridable():
-    from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
+    from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
     p = OAuth2ProviderProfile(
         NAME="privy", AUTHORIZE_URL="", TOKEN_URL="t", BASE_URL="b",
         TOKEN_ENDPOINT_AUTH_METHOD="none",

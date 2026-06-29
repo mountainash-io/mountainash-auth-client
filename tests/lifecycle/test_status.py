@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mountainash_auth_client.lifecycle.status import (
+from mountainash_auth_client.oauth.lifecycle.status import (
     TokenState,
     TokenStatus,
     classify_oauth2,

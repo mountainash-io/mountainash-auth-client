@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 import pytest
 
-from mountainash_auth_client.lifecycle.oauth1 import OAuth1TokenManager
-from mountainash_auth_client.lifecycle.status import TokenState
-from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
+from mountainash_auth_client.oauth.lifecycle.oauth1 import OAuth1TokenManager
+from mountainash_auth_client.oauth.lifecycle.status import TokenState
+from mountainash_auth_client.oauth.providers.oauth1 import OAuth1ProviderProfile
 from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
 
 

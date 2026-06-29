@@ -12,14 +12,14 @@ from mountainash_auth_client.errors import (
     TokenExchangeError,
 )
 from mountainash_auth_client._optional import require_authlib
-from mountainash_auth_client.connections.server.factory import resolve_callback_factory
-from mountainash_auth_client.persistence import token_store
+from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
+from mountainash_auth_client.oauth.persistence import token_store
 
 if TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
-    from mountainash_auth_client.persistence import PersistableAuthProfile
-    from mountainash_auth_client.providers.protocols import OAuth1ProviderProfileProtocol
-    from mountainash_auth_client.connections.protocols import CallbackServerFactory
+    from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
+    from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
+    from mountainash_auth_client.oauth.protocols import CallbackServerFactory
 
 
 class OAuth1Flow:

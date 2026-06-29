@@ -17,14 +17,14 @@ from mountainash_auth_client.errors import (
     TokenExchangeError,
     TokenRefreshError,
 )
-from mountainash_auth_client.connections.server.factory import resolve_callback_factory
-from mountainash_auth_client.persistence import token_store
+from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
+from mountainash_auth_client.oauth.persistence import token_store
 
 if TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
-    from mountainash_auth_client.persistence import PersistableAuthProfile
-    from mountainash_auth_client.providers.protocols import OAuth2ProviderProfileProtocol
-    from mountainash_auth_client.connections.protocols import CallbackServerFactory
+    from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
+    from mountainash_auth_client.oauth.providers.protocols import OAuth2ProviderProfileProtocol
+    from mountainash_auth_client.oauth.protocols import CallbackServerFactory
 
 
 class OAuthFlow:
@@ -179,7 +179,7 @@ class OAuthFlow:
         if "expires_in" in token_data:
             expires_at = int(time.time()) + int(token_data["expires_in"])
         if expires_at is None:
-            from mountainash_auth_client.lifecycle.status import jwt_exp
+            from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
             expires_at = jwt_exp(token_data["access_token"])
 
         return {
@@ -230,7 +230,7 @@ class OAuthFlow:
         if "expires_in" in token_data:
             expires_at = int(time.time()) + int(token_data["expires_in"])
         if expires_at is None:
-            from mountainash_auth_client.lifecycle.status import jwt_exp
+            from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
             expires_at = jwt_exp(token_data["access_token"])
 
         return {

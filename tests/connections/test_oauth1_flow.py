@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
-from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
+from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
+from mountainash_auth_client.oauth.providers.oauth1 import OAuth1ProviderProfile
 
 
 def _provider(**overrides):
@@ -118,7 +118,7 @@ class TestOAuth1Authorize:
         sink = {}
         _stub_oauth1(flow, monkeypatch, sink)
         monkeypatch.setattr(
-            "mountainash_auth_client.connections.server.manual.prompt_for_code",
+            "mountainash_auth_client.oauth.server.manual.prompt_for_code",
             lambda url: {"code": "BAREVERIF"})
         flow.authorize("ckey", "csec", redirect_mode="manual")
         assert sink["callback_url"] == "oob"

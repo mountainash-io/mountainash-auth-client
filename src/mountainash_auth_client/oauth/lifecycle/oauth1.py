@@ -7,16 +7,16 @@ from __future__ import annotations
 
 import typing as t
 
-from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
-from mountainash_auth_client.connections.server.factory import resolve_callback_factory
-from mountainash_auth_client.lifecycle.status import TokenState, TokenStatus
-from mountainash_auth_client.persistence import token_store
+from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
+from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
+from mountainash_auth_client.oauth.lifecycle.status import TokenState, TokenStatus
+from mountainash_auth_client.oauth.persistence import token_store
 
 if t.TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
-    from mountainash_auth_client.providers.protocols import OAuth1ProviderProfileProtocol
-    from mountainash_auth_client.persistence import PersistableAuthProfile
-    from mountainash_auth_client.connections.protocols import CallbackServerFactory
+    from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
+    from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
+    from mountainash_auth_client.oauth.protocols import CallbackServerFactory
 
 __all__ = ["OAuth1TokenManager"]
 

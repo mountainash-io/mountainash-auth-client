@@ -1,5 +1,5 @@
 import base64, json
-from mountainash_auth_client.lifecycle.status import jwt_exp
+from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
 
 
 def _jwt(payload):

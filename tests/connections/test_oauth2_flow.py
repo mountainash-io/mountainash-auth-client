@@ -8,8 +8,8 @@ import httpx
 import pytest
 
 from mountainash_auth_client.errors import TokenExchangeError, TokenRefreshError
-from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
-from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
+from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
+from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
 
 
 def _provider(**overrides):
@@ -302,7 +302,7 @@ class TestAuthorizeInjection:
         assert sink["redirect_uri"] == "https://CONSTRUCT/cb"
 
     def test_default_uses_local_callback_server(self, monkeypatch):
-        import mountainash_auth_client.connections.server.factory as factory
+        import mountainash_auth_client.oauth.server.factory as factory
         monkeypatch.setattr(
             factory, "LocalCallbackServer",
             lambda port=0: _EchoServer(f"http://localhost/{port}/callback"))

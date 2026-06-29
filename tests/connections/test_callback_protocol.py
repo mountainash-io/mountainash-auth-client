@@ -1,7 +1,7 @@
 """Tests for CallbackServerProtocol conformance."""
 from __future__ import annotations
 
-from mountainash_auth_client.connections.protocols import CallbackServerProtocol
+from mountainash_auth_client.oauth.protocols import CallbackServerProtocol
 
 
 class _Conforming:

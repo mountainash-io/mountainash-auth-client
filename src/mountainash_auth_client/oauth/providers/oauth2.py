@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-from ..targets import TargetFamily
+from mountainash_auth_client.targets import TargetFamily
 
 __all__ = ["OAuth2ProviderProfile", "OAUTH2_PROVIDER_PARAMS", "OAUTH2_PROVIDER_SPEC"]
 

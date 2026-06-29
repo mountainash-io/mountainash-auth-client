@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from mountainash_auth_client.providers.protocols import (
+from mountainash_auth_client.oauth.providers.protocols import (
     OAuth1ProviderProfileProtocol,
     OAuth2ProviderProfileProtocol,
     ProviderProfileProtocol,
 )
-from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
-from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
+from mountainash_auth_client.oauth.providers.oauth1 import OAuth1ProviderProfile
+from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
 from mountainash_auth_client.targets import TargetFamily
 
 

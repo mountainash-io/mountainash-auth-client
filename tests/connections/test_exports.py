@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import mountainash_auth_client as pkg
-from mountainash_auth_client.connections import (
+from mountainash_auth_client.oauth import (
     CallbackServerProtocol,
     ManualCallbackServer,
 )

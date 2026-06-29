@@ -1,8 +1,8 @@
-"""OAuth2Connection — parameterised connect for any OAuth2 provider.
+"""OAuth1Connection — parameterised connect for any OAuth1 provider.
 
-Composes the unified two-stage HTTP emission: the provider emits its resource
-config (base_url), then a TokenAuthProfile emits the Bearer header onto it.
-No ClassVars, no subclass-per-provider.
+Resolves the access token pair, then dogfoods the unified emission: a fresh
+OAuth1AuthProfile populated with the resolved pair emits the authlib signer
+onto the provider's base_url.
 """
 from __future__ import annotations
 
@@ -11,22 +11,20 @@ from typing import TYPE_CHECKING, Self
 import httpx
 
 from mountainash_auth_client.targets import TargetFamily
-from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
-from mountainash_auth_client.schemas.token import TokenAuthProfile
+from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
+from mountainash_auth_client.schemas.oauth1 import OAuth1AuthProfile
 
 if TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
-    from mountainash_auth_client.providers.protocols import OAuth2ProviderProfileProtocol
-    from mountainash_auth_client.schemas.oauth2 import OAuth2AuthProfile
-    from mountainash_auth_client.schemas.oauth2_authcode import OAuth2AuthCodeAuthProfile
-    from mountainash_auth_client.connections.protocols import CallbackServerFactory
+    from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
+    from mountainash_auth_client.oauth.protocols import CallbackServerFactory
 
 
-class OAuth2Connection:
+class OAuth1Connection:
     def __init__(
         self,
-        provider: OAuth2ProviderProfileProtocol,
-        auth_profile: OAuth2AuthProfile | OAuth2AuthCodeAuthProfile,
+        provider: OAuth1ProviderProfileProtocol,
+        auth_profile: OAuth1AuthProfile,
         *,
         resolver: SecretStoreResolver,
         auto_authorize: bool = False,
@@ -44,13 +42,19 @@ class OAuth2Connection:
         return self._client
 
     def connect(self) -> Self:
-        token = OAuthFlow(self._provider, resolver=self._resolver).resolve_access_token(
+        oauth_token, oauth_token_secret = OAuth1Flow(self._provider, resolver=self._resolver).resolve_token_pair(
             self._auth,
             auto_authorize=self._auto_authorize,
             callback_server=self._callback_server,
         )
         base = self._provider.emit(TargetFamily.HTTP)
-        merged = TokenAuthProfile(TOKEN=token).emit(TargetFamily.HTTP, base=base)
+        signed = OAuth1AuthProfile(
+            CONSUMER_KEY=self._auth.CONSUMER_KEY,
+            CONSUMER_SECRET=self._auth.CONSUMER_SECRET.get_secret_value(),
+            ACCESS_TOKEN=oauth_token,
+            ACCESS_TOKEN_SECRET=oauth_token_secret,
+        )
+        merged = signed.emit(TargetFamily.HTTP, base=base)
         merged.setdefault("timeout", 30.0)
         self._client = httpx.Client(**merged)
         return self

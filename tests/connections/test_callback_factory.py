@@ -1,9 +1,9 @@
 """Tests for resolve_callback_factory precedence."""
 from __future__ import annotations
 
-from mountainash_auth_client.connections.server.callback import LocalCallbackServer
-from mountainash_auth_client.connections.server.factory import resolve_callback_factory
-from mountainash_auth_client.connections.server.manual import ManualCallbackServer
+from mountainash_auth_client.oauth.server.callback import LocalCallbackServer
+from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
+from mountainash_auth_client.oauth.server.manual import ManualCallbackServer
 
 
 def _explicit():
@@ -59,7 +59,7 @@ def test_local_builtin_reads_metadata_port():
 
 
 def test_default_local_server_uses_callback_port():
-    import mountainash_auth_client.connections.server.factory as f
+    import mountainash_auth_client.oauth.server.factory as f
 
     captured = {}
 
@@ -80,7 +80,7 @@ def test_default_local_server_uses_callback_port():
 
 
 def test_default_local_server_port_zero_when_none():
-    import mountainash_auth_client.connections.server.factory as f
+    import mountainash_auth_client.oauth.server.factory as f
 
     captured = {}
 

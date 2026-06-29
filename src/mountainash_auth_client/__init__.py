@@ -10,11 +10,11 @@ from mountainash_auth_client.errors import (
     TokenExchangeError,
     TokenRefreshError,
 )
-from mountainash_auth_client.connections.oauth2.flow import OAuthFlow
-from mountainash_auth_client.connections.oauth2.connection import OAuth2Connection
-from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
-from mountainash_auth_client.connections.oauth1.connection import OAuth1Connection
-from mountainash_auth_client.providers import (
+from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
+from mountainash_auth_client.oauth.oauth2.connection import OAuth2Connection
+from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
+from mountainash_auth_client.oauth.oauth1.connection import OAuth1Connection
+from mountainash_auth_client.oauth.providers import (
     OAuth1ProviderProfile,
     OAuth1ProviderProfileProtocol,
     OAuth2ProviderProfile,
@@ -37,14 +37,14 @@ from mountainash_auth_client.schemas import (
     TokenAuthProfile,
     WindowsAuthProfile,
 )
-from mountainash_auth_client.connections.server.callback import LocalCallbackServer
-from mountainash_auth_client.connections.protocols import (
+from mountainash_auth_client.oauth.server.callback import LocalCallbackServer
+from mountainash_auth_client.oauth.protocols import (
     CallbackServerFactory,
     CallbackServerProtocol,
 )
-from mountainash_auth_client.connections.server.manual import ManualCallbackServer
-from mountainash_auth_client.persistence import PersistableAuthProfile
-from mountainash_auth_client.lifecycle import (
+from mountainash_auth_client.oauth.server.manual import ManualCallbackServer
+from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
+from mountainash_auth_client.oauth.lifecycle import (
     OAuth1TokenManager,
     OAuth2TokenManager,
     TokenState,

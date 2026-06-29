@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-from ..targets import TargetFamily
+from mountainash_auth_client.targets import TargetFamily
 from .oauth2 import _provider_http_kwargs
 
 __all__ = ["OAuth1ProviderProfile", "OAUTH1_PROVIDER_PARAMS", "OAUTH1_PROVIDER_SPEC"]

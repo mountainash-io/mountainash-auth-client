@@ -5,10 +5,10 @@ from unittest.mock import patch
 
 import pytest
 
-from mountainash_auth_client.lifecycle.oauth2 import OAuth2TokenManager
-from mountainash_auth_client.lifecycle.status import TokenState
-from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
-from mountainash_auth_client.connections.server.manual import ManualCallbackServer
+from mountainash_auth_client.oauth.lifecycle.oauth2 import OAuth2TokenManager
+from mountainash_auth_client.oauth.lifecycle.status import TokenState
+from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
+from mountainash_auth_client.oauth.server.manual import ManualCallbackServer
 from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
 from mountainash_secrets.stores.filesystem import FilesystemSecretStore
 

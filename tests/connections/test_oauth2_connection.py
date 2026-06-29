@@ -8,8 +8,8 @@ from unittest.mock import patch
 import pytest
 
 from mountainash_auth_client.errors import AuthorizationRequired
-from mountainash_auth_client.connections.oauth2.connection import OAuth2Connection
-from mountainash_auth_client.providers.oauth2 import OAuth2ProviderProfile
+from mountainash_auth_client.oauth.oauth2.connection import OAuth2Connection
+from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
 from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
 
 
@@ -98,7 +98,7 @@ class TestExpiredToken:
 class TestResolverSeam:
     def test_uses_resolved_token_for_bearer_header(self, env):
         with patch(
-            "mountainash_auth_client.connections.oauth2.connection.OAuthFlow"
+            "mountainash_auth_client.oauth.oauth2.connection.OAuthFlow"
         ) as flow_cls:
             flow_cls.return_value.resolve_access_token.return_value = "resolved_tok"
             conn = OAuth2Connection(_provider(), FakeAuth(), resolver=env.resolver)
@@ -108,7 +108,7 @@ class TestResolverSeam:
     def test_forwards_auto_authorize_and_callback_server(self, env):
         sentinel = object()
         with patch(
-            "mountainash_auth_client.connections.oauth2.connection.OAuthFlow"
+            "mountainash_auth_client.oauth.oauth2.connection.OAuthFlow"
         ) as flow_cls:
             flow_cls.return_value.resolve_access_token.return_value = "tok"
             conn = OAuth2Connection(

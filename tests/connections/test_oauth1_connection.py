@@ -4,8 +4,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from mountainash_auth_client.connections.oauth1.connection import OAuth1Connection
-from mountainash_auth_client.providers.oauth1 import OAuth1ProviderProfile
+from mountainash_auth_client.oauth.oauth1.connection import OAuth1Connection
+from mountainash_auth_client.oauth.providers.oauth1 import OAuth1ProviderProfile
 from mountainash_secrets import InMemorySecretStore, SecretRegistryResolver
 
 
@@ -69,7 +69,7 @@ class TestConnect:
             return ("AT", "ATS")
 
         monkeypatch.setattr(
-            "mountainash_auth_client.connections.oauth1.flow.OAuth1Flow.resolve_token_pair",
+            "mountainash_auth_client.oauth.oauth1.flow.OAuth1Flow.resolve_token_pair",
             fake_resolve,
         )
 
