@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from mountainash_auth_client.connections._optional import require, require_authlib
+from mountainash_auth_client._optional import require, require_authlib
 
 
 class TestRequireSuccess:

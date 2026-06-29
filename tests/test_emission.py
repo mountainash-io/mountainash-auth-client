@@ -28,12 +28,12 @@ class TestTargetFamily:
 class TestRequireParamiko:
     def test_returns_module(self):
         # paramiko is in the test env (added in this task); require returns it.
-        from mountainash_auth_client.connections._optional import require_paramiko
+        from mountainash_auth_client._optional import require_paramiko
         paramiko = require_paramiko()
         assert hasattr(paramiko, "RSAKey")
 
     def test_returns_named_attr(self):
-        from mountainash_auth_client.connections._optional import require_paramiko
+        from mountainash_auth_client._optional import require_paramiko
         RSAKey = require_paramiko("RSAKey")
         assert RSAKey.__name__ == "RSAKey"
 
@@ -43,7 +43,7 @@ class TestRequireParamiko:
         # mirroring the existing tests/connections/test_optional.py pattern.
         import importlib
 
-        from mountainash_auth_client.connections._optional import require_paramiko
+        from mountainash_auth_client._optional import require_paramiko
 
         def boom(name):
             raise ImportError("simulated missing paramiko")

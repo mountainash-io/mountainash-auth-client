@@ -11,7 +11,7 @@ from mountainash_auth_client.errors import (
     MalformedCallbackError,
     TokenExchangeError,
 )
-from mountainash_auth_client.connections._optional import require_authlib
+from mountainash_auth_client._optional import require_authlib
 from mountainash_auth_client.connections.server.factory import resolve_callback_factory
 from mountainash_auth_client.persistence import token_store
 

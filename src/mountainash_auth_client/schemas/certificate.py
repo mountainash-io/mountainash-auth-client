@@ -4,7 +4,7 @@ from pathlib import Path
 
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-from ..connections._optional import require_paramiko
+from .._optional import require_paramiko
 from ..targets import TargetFamily
 from .registry import register
 
