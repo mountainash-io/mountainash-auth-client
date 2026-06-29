@@ -126,7 +126,7 @@ Then hand `build_kwargs(...)` to your SDK constructor (`httpx.Client(**kwargs)`,
 | `KerberosAuthProfile` | `SERVICE_NAME`, `PRINCIPAL`, `KEYTAB` | PARAMIKO | `gss_auth`/`gss_host`/`gss_kex` |
 | `CertificateAuthProfile` | `PRIVATE_KEY`/`PRIVATE_KEY_PATH`, `PASSPHRASE` | PARAMIKO | `key_filename`/`pkey` + `passphrase` |
 | `OAuth1AuthProfile` | `CONSUMER_KEY`, `CONSUMER_SECRET`, `ACCESS_TOKEN`, `ACCESS_TOKEN_SECRET` | HTTP | authlib `auth=` (OAuth1 signing) |
-| `OAuth2AuthProfile` | `CLIENT_ID`, `CLIENT_SECRET`, `SCOPE` | HTTP | `Authorization: Bearer …` |
+| `OAuth2AuthProfile` | `CLIENT_ID`, `CLIENT_SECRET`, `TOKEN`, `SCOPE` | HTTP | `Authorization: Bearer …` (from `TOKEN`) |
 | `OAuth2AuthCodeAuthProfile` | `CLIENT_ID`, `CLIENT_SECRET`, `SCOPE`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `TOKEN_EXPIRES_AT` | HTTP (via flow) | resolved Bearer token |
 
 > Secret fields (`*_SECRET`, `PASSWORD`, …) are `SecretStr` — **pass them through as `SecretStr`**;
@@ -146,15 +146,15 @@ before it can be emitted. auth-client owns this lifecycle; integrate at the **re
 
 ```python
 from mountainash_auth_client import OAuthFlow              # OAuth2
-from mountainash_auth_client.connections.oauth1.flow import OAuth1Flow
+from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
 
 # OAuth2: cache → refresh → authorize → persist → access token
-token = OAuthFlow(spec).resolve_access_token(
+token = OAuthFlow(provider, resolver=resolver).resolve_access_token(
     auth_profile, auto_authorize=False, callback_server=None,
 )  # -> str ; raises AuthorizationRequired when no usable token and auto_authorize=False
 
 # OAuth1: cache → authorize → persist → token pair
-oauth_token, oauth_token_secret = OAuth1Flow(spec).resolve_token_pair(
+oauth_token, oauth_token_secret = OAuth1Flow(provider, resolver=resolver).resolve_token_pair(
     auth_profile, auto_authorize=False, callback_server=None,
 )  # -> tuple[str, str]
 ```
@@ -164,7 +164,7 @@ Bind the resolved token onto **your** endpoint config via `emit()`:
 ```python
 from mountainash_auth_client import TokenAuthProfile, TargetFamily
 
-token = OAuthFlow(spec).resolve_access_token(auth_profile)
+token = OAuthFlow(provider, resolver=resolver).resolve_access_token(auth_profile)
 kwargs = TokenAuthProfile(TOKEN=token).emit(TargetFamily.HTTP, base=my_endpoint_config)
 client = httpx.Client(**kwargs)
 ```
@@ -174,18 +174,21 @@ while reusing auth-client's one lifecycle.
 
 ### Connections (batteries-included)
 
-`OAuth2Connection` / `OAuth1Connection` are subclass-per-provider classes that resolve **and**
-build a hardcoded `httpx.Client` (`base_url`/`timeout=30`). Use them when you don't need custom
-endpoint config:
+`OAuth2Connection` / `OAuth1Connection` are **parameterised** classes that resolve the token
+(via the flow) **and** build an `httpx.Client` (`base_url` from the provider, `timeout=30`).
+Use them when you don't need custom endpoint config — pass the provider profile, the auth
+profile, and a `resolver`; no subclassing:
 
 ```python
-class MyProvider(OAuth2Connection):
-    _spec = MY_PROVIDER_SPEC      # ProfileSpec with metadata.authorize_url / token_url
-    _base_url = "https://api.example.com"
-    _client = None
+from mountainash_auth_client import OAuth2Connection
 
-conn = MyProvider().connect(auth_profile, auto_authorize=True)
-client = conn.client              # authenticated httpx.Client
+conn = OAuth2Connection(
+    provider,             # an OAuth2 provider profile (authorize_url / token_url / base_url)
+    auth_profile,         # OAuth2AuthProfile | OAuth2AuthCodeAuthProfile
+    resolver=resolver,    # SecretStoreResolver for token persistence (required)
+    auto_authorize=True,
+).connect()
+client = conn.client      # authenticated httpx.Client
 ```
 
 ### Secrets backend (required for OAuth)
@@ -251,6 +254,6 @@ does to preserve its public `AuthorizationRequired` contract.
 
 ## Reference
 
-- Canonical consumer: `mountainash-transport` `connections/` (factory `_emit_kwargs`, `OAuth2Connection`/`OAuth1Connection`).
+- Canonical `emit()` consumer: `mountainash-transport` `connections/` (factory `_emit_kwargs`). The batteries-included `OAuth2Connection`/`OAuth1Connection` path is consumed by `mountainash-wearables`.
 - Emission design: `docs/superpowers/specs/2026-06-12-unified-profile-kwargs-emission-design.md`.
 - Connections-dedup (why transport imports auth-client instead of forking): `docs/superpowers/specs/2026-06-13-connections-dedup-design.md`.
