@@ -11,6 +11,8 @@ from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
 from mountainash_auth_client.oauth.lifecycle.status import TokenState, TokenStatus
 from mountainash_auth_client.oauth.persistence import token_store
+from mountainash_auth_client.schemas.oauth1 import OAuth1AuthProfile
+from mountainash_auth_client.targets import TargetFamily
 
 if t.TYPE_CHECKING:
     from mountainash_secrets import SecretStoreResolver
@@ -75,6 +77,21 @@ class OAuth1TokenManager:
         if record is None:
             return TokenStatus(TokenState.MISSING)
         return TokenStatus(TokenState.PRESENT)
+
+    def acquire_auth(self):
+        """Resolve the OAuth1 token pair and return the httpx.Auth signer.
+
+        OAuth1 is per-request signing, not a Bearer header — the consumer applies
+        this via RequestCreds(auth=...). Reuses the schema's _oauth1_signer through emit(HTTP).
+        """
+        token, secret = self.token_pair()
+        signer = OAuth1AuthProfile(
+            CONSUMER_KEY=self._auth.CONSUMER_KEY,
+            CONSUMER_SECRET=self._auth.CONSUMER_SECRET.get_secret_value(),
+            ACCESS_TOKEN=token,
+            ACCESS_TOKEN_SECRET=secret,
+        )
+        return signer.emit(TargetFamily.HTTP)["auth"]
 
     def revoke(self) -> None:
         backend = self._store()

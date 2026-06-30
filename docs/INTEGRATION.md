@@ -136,7 +136,7 @@ Then hand `build_kwargs(...)` to your SDK constructor (`httpx.Client(**kwargs)`,
 
 ---
 
-## Pattern 2 — OAuth flow lifecycle (resolvers + connections)
+## Pattern 2 — OAuth flow lifecycle (resolvers + acquire seam)
 
 For OAuth providers the token must be *resolved* (cached → refreshed → authorized → persisted)
 before it can be emitted. auth-client owns this lifecycle; integrate at the **resolver** seam.
@@ -171,24 +171,27 @@ client = httpx.Client(**kwargs)
 This is exactly how transport keeps its per-endpoint httpx config (timeouts, TLS, redirects)
 while reusing auth-client's one lifecycle.
 
-### Connections (batteries-included)
+### Token acquisition seam (`acquire()` / `acquire_auth()`)
 
-`OAuth2Connection` / `OAuth1Connection` are **parameterised** classes that resolve the token
-(via the flow) **and** build an `httpx.Client` (`base_url` from the provider, `timeout=30`).
-Use them when you don't need custom endpoint config — pass the provider profile, the auth
-profile, and a `resolver`; no subclassing:
+`OAuth2TokenManager` and `OAuth1TokenManager` are the lifecycle entry points. They resolve a
+token (cache → refresh → authorize → persist) and return a credential you can emit directly:
 
 ```python
-from mountainash_auth_client import OAuth2Connection
+from mountainash_auth_client import OAuth2TokenManager, TokenAuthProfile, TargetFamily
 
-conn = OAuth2Connection(
-    provider,             # an OAuth2 provider profile (authorize_url / token_url / base_url)
-    auth_profile,         # OAuth2AuthProfile
-    resolver=resolver,    # SecretStoreResolver for token persistence (required)
-    auto_authorize=True,
-).connect()
-client = conn.client      # authenticated httpx.Client
+cred = OAuth2TokenManager(provider, auth_profile, resolver=resolver).acquire()  # TokenCredential
+kw = TokenAuthProfile(TOKEN=cred.access_token).emit(TargetFamily.HTTP)           # {"headers": {...}}
+# hand kw to the consumer's transport (http-client HttpConfig); wire creds_provider for refresh.
 ```
+
+For OAuth 1.0a, `OAuth1TokenManager(...).acquire_auth()` returns an `httpx.Auth` signer for
+`RequestCreds(auth=…)` — OAuth1 is per-request signing, not a Bearer header, so the signer is
+passed directly rather than emitted as headers.
+
+**Error contract:** a use-time auth failure raises `AuthorizationRequired` (no usable token and
+interactive authorize is disabled) or `TokenRefreshError` (refresh call failed). When surfaced
+through http-client's request path these arrive as `SourceAuthenticationError`; the consumer
+maps `__cause__` to detect which domain error triggered reauth (Phase 3 §6 / Phase 4).
 
 ### Secrets backend (required for OAuth)
 
@@ -244,7 +247,7 @@ does to preserve its public `AuthorizationRequired` contract.
 1. **Depend on** `mountainash-auth-client` (+ `[oauth1]`/`[sftp]` extras only if used). It pulls `mountainash-settings`.
 2. **Credential injection:** call `auth_profile.emit(family, base=sdk_config)` and feed the result to your SDK constructor. Treat `NoAuthProfile`/`None` as passthrough; layer onto nested `base_kwargs` when present.
 3. **Pick the family explicitly** — `emit()` is fail-closed; never call it untargeted.
-4. **OAuth:** register a secrets backend, resolve via `OAuthFlow.resolve_access_token` / `OAuth1Flow.resolve_token_pair`, then `emit` the resolved token onto your endpoint config. Provide a `callback_server` factory if you support interactive authorize.
+4. **OAuth:** register a secrets backend, acquire a token via `OAuth2TokenManager(...).acquire()` (OAuth2) or `OAuth1TokenManager(...).acquire_auth()` (OAuth1), then `emit` the resolved token onto your endpoint config. Provide a `callback_server` factory if you support interactive authorize.
 5. **Secrets stay `SecretStr`** — pass profile secret fields through; never unwrap at the call site.
 6. **Errors:** catch auth-client's error types; translate to your own at the boundary if you have a public contract.
 7. **Don't fork** the flow/callback/connection code into your layer — import it. auth-client is the single source of truth (transport's former fork was deleted; see its connections-dedup spec).
@@ -253,6 +256,6 @@ does to preserve its public `AuthorizationRequired` contract.
 
 ## Reference
 
-- Canonical `emit()` consumer: `mountainash-transport` `connections/` (factory `_emit_kwargs`). The batteries-included `OAuth2Connection`/`OAuth1Connection` path is consumed by `mountainash-wearables`.
+- Canonical `emit()` consumer: `mountainash-transport` `connections/` (factory `_emit_kwargs`). `mountainash-wearables` consumes the `acquire()` + `creds_provider`/`emit(HTTP)` seam — http-client builds the authenticated client from the emitted kwargs.
 - Emission design: `docs/superpowers/specs/2026-06-12-unified-profile-kwargs-emission-design.md`.
 - Connections-dedup (why transport imports auth-client instead of forking): `docs/superpowers/specs/2026-06-13-connections-dedup-design.md`.

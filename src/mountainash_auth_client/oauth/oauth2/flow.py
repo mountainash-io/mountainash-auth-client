@@ -252,6 +252,7 @@ class OAuthFlow:
         *,
         auto_authorize: bool = False,
         callback_server: CallbackServerFactory | None = None,
+        force: bool = False,
     ) -> str:
         """Resolve a valid access token: cached → refresh → authorize → persist.
 
@@ -259,6 +260,8 @@ class OAuthFlow:
         ``AuthorizationRequired`` when no usable token exists and
         ``auto_authorize`` is False. Uses the fail-closed ``if not
         access_token`` guard — an empty cached token is never returned.
+        Pass ``force=True`` to skip the is_expired check and unconditionally
+        hit the token endpoint (used by force_refresh).
         """
         provider = self._provider.NAME
         if self._resolver is None:
@@ -269,7 +272,7 @@ class OAuthFlow:
 
         access_token: str | None = None
 
-        if tokens and not self.is_expired(tokens.get("token_expires_at")):
+        if tokens and not force and not self.is_expired(tokens.get("token_expires_at")):
             access_token = tokens["access_token"]
         elif tokens and tokens.get("refresh_token"):
             with backend.transaction(key):
@@ -277,7 +280,7 @@ class OAuthFlow:
                 # pre-lock read: a concurrent writer may have refreshed, revoked, or
                 # rotated it while we waited for the lock.
                 tokens = backend.get(key)
-                if tokens and not self.is_expired(tokens.get("token_expires_at")):
+                if tokens and not force and not self.is_expired(tokens.get("token_expires_at")):
                     # A concurrent caller already produced a valid token — use it.
                     access_token = tokens["access_token"]
                 elif tokens and tokens.get("refresh_token"):
@@ -335,6 +338,15 @@ class OAuthFlow:
             raise AuthorizationRequired(provider=provider, user="default")
 
         return access_token
+
+    def force_refresh(self, auth_profile: PersistableAuthProfile) -> str:
+        """Unconditionally exchange the stored refresh token at the token endpoint
+        (ignoring is_expired), persist, and return the new access token — under the
+        same per-key transaction, single-flight re-read, and error handling as
+        resolve_access_token. Raises AuthorizationRequired when no refresh token is
+        available to force with.
+        """
+        return self.resolve_access_token(auth_profile, auto_authorize=False, force=True)
 
     def authorize(
         self,

@@ -627,3 +627,40 @@ def test_refresh_default_method_is_byte_identical():
     }
     assert "headers" not in kwargs or kwargs["headers"] == {}
     assert "json" not in kwargs
+
+
+class TestForceRefresh:
+    def test_force_refresh_hits_endpoint_when_token_still_valid(self, rat_env):
+        # Seed a NON-expired token with a refresh_token.
+        rat_env.tokens.set("rat.oauth2", {
+            "access_token": "valid_old_tok",
+            "refresh_token": "r_xyz",
+            "token_expires_at": int(time.time()) + 4000,
+        })
+        # Stub the HTTP refresh call to return a NEW token.
+        with patch.object(OAuthFlow, "refresh", return_value={
+            "access_token": "forced_new_tok",
+            "refresh_token": "new_r",
+            "token_expires_at": int(time.time()) + 3600,
+        }):
+            token = OAuthFlow(_provider(), resolver=rat_env.resolver).force_refresh(_Auth())
+
+        assert token == "forced_new_tok"
+        assert rat_env.tokens.get("rat.oauth2")["access_token"] == "forced_new_tok"
+
+        # Sanity contrast: a plain resolve_access_token on the same (now-updated) store
+        # returns the cached "forced_new_tok" without hitting the endpoint again.
+        with patch.object(OAuthFlow, "refresh") as mock_refresh:
+            cached = OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+        assert cached == "forced_new_tok"
+        mock_refresh.assert_not_called()
+
+    def test_force_refresh_raises_without_refresh_token(self, rat_env):
+        # Seed a valid token but with no refresh_token — force_refresh must raise.
+        rat_env.tokens.set("rat.oauth2", {
+            "access_token": "valid_tok",
+            "refresh_token": None,
+            "token_expires_at": int(time.time()) + 4000,
+        })
+        with pytest.raises(AuthorizationRequired):
+            OAuthFlow(_provider(), resolver=rat_env.resolver).force_refresh(_Auth())

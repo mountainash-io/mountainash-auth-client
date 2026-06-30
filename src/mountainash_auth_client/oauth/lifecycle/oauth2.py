@@ -5,6 +5,7 @@ import typing as t
 
 from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
+from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
 from mountainash_auth_client.oauth.lifecycle.status import TokenState, TokenStatus, classify_oauth2
 from mountainash_auth_client.oauth.persistence import token_store
 
@@ -20,9 +21,9 @@ __all__ = ["OAuth2TokenManager"]
 class OAuth2TokenManager:
     """Full OAuth2 token lifecycle over an injected resolver.
 
-    Manages *tokens* (persisted under the "oauth" namespace by persist_key());
-    for an authed httpx client use OAuth2Connection instead. Every mutation is
-    serialized through the per-key transaction (design spec §5.1).
+    Manages *tokens* (persisted under the "oauth" namespace by persist_key()).
+    ``acquire()`` returns a ``TokenCredential``; render it for HTTP via ``emit(HTTP)``.
+    Every mutation is serialized through the per-key transaction (design spec §5.1).
     """
 
     def __init__(
@@ -76,9 +77,32 @@ class OAuth2TokenManager:
             backend.set(key, tokens)
         return self.status()
 
-    def refresh(self) -> TokenStatus:
-        self._flow_cls()(self._provider, resolver=self._resolver).resolve_access_token(self._auth)
-        return self.status()
+    def acquire(self) -> TokenCredential:
+        """Resolve a valid access token (refresh-if-stale) and return it as a
+        TokenCredential. Non-interactive: raises AuthorizationRequired when no usable
+        token exists — it never launches the interactive authorize dance.
+        """
+        flow = self._flow_cls()(self._provider, resolver=self._resolver)
+        flow.resolve_access_token(self._auth, auto_authorize=False)   # refresh-or-raise, single-flight
+        return self._credential()
+
+    def refresh(self) -> TokenCredential:
+        """Force a refresh: unconditionally exchange the refresh token at the token
+        endpoint under the per-key transaction (ignores is_expired), then return the
+        credential. Contrast acquire(), which is refresh-if-stale.
+        """
+        self._flow_cls()(self._provider, resolver=self._resolver).force_refresh(self._auth)
+        return self._credential()
+
+    def _credential(self) -> TokenCredential:
+        backend = self._store()
+        key = self._auth.persist_key()
+        with backend.transaction(key):
+            record = backend.get(key)
+        if not record or not record.get("access_token"):
+            from mountainash_auth_client.errors import AuthorizationRequired
+            raise AuthorizationRequired(provider=self._provider.NAME, user="default")
+        return TokenCredential.from_record(record)
 
     def access_token(self) -> str:
         return self._flow_cls()(self._provider, resolver=self._resolver).resolve_access_token(self._auth)
