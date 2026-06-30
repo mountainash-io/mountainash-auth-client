@@ -271,7 +271,7 @@ class TestKerberos:
 class TestPlainOAuth2:
     def test_http_bearer_from_token(self):
         from mountainash_auth_client import OAuth2AuthProfile
-        out = OAuth2AuthProfile(TOKEN="access-tok").emit(TargetFamily.HTTP)
+        out = OAuth2AuthProfile(ACCESS_TOKEN="access-tok").emit(TargetFamily.HTTP)
         assert out == {"headers": {"Authorization": "Bearer access-tok"}}
 
     def test_http_no_token_is_empty(self):
@@ -284,5 +284,5 @@ class TestPlainOAuth2:
 
     def test_no_stray_client_fields(self):
         from mountainash_auth_client import OAuth2AuthProfile
-        out = OAuth2AuthProfile(TOKEN="access-tok").emit(TargetFamily.HTTP)
+        out = OAuth2AuthProfile(ACCESS_TOKEN="access-tok").emit(TargetFamily.HTTP)
         assert "client_id" not in out and "token" not in out
