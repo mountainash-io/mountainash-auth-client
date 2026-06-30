@@ -79,6 +79,7 @@ test-target-quick = "pytest {args}"
 #================
 [envs.ruff]
 installer = "uv"
+detached = true
 dependencies = ["ruff==0.3.7"]
 
 [envs.ruff.scripts]

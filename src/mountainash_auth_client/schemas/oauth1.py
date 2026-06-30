@@ -1,7 +1,7 @@
 """OAuth 1.0a authentication."""
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
-from ..connections._optional import require_authlib
+from .._optional import require_authlib
 from ..targets import TargetFamily
 from .registry import register
 

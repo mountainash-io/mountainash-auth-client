@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mountainash_auth_client.persistence import PersistableAuthProfile, token_store
+from mountainash_auth_client.oauth.persistence import PersistableAuthProfile, token_store
 from mountainash_secrets import (
     SecretCapabilityError,
     InMemorySecretStore,
