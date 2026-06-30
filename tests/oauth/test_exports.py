@@ -33,7 +33,6 @@ def test_provider_profiles_and_oauth1_exported_at_root():
     for name in (
         "OAuth2ProviderProfile",
         "OAuth1ProviderProfile",
-        "OAuth1Connection",
         "OAuth1Flow",
     ):
         assert name in pkg.__all__, name

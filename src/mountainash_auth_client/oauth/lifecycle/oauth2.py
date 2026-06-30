@@ -21,9 +21,9 @@ __all__ = ["OAuth2TokenManager"]
 class OAuth2TokenManager:
     """Full OAuth2 token lifecycle over an injected resolver.
 
-    Manages *tokens* (persisted under the "oauth" namespace by persist_key());
-    for an authed httpx client use OAuth2Connection instead. Every mutation is
-    serialized through the per-key transaction (design spec §5.1).
+    Manages *tokens* (persisted under the "oauth" namespace by persist_key()).
+    ``acquire()`` returns a ``TokenCredential``; render it for HTTP via ``emit(HTTP)``.
+    Every mutation is serialized through the per-key transaction (design spec §5.1).
     """
 
     def __init__(
