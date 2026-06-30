@@ -77,13 +77,13 @@ class TestOAuth2Auth:
 
     def test_construction_with_token(self):
         cls = AUTH_REGISTRY.get_settings_class("oauth2")
-        instance = cls(TOKEN="access-tok")
+        instance = cls(ACCESS_TOKEN="access-tok")
         assert instance.profile_name == "oauth2"
 
     def test_default_kwargs_token(self):
-        # TOKEN now renders via the HTTP Bearer adapter, not a bare driver_key.
+        # ACCESS_TOKEN now renders via the HTTP Bearer adapter, not a bare driver_key.
         cls = AUTH_REGISTRY.get_settings_class("oauth2")
-        instance = cls(TOKEN="access-tok")
+        instance = cls(ACCESS_TOKEN="access-tok")
         assert instance._default_kwargs() == {}
 
     def test_default_kwargs_client_credentials(self):
@@ -97,28 +97,18 @@ class TestOAuth2Auth:
         instance = cls()
         assert instance._default_kwargs() == {}
 
-
-class TestOAuth2AuthCodeAuth:
-    def test_registered(self):
-        assert "oauth2_authcode" in AUTH_REGISTRY
-
-    def test_construction(self):
-        cls = AUTH_REGISTRY.get_settings_class("oauth2_authcode")
-        instance = cls(CLIENT_ID="cid", CLIENT_SECRET="csec")
-        assert instance.profile_name == "oauth2_authcode"
-
-    def test_with_tokens(self):
-        cls = AUTH_REGISTRY.get_settings_class("oauth2_authcode")
+    def test_construction_with_all_token_fields(self):
+        cls = AUTH_REGISTRY.get_settings_class("oauth2")
         instance = cls(
             CLIENT_ID="cid",
             CLIENT_SECRET="csec",
             ACCESS_TOKEN="at",
             REFRESH_TOKEN="rt",
-            TOKEN_EXPIRES_AT=9999,
             SCOPE="read write",
         )
+        assert instance.profile_name == "oauth2"
+        assert instance.ACCESS_TOKEN.get_secret_value() == "at"
         assert instance.SCOPE == "read write"
-        assert instance.TOKEN_EXPIRES_AT == 9999
 
 
 class TestOAuth1Auth:

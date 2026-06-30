@@ -126,14 +126,13 @@ Then hand `build_kwargs(...)` to your SDK constructor (`httpx.Client(**kwargs)`,
 | `KerberosAuthProfile` | `SERVICE_NAME`, `PRINCIPAL`, `KEYTAB` | PARAMIKO | `gss_auth`/`gss_host`/`gss_kex` |
 | `CertificateAuthProfile` | `PRIVATE_KEY`/`PRIVATE_KEY_PATH`, `PASSPHRASE` | PARAMIKO | `key_filename`/`pkey` + `passphrase` |
 | `OAuth1AuthProfile` | `CONSUMER_KEY`, `CONSUMER_SECRET`, `ACCESS_TOKEN`, `ACCESS_TOKEN_SECRET` | HTTP | authlib `auth=` (OAuth1 signing) |
-| `OAuth2AuthProfile` | `CLIENT_ID`, `CLIENT_SECRET`, `TOKEN`, `SCOPE` | HTTP | `Authorization: Bearer …` (from `TOKEN`) |
-| `OAuth2AuthCodeAuthProfile` | `CLIENT_ID`, `CLIENT_SECRET`, `SCOPE`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `TOKEN_EXPIRES_AT` | HTTP (via flow) | resolved Bearer token |
+| `OAuth2AuthProfile` | `CLIENT_ID`, `CLIENT_SECRET`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `SCOPE` | HTTP | `Authorization: Bearer …` (from `ACCESS_TOKEN`) |
 
 > Secret fields (`*_SECRET`, `PASSWORD`, …) are `SecretStr` — **pass them through as `SecretStr`**;
 > the plaintext is unwrapped only inside the adapter. Don't call `.get_secret_value()` at the call site.
 
 `CONST_AUTH_PROFILES` enumerates the modes for registry/config use:
-`NONE, PASSWORD, TOKEN, JWT, OAUTH1, OAUTH2, OAUTH2_AUTHCODE, IAM, AZURE_AD, WINDOWS, KERBEROS, CERTIFICATE, SERVICE_ACCOUNT`.
+`NONE, PASSWORD, TOKEN, JWT, OAUTH1, OAUTH2, IAM, AZURE_AD, WINDOWS, KERBEROS, CERTIFICATE, SERVICE_ACCOUNT`.
 
 ---
 
@@ -184,7 +183,7 @@ from mountainash_auth_client import OAuth2Connection
 
 conn = OAuth2Connection(
     provider,             # an OAuth2 provider profile (authorize_url / token_url / base_url)
-    auth_profile,         # OAuth2AuthProfile | OAuth2AuthCodeAuthProfile
+    auth_profile,         # OAuth2AuthProfile
     resolver=resolver,    # SecretStoreResolver for token persistence (required)
     auto_authorize=True,
 ).connect()

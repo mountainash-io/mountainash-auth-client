@@ -159,31 +159,6 @@ class TestIAM:
 
 
 @pytest.mark.unit
-class TestOAuth2AuthCode:
-    def test_http_bearer_from_access_token(self):
-        from mountainash_auth_client import OAuth2AuthCodeAuthProfile
-        out = OAuth2AuthCodeAuthProfile(
-            CLIENT_ID="cid", CLIENT_SECRET="csec", ACCESS_TOKEN="at"
-        ).emit(TargetFamily.HTTP)
-        assert out == {"headers": {"Authorization": "Bearer at"}}
-
-    def test_http_no_token_is_empty(self):
-        from mountainash_auth_client import OAuth2AuthCodeAuthProfile
-        # No access token in hand → nothing static to render (flow acquires it).
-        out = OAuth2AuthCodeAuthProfile(CLIENT_ID="cid", CLIENT_SECRET="csec").emit(
-            TargetFamily.HTTP
-        )
-        assert out == {}
-
-    def test_no_stray_client_fields(self):
-        from mountainash_auth_client import OAuth2AuthCodeAuthProfile
-        out = OAuth2AuthCodeAuthProfile(
-            CLIENT_ID="cid", CLIENT_SECRET="csec", ACCESS_TOKEN="at"
-        ).emit(TargetFamily.HTTP)
-        assert "client_id" not in out and "access_token" not in out
-
-
-@pytest.mark.unit
 class TestOAuth1:
     def test_http_installs_authlib_signer(self):
         from mountainash_auth_client import OAuth1AuthProfile
@@ -271,7 +246,7 @@ class TestKerberos:
 class TestPlainOAuth2:
     def test_http_bearer_from_token(self):
         from mountainash_auth_client import OAuth2AuthProfile
-        out = OAuth2AuthProfile(TOKEN="access-tok").emit(TargetFamily.HTTP)
+        out = OAuth2AuthProfile(ACCESS_TOKEN="access-tok").emit(TargetFamily.HTTP)
         assert out == {"headers": {"Authorization": "Bearer access-tok"}}
 
     def test_http_no_token_is_empty(self):
@@ -284,5 +259,5 @@ class TestPlainOAuth2:
 
     def test_no_stray_client_fields(self):
         from mountainash_auth_client import OAuth2AuthProfile
-        out = OAuth2AuthProfile(TOKEN="access-tok").emit(TargetFamily.HTTP)
-        assert "client_id" not in out and "token" not in out
+        out = OAuth2AuthProfile(ACCESS_TOKEN="access-tok").emit(TargetFamily.HTTP)
+        assert "client_id" not in out and "access_token" not in out

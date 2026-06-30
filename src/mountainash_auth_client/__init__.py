@@ -23,7 +23,6 @@ from mountainash_auth_client.schemas import (
     KerberosAuthProfile,
     NoAuthProfile,
     OAuth1AuthProfile,
-    OAuth2AuthCodeAuthProfile,
     OAuth2AuthProfile,
     PasswordAuthProfile,
     ServiceAccountAuthProfile,
@@ -70,7 +69,7 @@ def __dir__() -> list[str]:
 
 AuthProfile = (
     NoAuthProfile | PasswordAuthProfile | TokenAuthProfile | JWTAuthProfile
-    | OAuth1AuthProfile | OAuth2AuthProfile | OAuth2AuthCodeAuthProfile
+    | OAuth1AuthProfile | OAuth2AuthProfile
     | IAMAuthProfile | WindowsAuthProfile | AzureADAuthProfile
     | KerberosAuthProfile | CertificateAuthProfile | ServiceAccountAuthProfile
 )
@@ -100,7 +99,6 @@ __all__ = [
     "OAuth1ProviderProfile",
     "OAuth1ProviderProfileProtocol",
     "OAuth1TokenManager",
-    "OAuth2AuthCodeAuthProfile",
     "OAuth2AuthProfile",
     "OAuth2Connection",
     "OAuth2ProviderProfile",
