@@ -55,9 +55,18 @@ class OAuth2TokenManager:
             manual_redirect_uri=manual_redirect_uri,
         )
         # Interactive dance runs OUTSIDE any lock (can take minutes).
+        _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
+        if _method == "none":
+            _cid = _csec = None
+        else:
+            _cid = self._auth.CLIENT_ID
+            _csec = (
+                self._auth.CLIENT_SECRET.get_secret_value()
+                if self._auth.CLIENT_SECRET else None
+            )
         tokens = self._flow_cls()(self._provider, resolver=self._resolver).authorize(
-            client_id=self._auth.CLIENT_ID,
-            client_secret=self._auth.CLIENT_SECRET.get_secret_value(),
+            client_id=_cid,
+            client_secret=_csec,
             scope=self._auth.SCOPE,
             callback_server=factory,
         )

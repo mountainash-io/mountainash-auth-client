@@ -114,6 +114,28 @@ def test_authorize_manual_mode_uses_manual_callback_server():
     assert isinstance(captured["callback_server"](), ManualCallbackServer)
 
 
+def test_authorize_tolerates_missing_client_secret():
+    # After the OAuth2 class collapse CLIENT_SECRET is optional; the manager must
+    # not dereference a None secret (it did unconditionally pre-collapse, because
+    # the old authcode schema required it).
+    class _NoSecretAuth(_Auth):
+        CLIENT_SECRET = None
+
+    mgr = OAuth2TokenManager(
+        _provider(), _NoSecretAuth(),
+        resolver=SecretRegistryResolver({"mem": InMemorySecretStore()}),
+    )
+    captured = {}
+
+    def fake_authorize(self, **kwargs):
+        captured.update(kwargs)
+        return {"access_token": "a", "token_expires_at": int(time.time()) + 3600}
+
+    with patch.object(type(mgr)._flow_cls(), "authorize", new=fake_authorize):
+        mgr.authorize()
+    assert captured["client_secret"] is None
+
+
 @pytest.mark.parametrize("bad_key", ["bad/key", "a..b"])
 def test_bad_persist_key_is_rejected_by_filesystem(tmp_path, bad_key):
     # "/" (illegal char) and ".." (empty segment) both violate the §4 grammar;
