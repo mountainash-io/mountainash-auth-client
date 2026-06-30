@@ -65,6 +65,14 @@ def test_token_pair_raises_when_missing():
         mgr.token_pair()
 
 
+def test_acquire_auth_returns_httpx_auth(monkeypatch):
+    OAuth1Auth = pytest.importorskip("authlib.integrations.httpx_client").OAuth1Auth
+    mgr, _ = _env()
+    monkeypatch.setattr(type(mgr), "token_pair", lambda self: ("tok", "tok_secret"))
+    auth = mgr.acquire_auth()
+    assert isinstance(auth, OAuth1Auth)
+
+
 def test_authorize_persists_and_returns_present():
     mgr, tokens = _env()
     with patch.object(
