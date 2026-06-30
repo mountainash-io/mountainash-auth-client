@@ -87,9 +87,11 @@ class OAuth2TokenManager:
         return self._credential()
 
     def refresh(self) -> TokenCredential:
-        """Force a refresh under the per-key transaction, then return the credential."""
-        flow = self._flow_cls()(self._provider, resolver=self._resolver)
-        flow.resolve_access_token(self._auth, auto_authorize=False)
+        """Force a refresh: unconditionally exchange the refresh token at the token
+        endpoint under the per-key transaction (ignores is_expired), then return the
+        credential. Contrast acquire(), which is refresh-if-stale.
+        """
+        self._flow_cls()(self._provider, resolver=self._resolver).force_refresh(self._auth)
         return self._credential()
 
     def _credential(self) -> TokenCredential:

@@ -157,6 +157,30 @@ def test_acquire_raises_when_no_token_non_interactive():
         mgr.acquire()                    # must NOT launch interactive authorize
 
 
+def test_refresh_forces_endpoint_call():
+    """mgr.refresh() must unconditionally hit the token endpoint even when the
+    stored token is not expired (i.e. it must call force_refresh, not a stale-check).
+    """
+    from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
+
+    mgr, tokens = _env()
+    # Seed a NON-expired token with a refresh_token.
+    tokens.set("testprovider.default", {
+        "access_token": "old_valid_tok",
+        "refresh_token": "r_xyz",
+        "token_expires_at": int(time.time()) + 4000,
+    })
+    with patch.object(OAuthFlow, "refresh", return_value={
+        "access_token": "forced_new_tok",
+        "refresh_token": "new_r",
+        "token_expires_at": int(time.time()) + 3600,
+    }):
+        cred = mgr.refresh()
+
+    assert isinstance(cred, TokenCredential)
+    assert cred.access_token == "forced_new_tok"
+
+
 @pytest.mark.parametrize("bad_key", ["bad/key", "a..b"])
 def test_bad_persist_key_is_rejected_by_filesystem(tmp_path, bad_key):
     # "/" (illegal char) and ".." (empty segment) both violate the §4 grammar;
