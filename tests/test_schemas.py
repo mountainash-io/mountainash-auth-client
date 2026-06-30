@@ -111,29 +111,6 @@ class TestOAuth2Auth:
         assert instance.SCOPE == "read write"
 
 
-class TestOAuth2AuthCodeAuth:
-    def test_registered(self):
-        assert "oauth2_authcode" in AUTH_REGISTRY
-
-    def test_construction(self):
-        cls = AUTH_REGISTRY.get_settings_class("oauth2_authcode")
-        instance = cls(CLIENT_ID="cid", CLIENT_SECRET="csec")
-        assert instance.profile_name == "oauth2_authcode"
-
-    def test_with_tokens(self):
-        cls = AUTH_REGISTRY.get_settings_class("oauth2_authcode")
-        instance = cls(
-            CLIENT_ID="cid",
-            CLIENT_SECRET="csec",
-            ACCESS_TOKEN="at",
-            REFRESH_TOKEN="rt",
-            TOKEN_EXPIRES_AT=9999,
-            SCOPE="read write",
-        )
-        assert instance.SCOPE == "read write"
-        assert instance.TOKEN_EXPIRES_AT == 9999
-
-
 class TestOAuth1Auth:
     def test_registered(self):
         assert "oauth1" in AUTH_REGISTRY

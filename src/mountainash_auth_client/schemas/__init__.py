@@ -7,7 +7,6 @@ from .kerberos import KerberosAuthProfile
 from .none import NoAuthProfile
 from .oauth1 import OAuth1AuthProfile
 from .oauth2 import OAuth2AuthProfile
-from .oauth2_authcode import OAuth2AuthCodeAuthProfile
 from .password import PasswordAuthProfile
 from .service_account import ServiceAccountAuthProfile
 from .token import JWTAuthProfile, TokenAuthProfile
@@ -22,7 +21,6 @@ __all__ = [
     "NoAuthProfile",
     "OAuth1AuthProfile",
     "OAuth2AuthProfile",
-    "OAuth2AuthCodeAuthProfile",
     "PasswordAuthProfile",
     "ServiceAccountAuthProfile",
     "TokenAuthProfile",

@@ -16,7 +16,6 @@ class CONST_AUTH_PROFILES(StrEnum):
     JWT = "jwt"
     OAUTH1 = "oauth1"
     OAUTH2 = "oauth2"
-    OAUTH2_AUTHCODE = "oauth2_authcode"
     IAM = "iam"
     AZURE_AD = "azure_ad"
     WINDOWS = "windows"
