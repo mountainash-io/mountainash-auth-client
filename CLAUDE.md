@@ -20,11 +20,8 @@ Before changing the connection layer or deciding where new connection/OAuth/call
 work belongs, read the relevant principle. Key one in force:
 
 - **Connections Single Source of Truth (ADOPTED):** `mountainash-auth-client` is the
-  single source of truth for the connection layer — OAuth 1.0a / OAuth 2.0 flows,
+  single source of truth for the OAuth connection layer — OAuth 1.0a / OAuth 2.0 flows,
   connection classes, callback servers, and the callback/connection protocols.
-  `mountainash-transport` carries a duplicated `connections/` copy that is **deprecated
-  and slated for deletion**; do **not** backport fixes into it or add new connection
-  code there. New work lands here.
 
 Specs (detailed evaluation records) live in `docs/superpowers/specs/`; principles distil
 the durable outcomes from them.
