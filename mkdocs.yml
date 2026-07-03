@@ -53,14 +53,6 @@ nav:
   - MicroSims:
       - List of MicroSims: sims/index.md
 
-  - API Reference:
-      - Overview: api/index.md
-      - Errors: api/errors.md
-      - Flows: api/flows.md
-      - Mixins: api/mixins.md
-      - Schemas: api/schemas.md
-      - Server: api/server.md
-      - Store: api/store.md
 
   - License: license.md
   - Contact: contact.md
@@ -92,17 +84,6 @@ theme:
 # Plugins
 plugins:
   - search
-  - mkdocstrings:
-      handlers:
-        python:
-          paths: ["../../../mountainash-auth-client/src"]
-          options:
-            show_source: true
-            show_bases: true
-            show_root_heading: true
-            show_root_full_path: false
-            heading_level: 2
-            members_order: source
   # Uncomment after running `pip install "mkdocs-material[imaging]"`:
   # - social
   # Uncomment after running `pip install mkdocs-glightbox`:
