@@ -7,7 +7,7 @@ name = "mountainash-auth-client"
 dynamic = ["version"]
 description = "Client-side authentication for the mountainash ecosystem"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     { name = "Nathaniel Ramm", email = "nathaniel.ramm@discretedatascience.com" },
@@ -17,6 +17,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -28,9 +29,15 @@ dependencies = [
     "pydantic>=2.9.0",
     "httpx>=0.27.0",
     "pyaml",
-    # "mountainash-secrets",
-    # "mountainash-settings",
+    "StrEnum>=0.4.15,<1",
+    "mountainash-settings>=26.5.0,<27",
+    "mountainash-secrets>=26.6.0,<27",
 ]
+
+[tool.uv.sources]
+mountainash-settings = { path = "../mountainash-settings" }
+mountainash-secrets = { path = "../mountainash-secrets" }
+
 
 [project.optional-dependencies]
 oauth1 = ["authlib>=1.3.0"]
@@ -65,7 +72,7 @@ exclude_lines = ["no cov", "if __name__ == .__main__:", "if TYPE_CHECKING:"]
 # ============================================================================
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py310"
 line-length = 120
 
 [tool.ruff.lint]
