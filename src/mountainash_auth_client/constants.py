@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from strenum import LowercaseStrEnum as StrEnum
 
 __all__ = ["CONST_AUTH_PROFILES"]
 
