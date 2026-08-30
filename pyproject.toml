@@ -30,8 +30,6 @@ dependencies = [
     "httpx>=0.27.0",
     "pyaml",
     "StrEnum>=0.4.15,<1",
-    "mountainash-settings>=26.5.0,<27",
-    "mountainash-secrets>=26.6.0,<27",
 ]
 
 [project.optional-dependencies]
