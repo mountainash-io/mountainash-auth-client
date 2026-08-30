@@ -22,6 +22,7 @@ dependencies = []
 # Env: default
 #================
 [envs.default]
+python = "3.12"
 installer = "uv"
 dependencies = []
 
@@ -29,7 +30,7 @@ dependencies = []
 # Env: test
 #================
 [[envs.test.matrix]]
-python = ["3.10", "3.12"]
+python = ["3.12"]
 
 [envs.test]
 type = "virtual"
