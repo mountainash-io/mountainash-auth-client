@@ -23,8 +23,11 @@ work belongs, read the relevant principle. Key one in force:
   single source of truth for the OAuth connection layer — OAuth 1.0a / OAuth 2.0 flows,
   connection classes, callback servers, and the callback/connection protocols.
 
-Specs (detailed evaluation records) live in `docs/superpowers/specs/`; principles distil
-the durable outcomes from them.
+The implementation backlog also lives in `mountainash-central`:
+[`04.planning/mountainash-auth-client/a.backlog/INDEX.md`](../mountainash-central/04.planning/mountainash-auth-client/a.backlog/INDEX.md)
+— prioritized items; see that directory's `CHANGELOG.md` for update history. Save new
+design specs/plans to `../mountainash-central/04.planning/mountainash-auth-client/superpowers/{specs,plans}/`,
+not under `docs/superpowers/` in this repo.
 
 ## Project Overview
 
