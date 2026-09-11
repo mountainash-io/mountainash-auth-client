@@ -4,7 +4,7 @@ description: 'An intelligent textbook for the mountainash-auth-client type-safe 
 ---
 
 
-[← Back to Ecosystem](../)
+[← Back to Ecosystem](https://docs.mountainash.io/)
 # Mountainash Auth Client
 
 An intelligent textbook for the mountainash-auth-client type-safe multi-provider authentication library
