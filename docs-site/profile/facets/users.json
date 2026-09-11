@@ -1,0 +1,52 @@
+{
+  "audience": "users",
+  "summary": "mountainash-auth-client provides a clean, type-safe way to authenticate with any backend or API provider. Choose an auth type by setting a single 'kind' field, and the library handles the rest -- from OAuth2 authorization flows with PKCE to secure credential storage. Connection mixins manage the full token lifecycle so you can focus on building integrations.",
+  "use_cases": [
+    "Connect to an OAuth2 provider with automatic token refresh and PKCE support",
+    "Store and retrieve credentials securely across sessions using the built-in filesystem store or a custom backend",
+    "Select the right auth strategy for any backend by choosing from 13 typed auth schemas",
+    "Add OAuth1 provider support when needed via the optional authlib integration"
+  ],
+  "concepts": [
+    {
+      "name": "Auth Types (Discriminated Union)",
+      "module_ids": ["schemas.base", "schemas.auth-types"],
+      "description": "A typed auth schema system where setting a single 'kind' field selects the authentication strategy. Each of the 13 auth types defines its own required and optional fields, making it straightforward to configure auth for any backend -- from NoAuth for local databases to IAMAuth for cloud services."
+    },
+    {
+      "name": "Auth-to-Driver Dispatch",
+      "module_ids": ["schemas.dispatch"],
+      "description": "The auth_kwargs() convenience function takes a profile object and maps its auth configuration to the keyword arguments your database driver expects. A built-in registry handles common auth types, and you can register custom mappers for backend-specific handling."
+    },
+    {
+      "name": "OAuth 2.0 Authorization Code Flow",
+      "module_ids": ["flows.oauth2", "mixins.oauth2"],
+      "description": "Full OAuth2 Authorization Code flow with PKCE support. OAuthFlow gives you fine-grained control over each step, while OAuth2ConnectionMixin provides a batteries-included experience -- connect(), and the mixin handles token loading, refresh, and re-authorization automatically."
+    },
+    {
+      "name": "OAuth 1.0a Flow (Optional)",
+      "module_ids": ["flows.oauth1", "mixins.oauth1"],
+      "description": "Three-legged OAuth1 authorization for providers that require it. Available as an optional install (pip install mountainash-auth-client[oauth1]) with the same flow/mixin pattern as OAuth2, so the programming model stays consistent across both protocols."
+    },
+    {
+      "name": "Credential Storage",
+      "module_ids": ["store"],
+      "description": "A pluggable credential storage system with a secure filesystem backend included out of the box. Credentials are organized by domain, provider, and user, and stored with restrictive file permissions. The SecretStore protocol makes it easy to plug in alternative backends like a vault or keychain service."
+    },
+    {
+      "name": "Error Handling",
+      "module_ids": ["errors"],
+      "description": "A focused set of auth-specific exceptions -- TokenExchangeError, TokenRefreshError, and AuthorizationRequired -- each carrying structured context (URL, status code, provider, user) so your error handling logic can make informed decisions about recovery."
+    }
+  ],
+  "featured_modules": [
+    "schemas.auth-types",
+    "schemas.dispatch",
+    "flows.oauth2",
+    "mixins.oauth2",
+    "store",
+    "errors"
+  ],
+  "hidden_or_internal_modules": [],
+  "open_questions": []
+}

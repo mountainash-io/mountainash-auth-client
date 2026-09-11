@@ -1,0 +1,58 @@
+{
+  "audience": "broader-hype",
+  "summary": "Authentication that handles itself — every auth method as typed data, OAuth flows that run end-to-end, tokens that refresh automatically, credentials stored securely.",
+
+  "the_vision": "Authentication in data applications is plumbing that everyone rebuilds. OAuth flows, token refresh, credential storage, multi-tenant token isolation — the same patterns, reimplemented for every integration. mountainash-auth-client makes authentication declarative: pick an auth type as typed data, and the library handles the flow, the lifecycle, and the storage.",
+
+  "what_it_makes_possible": [
+    {
+      "capability": "Every auth method as typed data",
+      "essence": "OAuth2 with PKCE, OAuth1, IAM, Azure AD, Kerberos, certificates, service accounts, passwords, tokens, JWT, and 'none' — each is a Pydantic model with validated fields and SecretStr-protected credentials. Pick the right one for your backend. The discriminated union ensures type safety across the entire ecosystem."
+    },
+    {
+      "capability": "OAuth flows that just work",
+      "essence": "OAuth 2.0 Authorization Code with PKCE runs end-to-end: open the browser, capture the callback, exchange the code, store the tokens. OAuth 1.0a handles the three-legged flow for legacy APIs. Browser-based and manual redirect modes. The flow runs once, then tokens refresh automatically."
+    },
+    {
+      "capability": "Tokens that manage themselves",
+      "essence": "Connection mixins handle the full token lifecycle — load from storage, check expiry, refresh if possible, re-authorize if needed. File-locked concurrent refresh prevents race conditions in multi-process pipelines. Token migration from inline config to secure storage happens transparently."
+    },
+    {
+      "capability": "Credentials stored securely by default",
+      "essence": "Secure filesystem storage with restricted permissions, symlink rejection, atomic writes, and fcntl locking. Domain-namespaced paths isolate tokens per provider and user. The SecretStore protocol accepts custom backends for organisations that need Vault or KMS."
+    },
+    {
+      "capability": "Connection mixins for provider integrations",
+      "essence": "Building an integration with an OAuth2 or OAuth1 provider? The connection mixins give you connect/disconnect lifecycle management, automatic token refresh, and secure storage — out of the box. Define the provider's metadata (URLs, scopes, flags) and the mixin handles the rest."
+    }
+  ],
+
+  "use_cases": [
+    {
+      "title": "The multi-provider data pipeline",
+      "story": "A pipeline ingests from Garmin (OAuth1), Google Health (OAuth2 with PKCE), and Strava (OAuth2). Each provider has different auth requirements. One auth library handles all three — flows, token refresh, secure storage. The pipeline code deals with data, not authentication plumbing."
+    },
+    {
+      "title": "Multi-tenant credential isolation",
+      "story": "A SaaS platform manages data connections for multiple users, each with their own OAuth tokens for different providers. Domain-namespaced storage isolates credentials per user per provider. Token refresh happens per-user with file locking to prevent concurrent refresh races."
+    },
+    {
+      "title": "The migration from inline credentials",
+      "story": "Legacy config files have OAuth tokens inline. mountainash-auth-client detects inline tokens, migrates them to the secure store, and replaces them with store references — transparently, on first connection. No manual migration step."
+    }
+  ],
+
+  "featured_modules": [
+    "schemas.auth-types",
+    "flows.oauth2",
+    "mixins.oauth2",
+    "store"
+  ],
+  "hidden_or_internal_modules": [
+    "schemas.base",
+    "schemas.dispatch",
+    "server",
+    "errors"
+  ],
+  "open_questions": []
+}

@@ -1,0 +1,86 @@
+ConceptID,ConceptLabel,Dependencies,TaxonomyID
+1,OAuth 2.0 Basics,,FOUND
+2,OAuth 1.0a Basics,,FOUND
+3,Bearer Tokens,1,FOUND
+4,API Keys,,FOUND
+5,Pydantic Models,,FOUND
+6,Frozen Models,5,FOUND
+7,Python Protocols,,FOUND
+8,Context Managers,,FOUND
+9,File Permissions,,FOUND
+10,Atomic File Writes,9,FOUND
+11,AuthSpec Base Model,5|6,ATYPE
+12,Discriminated Union,11|13,ATYPE
+13,Literal Kind Discriminator,5,ATYPE
+14,NoAuth Type,12,ATYPE
+15,PasswordAuth Type,12,ATYPE
+16,TokenAuth Type,12|3,ATYPE
+17,JWTAuth Type,12|3,ATYPE
+18,OAuth2Auth Type,12|1,ATYPE
+19,OAuth2AuthCodeAuth Type,12|1,ATYPE
+20,OAuth1Auth Type,12|2,ATYPE
+21,IAMAuth Type,12,ATYPE
+22,AzureADAuth Type,12,ATYPE
+23,WindowsAuth Type,12,ATYPE
+24,KerberosAuth Type,12,ATYPE
+25,CertificateAuth Type,12,ATYPE
+26,ServiceAccountAuth Type,12,ATYPE
+27,Auth Dispatch Registry,12,DISP
+28,Auth To Driver Kwargs,27|30,DISP
+29,Auth Kwargs Function,28,DISP
+30,Type Based Dispatch,12|27,DISP
+31,Unmapped Auth Types,27|22|23|24|25|26,DISP
+32,Backend Specific Handling,31,DISP
+33,OAuthFlow Class,1|5,OA2
+34,Authorization Code Grant,33|1,OA2
+35,PKCE Extension,34,OA2
+36,Code Verifier,35,OA2
+37,Code Challenge,36,OA2
+38,Build Authorize URL,33|39,OA2
+39,State Parameter,33,OA2
+40,Exchange Code,34|41,OA2
+41,Token Exchange,33|3,OA2
+42,Refresh Token,33|3,OA2
+43,Token Expiry Check,33,OA2
+44,End To End Authorize,38|40|42|75,OA2
+45,OAuth1Flow Class,2|49,OA1
+46,Request Token,45,OA1
+47,Three Legged Flow,45|46,OA1
+48,Verifier Exchange,47,OA1
+49,Authlib Dependency,2,OA1
+50,Optional Import Guard,49,OA1
+51,OAuth2ConnectionMixin,33|8|64,CONN
+52,Connect Method,51|53,CONN
+53,Auto Authorize Flag,51,CONN
+54,Client Property,51,CONN
+55,Context Manager Support,51|8,CONN
+56,Profile Parameter,51,CONN
+57,Token Lifecycle Overview,51,CONN
+58,No Token State,57,CONN
+59,Valid Token State,57|41,CONN
+60,Expired With Refresh State,57|42|43,CONN
+61,Expired No Refresh State,57|43,CONN
+62,Cleared State,57|67,CONN
+63,File Locked Refresh,60|70,CONN
+64,SecretStore Protocol,7,STORE
+65,Load Method,64,STORE
+66,Save Method,64,STORE
+67,Clear Method,64,STORE
+68,Is Cleared Method,64,STORE
+69,List Users Method,64,STORE
+70,Lock Method,64,STORE
+71,FilesystemStore,64|9|10,STORE
+72,YAML Serialization,71,STORE
+73,Domain Provider Namespace,71,STORE
+74,Tombstone Semantics,67|71,STORE
+75,LocalCallbackServer,8,CALLB
+76,Ephemeral HTTP Server,75,CALLB
+77,Callback Capture,76|39,CALLB
+78,Prompt For Code,75,CALLB
+79,Manual Redirect Mode,78,CALLB
+80,TokenExchangeError,41,ERROR
+81,Token Exchange URL,80,ERROR
+82,TokenRefreshError,42,ERROR
+83,Refresh Status Code,82,ERROR
+84,AuthorizationRequired,51,ERROR
+85,Provider User Context,84,ERROR
