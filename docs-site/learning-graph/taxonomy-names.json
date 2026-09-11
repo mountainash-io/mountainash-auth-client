@@ -1,0 +1,11 @@
+{
+  "FOUND": "Foundation Concepts",
+  "ATYPE": "Auth Type System",
+  "DISP": "Auth Dispatch",
+  "OA2": "OAuth 2.0 Flow",
+  "OA1": "OAuth 1.0a Flow",
+  "CONN": "Connection Mixins",
+  "STORE": "Secret Storage",
+  "CALLB": "Callback Server",
+  "ERROR": "Error Handling"
+}

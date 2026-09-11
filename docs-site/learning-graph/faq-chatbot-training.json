@@ -1,0 +1,242 @@
+[
+  {
+    "id": 1,
+    "category": "Auth Type System",
+    "question": "What are the 13 auth types supported by mountainash-auth-client?",
+    "answer": "The library supports a discriminated union of 13 authentication types, each represented as a frozen Pydantic model with a Literal kind discriminator field. The types are: NoAuth (for unauthenticated endpoints), PasswordAuth (username/password credentials), TokenAuth (static bearer or API tokens), JWTAuth (JSON Web Tokens), OAuth2Auth (OAuth 2.0 client credentials or pre-obtained tokens), OAuth2AuthCodeAuth (OAuth 2.0 Authorization Code with PKCE), OAuth1Auth (OAuth 1.0a three-legged flow), IAMAuth (cloud IAM role-based authentication), AzureADAuth (Azure Active Directory), WindowsAuth (Windows Integrated/NTLM), KerberosAuth (Kerberos ticket-based), CertificateAuth (mutual TLS with client certificates), and ServiceAccountAuth (service account key files). Each type carries only the fields relevant to its authentication method, and the frozen model constraint ensures credentials are immutable after construction."
+  },
+  {
+    "id": 2,
+    "category": "Auth Type System",
+    "question": "What is a discriminated union and why does the library use one?",
+    "answer": "A discriminated union is a type pattern where multiple distinct types share a common discriminator field that uniquely identifies which variant is in use. In mountainash-auth-client, each auth type model has a kind field set to a Literal string value. This allows Pydantic to inspect the kind value at parse time and select the correct model variant, providing full runtime validation and static type checking. The benefit is that code receiving an auth specification can pattern-match on the kind field to handle each variant with complete type safety. Compared to a single model with many optional fields, the discriminated union guarantees that you never have an OAuth2 config missing its client_id or a PasswordAuth accidentally carrying a refresh_token. Each variant is self-contained, minimal, and validated independently."
+  },
+  {
+    "id": 3,
+    "category": "Auth Type System",
+    "question": "What is the AuthSpec base model and how do all auth types inherit from it?",
+    "answer": "AuthSpec is the base Pydantic model from which all 13 auth type variants derive. It is configured as a frozen model, meaning instances are immutable after creation. AuthSpec defines the shared contract that every auth variant must satisfy, primarily the kind discriminator field. Each concrete auth type inherits from AuthSpec and adds its own specific fields. For example, OAuth2AuthCodeAuth adds client_id, client_secret, authorize_url, token_url, and PKCE-related fields, while PasswordAuth simply adds username and password. The frozen constraint inherited from AuthSpec ensures that once an auth configuration is constructed, its credentials cannot be accidentally mutated. This immutability is important for thread safety and for preventing credential leakage through unintended modification."
+  },
+  {
+    "id": 4,
+    "category": "Auth Type System",
+    "question": "What is the Literal kind discriminator and how does it enable type-safe dispatch?",
+    "answer": "The Literal kind discriminator is a Pydantic field on each auth type model set to a specific string constant using Python's Literal type. For instance, OAuth2Auth might declare kind: Literal['oauth2'] = 'oauth2', while TokenAuth declares kind: Literal['token'] = 'token'. When Pydantic encounters a dictionary or JSON payload, it reads the kind field first and uses it to select which model variant to parse against. This mechanism enables type-safe dispatch at two levels. First, Pydantic validates that only the fields belonging to the matched variant are present. Second, downstream code can use the kind value to look up the correct handler in the auth dispatch registry, confident that the model has already been validated for that variant."
+  },
+  {
+    "id": 5,
+    "category": "Auth Type System",
+    "question": "When should I use OAuth2Auth versus OAuth2AuthCodeAuth?",
+    "answer": "Use OAuth2Auth when you already have a valid access token or when the API provider uses the client credentials grant (machine-to-machine). OAuth2Auth carries the token directly and does not manage an interactive authorization flow. Use OAuth2AuthCodeAuth when the API requires user consent through a browser-based authorization flow. OAuth2AuthCodeAuth includes the full Authorization Code with PKCE flow: it stores authorize_url, token_url, client_id, scopes, and PKCE parameters, and integrates with the connection mixin to handle token exchange, refresh, and expiry automatically. If the API requires the user to sign in via a browser and grant permissions, OAuth2AuthCodeAuth is the correct choice. If you are working with service-to-service APIs where no user interaction is required, OAuth2Auth is simpler and sufficient."
+  },
+  {
+    "id": 6,
+    "category": "Auth Type System",
+    "question": "What are the NoAuth and PasswordAuth types used for?",
+    "answer": "NoAuth is the simplest auth type variant, representing endpoints that require no authentication at all. It exists in the discriminated union so that connection configurations can be fully typed even when no credentials are needed. Without NoAuth, unauthenticated connections would need special-case handling or None values, breaking the uniform dispatch pattern. PasswordAuth carries a username and password pair for APIs that use HTTP Basic authentication or similar credential-based schemes. It is frozen like all auth types, so the password cannot be mutated after construction. PasswordAuth is suitable for legacy APIs, internal services, or systems that use username/password pairs directly rather than tokens. Both types participate in the dispatch registry like any other auth variant."
+  },
+  {
+    "id": 7,
+    "category": "Auth Type System",
+    "question": "What are the IAMAuth, AzureADAuth, WindowsAuth, KerberosAuth, CertificateAuth, and ServiceAccountAuth types?",
+    "answer": "These six auth types handle enterprise and cloud-specific authentication scenarios. IAMAuth represents cloud IAM role-based authentication where credentials are derived from the execution environment. AzureADAuth handles Azure Active Directory authentication with tenant and client identifiers. WindowsAuth supports Windows Integrated Authentication (NTLM) for on-premises Microsoft services. KerberosAuth provides Kerberos ticket-based authentication for enterprise environments. CertificateAuth supports mutual TLS authentication using client certificate and key files. ServiceAccountAuth handles service account key files typically used by cloud providers like Google Cloud. These types are classified as unmapped in the dispatch registry by default because their driver handling varies significantly across backends."
+  },
+  {
+    "id": 8,
+    "category": "OAuth 2.0 and PKCE",
+    "question": "How does the OAuth 2.0 Authorization Code flow with PKCE work in this library?",
+    "answer": "The library implements the OAuth 2.0 Authorization Code flow with PKCE through the OAuthFlow class. First, a cryptographically random code verifier is generated. A code challenge is derived from the verifier using SHA-256 hashing and base64url encoding. The library builds an authorization URL that includes the code challenge, a random state parameter for CSRF protection, the requested scopes, and the redirect URI. The user is directed to this URL in a browser. After the user grants consent, the provider redirects back with an authorization code and the state parameter. The LocalCallbackServer captures this redirect. The library then exchanges the authorization code for tokens by sending the code along with the original code verifier to the token endpoint. The provider verifies the code verifier against the stored challenge, preventing authorization code interception attacks."
+  },
+  {
+    "id": 9,
+    "category": "OAuth 2.0 and PKCE",
+    "question": "What is PKCE and why is it important for security?",
+    "answer": "PKCE (Proof Key for Code Exchange) is an extension to the OAuth 2.0 Authorization Code grant defined in RFC 7636. It prevents authorization code interception attacks where a malicious application on the same device intercepts the authorization code from the redirect URI and exchanges it for tokens. Without PKCE, any application that can observe the redirect can steal the authorization code. With PKCE, the legitimate client generates a random code verifier and sends a derived code challenge with the authorization request. When exchanging the code for tokens, the client must present the original code verifier. Since the attacker never had the code verifier, they cannot complete the exchange even if they intercept the authorization code. PKCE is mandatory for public clients and strongly recommended for all clients."
+  },
+  {
+    "id": 10,
+    "category": "OAuth 2.0 and PKCE",
+    "question": "What is the state parameter and how does it protect against CSRF?",
+    "answer": "The state parameter is a cryptographically random string included in the OAuth authorization request and returned unchanged in the redirect callback. It serves as a CSRF protection mechanism. When the library builds the authorization URL, it generates a unique state value and includes it as a query parameter. When the OAuth provider redirects the user back after authorization, it includes this same state value. The LocalCallbackServer verifies that the returned state matches the original. If an attacker crafted a malicious authorization redirect, the state parameter would not match, and the library would reject the exchange. This prevents attackers from tricking users into linking their accounts to the attacker's identity provider account."
+  },
+  {
+    "id": 11,
+    "category": "OAuth 2.0 and PKCE",
+    "question": "How does token refresh work and what happens when a refresh fails?",
+    "answer": "When the OAuth2ConnectionMixin detects that an access token has expired, it attempts an automatic refresh using the stored refresh token. The refresh is performed under a file lock to prevent concurrent processes from racing to refresh the same token simultaneously. The mixin sends the refresh token to the token endpoint and receives a new access token, a new expiry timestamp, and optionally a new refresh token. The updated credentials are saved to the SecretStore atomically. If the refresh fails, the library raises a TokenRefreshError that includes the HTTP status code from the provider's response. When a refresh fails and no valid token exists, the token lifecycle transitions to the expired-no-refresh state, and subsequent connection attempts raise AuthorizationRequired."
+  },
+  {
+    "id": 12,
+    "category": "OAuth 2.0 and PKCE",
+    "question": "What is the OAuthFlow class and what role does it play?",
+    "answer": "The OAuthFlow class encapsulates the complete OAuth 2.0 authorization and token management logic. It is a Pydantic model that holds the OAuth provider configuration: authorize URL, token URL, client ID, client secret, scopes, and redirect URI. Its primary methods include build_authorize_url (which generates the authorization URL with PKCE challenge and state parameter), exchange_code (which trades an authorization code and code verifier for tokens), and refresh_token (which obtains a fresh access token using a refresh token). OAuthFlow also provides end_to_end_authorize, a convenience method that orchestrates the full flow. OAuthFlow is used internally by OAuth2ConnectionMixin but can also be used standalone when custom flow control is needed. It is designed as a stateless utility that returns tokens for the caller to persist."
+  },
+  {
+    "id": 13,
+    "category": "OAuth 2.0 and PKCE",
+    "question": "How does OAuth 1.0a differ from OAuth 2.0 in this library?",
+    "answer": "OAuth 1.0a is supported through the OAuth1Flow class and OAuth1ConnectionMixin, which implement the three-legged OAuth 1.0a flow. Unlike OAuth 2.0's Authorization Code + PKCE flow, OAuth 1.0a uses a request token / verifier exchange pattern without PKCE. The three legs are: obtain a request token from the provider, redirect the user to authorize the request token, and exchange the authorized request token and verifier for an access token. OAuth 1.0a requires cryptographic request signing for every API call, which the library delegates to the authlib library. Because authlib is an optional dependency, OAuth 1.0a support uses an import guard. OAuth 1.0a tokens typically do not expire, so the token lifecycle is simpler than OAuth 2.0. The OAuth1ConnectionMixin provides the same connect method interface as OAuth2ConnectionMixin."
+  },
+  {
+    "id": 14,
+    "category": "OAuth 2.0 and PKCE",
+    "question": "What is the LocalCallbackServer and when is it used?",
+    "answer": "The LocalCallbackServer is an ephemeral HTTP server that listens on localhost to capture OAuth redirect callbacks. During the Authorization Code flow, after the user grants consent in their browser, the OAuth provider redirects the browser to a redirect URI. The LocalCallbackServer starts, waits for this single redirect request, extracts the authorization code and state parameter from the query string, and then shuts down. It runs as a context manager so the server is cleaned up automatically. For environments where a local server is not feasible (headless servers, SSH sessions, containers), the library offers a manual redirect mode via prompt_for_code, where the user is shown the authorization URL and asked to paste the code back into the terminal."
+  },
+  {
+    "id": 15,
+    "category": "Token Lifecycle and Connection Mixins",
+    "question": "What are the five states in the token lifecycle state machine?",
+    "answer": "The token lifecycle is a five-state machine that tracks the current status of OAuth credentials. The states are: (1) No Token -- no credentials exist yet, the mixin must initiate the full authorization flow. (2) Valid Token -- a non-expired access token is available and ready to use. (3) Expired With Refresh -- the access token has expired but a valid refresh token is available for automatic file-locked refresh. (4) Expired No Refresh -- the access token has expired and no refresh token is available, requiring re-authorization through the browser flow. (5) Cleared -- the credentials have been explicitly cleared via the SecretStore clear method, leaving a tombstone marker, distinct from no token because it represents intentional revocation. The mixin checks token expiry on each connect call and transitions between states automatically."
+  },
+  {
+    "id": 16,
+    "category": "Token Lifecycle and Connection Mixins",
+    "question": "What is OAuth2ConnectionMixin and how do I use it?",
+    "answer": "OAuth2ConnectionMixin is a mixin class that adds automatic OAuth 2.0 token lifecycle management to connection classes. You mix it into your connection class, and it provides the connect method that handles the full token lifecycle: checking for existing tokens, validating expiry, refreshing if needed, and initiating authorization if no valid token exists. Key features include the auto_authorize flag, the profile parameter for multiple user profiles, and context manager support for clean connection teardown. The client property provides the authenticated HTTP client after connecting. To use it, configure an OAuth2AuthCodeAuth instance with provider details, pass it to your connection class, and call connect(). The mixin handles everything from PKCE flow initiation through token storage and refresh."
+  },
+  {
+    "id": 17,
+    "category": "Token Lifecycle and Connection Mixins",
+    "question": "What is the auto_authorize flag and when should I disable it?",
+    "answer": "The auto_authorize flag on OAuth2ConnectionMixin controls whether the mixin automatically initiates the browser-based authorization flow when no valid token exists. When True (the default), calling connect() without existing credentials will open the browser and start the LocalCallbackServer. When False, the same scenario raises an AuthorizationRequired error instead. Disable auto_authorize in: automated pipelines and CI/CD environments where no browser is available; background services where interactive authorization is inappropriate; applications that want to handle the authorization flow in a custom UI; and testing scenarios where you want to verify that credentials exist without triggering side effects."
+  },
+  {
+    "id": 18,
+    "category": "Token Lifecycle and Connection Mixins",
+    "question": "How does file-locked refresh prevent race conditions?",
+    "answer": "When multiple processes share the same credential store, there is a risk that multiple processes detect an expired token simultaneously and all attempt to refresh it. Some providers invalidate the old refresh token upon issuing a new one, so the second process's refresh attempt would fail. The library prevents this through file-locked refresh. When a connection mixin detects an expired token and begins the refresh flow, it first acquires a file lock via the SecretStore lock method. Only one process can hold this lock at a time. The lock holder refreshes the token and saves the new credentials. Other processes waiting on the lock will acquire it, re-read the credentials from the store, find a valid token, and skip the refresh entirely. This ensures exactly one refresh occurs per expiry cycle."
+  },
+  {
+    "id": 19,
+    "category": "Token Lifecycle and Connection Mixins",
+    "question": "What is the profile parameter and how does it support multi-user scenarios?",
+    "answer": "The profile parameter on connection mixins allows multiple user identities to maintain separate credential sets for the same API provider. When you call connect(profile='alice'), the mixin stores and retrieves Alice's tokens separately from the default profile. The profile name flows through to the SecretStore, which uses it as part of the namespace for credential storage. In FilesystemStore, profiles result in separate YAML files within the domain/provider directory. This is useful in applications that manage connections on behalf of multiple users, CLI tools that support multiple accounts, and testing scenarios where you need isolated credential sets. The list_users method on SecretStore returns all profiles with stored credentials."
+  },
+  {
+    "id": 20,
+    "category": "Token Lifecycle and Connection Mixins",
+    "question": "How does context manager support work with connection mixins?",
+    "answer": "Connection mixins implement Python's context manager protocol, allowing them to be used with 'with' statements for clean resource management. When entering the context, the mixin calls connect() to establish the authenticated session, including any necessary token refresh or authorization. When exiting the context, the mixin performs cleanup such as closing HTTP client sessions and releasing file locks. Using the context manager pattern ensures that resources are released even if an exception occurs during API calls. Without the context manager, you would need to manually call connect() and handle cleanup in a try/finally block. The context manager support builds on Python's standard contextlib patterns."
+  },
+  {
+    "id": 21,
+    "category": "Secret Storage",
+    "question": "What is the SecretStore protocol and what methods must implementations provide?",
+    "answer": "SecretStore is a Python Protocol (structural subtyping interface) that defines the contract for credential storage backends. Any class that implements the required methods is a valid SecretStore without needing to inherit from a base class. The required methods are: load (retrieves stored credentials), save (persists credentials), clear (marks credentials as cleared using tombstone semantics), is_cleared (checks whether credentials were explicitly cleared), list_users (returns all profiles with stored credentials), and lock (returns a context manager for exclusive access during token refresh). The protocol design means you can implement custom backends for HashiCorp Vault, AWS Secrets Manager, OS keyrings, database storage, or any other credential system without modifying the library itself."
+  },
+  {
+    "id": 22,
+    "category": "Secret Storage",
+    "question": "How does FilesystemStore work and what security measures does it use?",
+    "answer": "FilesystemStore is the built-in SecretStore implementation that persists credentials as YAML files on the local filesystem. It organizes credentials in a directory hierarchy based on domain and provider namespace. Security measures include: file permissions set to owner-only read/write (mode 0600); atomic file writes that write to a temporary file and rename it into place, preventing partial writes from corrupting credentials; file locking via the lock method for concurrent-safe token refresh across multiple processes; and tombstone semantics for the clear operation, which writes a tombstone marker rather than deleting the file. YAML serialization is used for human-readability during debugging while remaining machine-parseable."
+  },
+  {
+    "id": 23,
+    "category": "Secret Storage",
+    "question": "What are tombstone semantics and why does the library use them?",
+    "answer": "Tombstone semantics means that when credentials are cleared, the library writes a special marker (tombstone) to the credential file rather than deleting it. This creates a meaningful distinction between two states: 'no token has ever been stored' (the No Token state) and 'a token existed but was explicitly cleared' (the Cleared state). When a user has never authorized, the application should prompt them to authorize. When a user has explicitly revoked their credentials, the application should inform them that their session was cleared and ask if they want to re-authorize. Tombstones also provide an audit trail showing that credentials were intentionally revoked. The is_cleared method on SecretStore checks for the presence of a tombstone."
+  },
+  {
+    "id": 24,
+    "category": "Secret Storage",
+    "question": "How does the domain/provider namespace work in FilesystemStore?",
+    "answer": "FilesystemStore organizes credential files using a two-level namespace: domain and provider. The domain typically represents the API service being accessed (such as 'github' or 'google'), while the provider identifies the specific OAuth configuration or deployment. Together, they form a directory path within the store's base directory. This namespacing prevents credential collisions when the same application connects to multiple API providers or when multiple applications share the same credential store directory. The list_users method scopes its results to a specific domain/provider pair, returning only the profiles relevant to that provider. This organizational scheme scales well as the number of integrated services grows."
+  },
+  {
+    "id": 25,
+    "category": "Secret Storage",
+    "question": "How can I implement a custom SecretStore backend?",
+    "answer": "To implement a custom SecretStore backend, create a class that satisfies the SecretStore protocol by implementing all six required methods: load, save, clear, is_cleared, list_users, and lock. Because SecretStore is a Protocol, you do not need to inherit from any base class. For example, to build a Vault-backed store, your load method would read from HashiCorp Vault's KV secrets engine, save would write to it, and lock would use a distributed lock. Key considerations: ensure clear implements tombstone semantics (mark as cleared rather than delete), ensure lock returns a context manager for exclusive access, and handle the case where load returns None for never-stored credentials. The connection mixins will work with any conforming implementation without modification."
+  },
+  {
+    "id": 26,
+    "category": "Auth Dispatch",
+    "question": "What is the auth dispatch registry and how does it work?",
+    "answer": "The auth dispatch registry is a mapping from auth type kind strings to functions that convert an auth spec into driver-specific keyword arguments. When a backend needs to authenticate a request, it passes the auth spec to the dispatch registry, which looks up the kind value, finds the corresponding function, and calls it to produce the kwargs the driver needs. For example, the registry might map 'token' to a function that extracts the token and returns headers with a Bearer token, while 'password' maps to a function returning basic auth credentials. This indirection decouples auth type definitions from backend-specific implementation details. The auth_to_driver_kwargs function is the main entry point for this conversion."
+  },
+  {
+    "id": 27,
+    "category": "Auth Dispatch",
+    "question": "What are unmapped auth types and how does backend-specific handling work?",
+    "answer": "Unmapped auth types are the six enterprise/cloud auth variants (IAMAuth, AzureADAuth, WindowsAuth, KerberosAuth, CertificateAuth, ServiceAccountAuth) that do not have entries in the default dispatch registry. These types are unmapped because their authentication mechanisms vary so significantly across backends that a generic dispatch function is not feasible. When the dispatch registry encounters an unmapped auth type, it falls through to backend-specific handling. Each backend implementation is responsible for providing its own handling of these types, typically through conditional logic that checks the kind field and applies the appropriate authentication mechanism. This design keeps the core dispatch registry simple while allowing sophisticated, provider-specific authentication."
+  },
+  {
+    "id": 28,
+    "category": "Auth Dispatch",
+    "question": "How do I add a new auth type to the dispatch system?",
+    "answer": "Adding a new auth type involves three steps. First, create a new frozen Pydantic model that inherits from AuthSpec and defines a unique kind Literal value and the fields required for the authentication method. Second, add the new model to the discriminated union type alias so Pydantic can parse it. Third, register a dispatch function in the auth dispatch registry that converts the new auth type into driver kwargs. The dispatch function receives the auth spec instance and returns a dictionary of keyword arguments suitable for the target driver. If the new auth type requires backend-specific handling, you can leave it unmapped in the default registry and implement handling in each backend individually. The frozen model constraint and Literal discriminator ensure the new type integrates safely with existing validation."
+  },
+  {
+    "id": 29,
+    "category": "Error Handling and Troubleshooting",
+    "question": "What errors can occur during token exchange and how should I handle them?",
+    "answer": "TokenExchangeError is raised when the library fails to exchange an authorization code for access tokens at the OAuth provider's token endpoint. The error includes the token exchange URL so you can identify which provider failed. Common causes include: an expired authorization code, a mismatched redirect URI, an incorrect client secret, PKCE code verifier mismatch, or the provider's token endpoint being unreachable. To handle this error, catch TokenExchangeError, log the failure details, and prompt the user to retry the authorization flow. Do not retry the token exchange itself because the authorization code is single-use and likely expired. Instead, restart the full authorization flow from the beginning."
+  },
+  {
+    "id": 30,
+    "category": "Error Handling and Troubleshooting",
+    "question": "What is TokenRefreshError and when does it occur?",
+    "answer": "TokenRefreshError is raised when the library fails to refresh an expired access token using the stored refresh token. The error includes the HTTP status code from the provider's token endpoint. Common status codes include: 400 (invalid request, often meaning the refresh token is expired), 401 (invalid client credentials), and 403 (refresh token revoked). When TokenRefreshError occurs, the token lifecycle transitions to the expired-no-refresh state. The next connection attempt will either initiate a new authorization flow (if auto_authorize is True) or raise AuthorizationRequired (if auto_authorize is False). Applications should catch this error and inform users that re-authorization is needed."
+  },
+  {
+    "id": 31,
+    "category": "Error Handling and Troubleshooting",
+    "question": "What is AuthorizationRequired and when is it raised?",
+    "answer": "AuthorizationRequired is raised when a connection mixin needs valid credentials but cannot obtain them automatically. This occurs in three scenarios: no token exists and auto_authorize is False; the token has expired with no refresh token and auto_authorize is False; or credentials have been explicitly cleared and auto_authorize is False. The error includes provider and user context information so the calling application can construct a meaningful message. The intended handling pattern is to catch AuthorizationRequired, present the user with an option to authorize, and then either call connect(auto_authorize=True) or invoke the OAuthFlow directly."
+  },
+  {
+    "id": 32,
+    "category": "Error Handling and Troubleshooting",
+    "question": "How do I troubleshoot 'Token refresh failed with status 401'?",
+    "answer": "A 401 status on token refresh typically means the client credentials are invalid at the provider's token endpoint. Steps to diagnose: verify that the client ID and client secret match what the provider has on file (secrets can be rotated). Check whether the provider requires client credentials as a Basic auth header versus a POST body parameter. Confirm the token endpoint URL is correct. Check if the provider has revoked or disabled your OAuth application. If client credentials are correct, the refresh token itself may have been invalidated server-side. In that case, clear the stored credentials via SecretStore's clear method and re-authorize from scratch. The file-locked refresh mechanism ensures only one process attempted the refresh."
+  },
+  {
+    "id": 33,
+    "category": "Error Handling and Troubleshooting",
+    "question": "How do I handle the case where a user has revoked access at the provider?",
+    "answer": "When a user revokes access at the OAuth provider, the stored refresh token becomes invalid. The next time the connection mixin attempts to refresh, it will receive a TokenRefreshError. If auto_authorize is True, the mixin will automatically initiate a new authorization flow. If auto_authorize is False, AuthorizationRequired is raised. Best practice is to catch both errors, clear the old credentials using secret_store.clear(domain, provider, profile), and inform the user that re-authorization is needed. The tombstone written by the clear operation ensures the system records that this was a revocation event, not simply a missing credential."
+  },
+  {
+    "id": 34,
+    "category": "Error Handling and Troubleshooting",
+    "question": "What is the Provider User Context in error handling?",
+    "answer": "Provider User Context is additional contextual information attached to the AuthorizationRequired error that identifies which OAuth provider and which user profile triggered the error. It typically includes the provider name, the domain, and the profile name. This context is critical in applications that manage multiple OAuth connections simultaneously. When AuthorizationRequired is raised, the provider user context tells the application exactly which connection needs re-authorization, enabling targeted messages rather than generic errors. Applications that manage multiple providers should use this context to route the re-authorization flow to the correct provider."
+  },
+  {
+    "id": 35,
+    "category": "General Usage and Architecture",
+    "question": "What Python version and dependencies does mountainash-auth-client require?",
+    "answer": "Mountainash-auth-client requires Pydantic v2 for model definitions and validation, and uses standard library modules for file operations, HTTP, and threading. The OAuth 1.0a support has an optional dependency on the authlib library. If you attempt to use OAuth1Auth without authlib installed, the optional import guard raises a clear error message. This keeps the core package lightweight for the majority of users who only need OAuth 2.0. Other standard library dependencies include hashlib and secrets for PKCE code generation, json and yaml for serialization, and http.server for the LocalCallbackServer."
+  },
+  {
+    "id": 36,
+    "category": "General Usage and Architecture",
+    "question": "How does the library handle concurrent access to credentials?",
+    "answer": "Concurrent access safety is built into several layers. At the storage level, FilesystemStore uses atomic file writes to prevent partial reads during concurrent writes. At the refresh level, file-locked refresh ensures that only one process refreshes an expired token while others wait and then read the fresh credentials. At the model level, frozen Pydantic models prevent in-memory mutation of credentials, eliminating concurrency bugs where one thread modifies a shared credential object while another reads it. The lock method on SecretStore returns a context manager for exclusive access scoped by domain, provider, and profile. Custom SecretStore implementations should maintain these concurrency guarantees."
+  },
+  {
+    "id": 37,
+    "category": "General Usage and Architecture",
+    "question": "How is the library structured into modules?",
+    "answer": "The library is organized into approximately 10 modules. The auth types module defines AuthSpec, all 13 concrete auth types, and the discriminated union type alias. The OAuth flow module contains OAuthFlow with PKCE, authorization URL building, token exchange, and refresh logic. The OAuth 1.0a module contains OAuth1Flow with the three-legged flow and authlib integration. The connection mixins module provides OAuth2ConnectionMixin and OAuth1ConnectionMixin. The secret storage module defines the SecretStore protocol and FilesystemStore. The callback server module implements LocalCallbackServer and manual redirect fallback. The dispatch module contains the auth dispatch registry. The error module defines the three error types."
+  },
+  {
+    "id": 38,
+    "category": "General Usage and Architecture",
+    "question": "Can I use this library with async/await?",
+    "answer": "The library's core design uses synchronous Python patterns. However, the mixin-based architecture and Protocol-based interfaces mean that async wrappers can be built on top. You could implement an async SecretStore that wraps async file or network I/O, and create an async connection mixin that calls the OAuth flow in a thread executor. The LocalCallbackServer is synchronous but only runs for the brief duration of an authorization callback. For applications using asyncio, the recommended pattern is to run the authorization flow synchronously and use the resulting token for async API calls. Token refresh can be wrapped with asyncio.to_thread to avoid blocking the event loop."
+  },
+  {
+    "id": 39,
+    "category": "General Usage and Architecture",
+    "question": "How do I configure the library for a new OAuth 2.0 provider?",
+    "answer": "Create an OAuth2AuthCodeAuth instance with the provider's authorize URL, token URL, your client ID and client secret, the scopes required, and a redirect URI (typically http://localhost:PORT/callback). Pass this auth spec to a connection class that uses OAuth2ConnectionMixin. On first connect(), the mixin will initiate the PKCE flow, open the browser, capture the callback, exchange the code for tokens, and store the credentials via SecretStore. Subsequent calls load existing tokens and refresh as needed. Each provider may have specific requirements for scopes, redirect URI formats, or token endpoint authentication methods, so consult the provider's OAuth documentation."
+  },
+  {
+    "id": 40,
+    "category": "General Usage and Architecture",
+    "question": "What is the relationship between mountainash-auth-client and other mountainash packages?",
+    "answer": "Mountainash-auth-client provides the auth type definitions, OAuth flows, and credential management that other mountainash packages consume. For example, mountainash-api-client uses the auth types and dispatch registry to authenticate API requests, while connection classes in other packages mix in OAuth2ConnectionMixin or OAuth1ConnectionMixin for automatic token management. The SecretStore protocol allows credential storage to be configured at the application level and shared across packages. The discriminated union of auth types serves as the common currency for authentication configuration across the ecosystem."
+  }
+]
