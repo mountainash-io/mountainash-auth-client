@@ -6,7 +6,7 @@
 site_name: 'Mountainash Auth Client'
 site_description: 'An intelligent textbook for the mountainash-auth-client type-safe multi-provider authentication library'
 site_author: 'Nathaniel Ramm'
-site_url: 'https://mountainash-io.github.io/mountainash-central/mountainash-auth-client/'
+site_url: !ENV [TEXTBOOK_SITE_URL, 'https://docs.mountainash.io/mountainash-auth-client/']
 
 # Hooks — runs local Python before/after page processing
 # social_override.py lets per-page `image:` frontmatter override the auto-
@@ -17,7 +17,7 @@ hooks:
 # Repository
 repo_name: 'GitHub Repo'
 repo_url: 'https://github.com/mountainash-io/mountainash-auth-client'
-edit_uri: 'blob/main/docs'
+edit_uri: !ENV [TEXTBOOK_EDIT_URI, 'edit/main/docs-site/site/docs/']
 
 # Copyright
 copyright: 'Copyright &copy; 2026 Nathaniel Ramm. Licensed under <a href="license/">CC BY-NC-SA 4.0</a> for non-commercial use.'

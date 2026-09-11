@@ -6,7 +6,7 @@ The graph maps 85 concepts covering auth types, OAuth 2.0/1.0a flows, connection
 
 ## Files
 
-- [Course Description](./course-description.md)
+- [Course Description](../course-description.md)
 - [Concept List](./concept-list.md)
 - [Learning Graph CSV](./learning-graph.csv)
 - [Learning Graph JSON](./learning-graph.json)
