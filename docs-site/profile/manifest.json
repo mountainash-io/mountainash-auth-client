@@ -1,0 +1,57 @@
+{
+  "profile_version": "1.0",
+  "generated_at": "2026-06-02T00:00:00Z",
+  "source": {
+    "root": "mountainash-auth-client",
+    "git": {
+      "previous_hash": null,
+      "current_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+      "branch": "main",
+      "working_tree_dirty": false
+    }
+  },
+  "scope": {
+    "include": ["src/mountainash_auth_client/**/*.py"],
+    "exclude": ["**/__pycache__/**", "**/__version__.py"],
+    "package_roots": ["src/mountainash_auth_client"]
+  },
+  "audiences": ["users", "maintainers", "contributors", "backend-architecture", "broader-hype"],
+  "counts": {
+    "modules_discovered": 10,
+    "modules_profiled": 10,
+    "profiles_ignored": 1,
+    "facets_written": 5
+  },
+  "changed_scopes": {
+    "files": [],
+    "modules": [],
+    "facets": []
+  },
+  "ignored_paths": [
+    {
+      "path": "src/mountainash_auth_client/__version__.py",
+      "reason": "Auto-generated version string, no public API surface"
+    }
+  ],
+  "profile_files": {
+    "modules": {
+      "schemas.base": "modules/schemas-base.json",
+      "schemas.auth-types": "modules/schemas-auth-types.json",
+      "schemas.dispatch": "modules/schemas-dispatch.json",
+      "flows.oauth2": "modules/flows-oauth2.json",
+      "flows.oauth1": "modules/flows-oauth1.json",
+      "mixins.oauth2": "modules/mixins-oauth2.json",
+      "mixins.oauth1": "modules/mixins-oauth1.json",
+      "server": "modules/server.json",
+      "store": "modules/store.json",
+      "errors": "modules/errors.json"
+    },
+    "facets": {
+      "users": "facets/users.json",
+      "maintainers": "facets/maintainers.json",
+      "contributors": "facets/contributors.json",
+      "backend-architecture": "facets/backend-architecture.json",
+      "broader-hype": "facets/broader-hype.json"
+    }
+  }
+}

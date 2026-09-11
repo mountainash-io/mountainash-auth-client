@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "project": "mountainash-auth-client",
+  "baseline": {
+    "source_commit": "bea71b46178a4a764a6a289218f2e701490fe08e",
+    "refresh_date": "2026-06-04",
+    "tool_versions": {
+      "chapter-content-generator": "0.09",
+      "learning-graph-generator": "0.05",
+      "faq-generator": "1.0",
+      "textbook-refresh": "1.0"
+    }
+  },
+  "chapter_state": {
+    "01-foundations": {
+      "content_hash": "c147f395d351d358871e2413f9b7cdba34530b30402ccd1bded78a77732986e4",
+      "word_count": 3159,
+      "has_concept_markers": true
+    },
+    "02-auth-type-system-and-basic-types": {
+      "content_hash": "4a56365324ba7730d49678e34a0545e70eb42a31b7bac7be7c434a7b3ab66c42",
+      "word_count": 3026,
+      "has_concept_markers": true
+    },
+    "03-advanced-auth-type-variants": {
+      "content_hash": "1172629bea32ea6a7cd48e34e9f22e34f07ccc33346766c99fdf61127a4c3f48",
+      "word_count": 3103,
+      "has_concept_markers": true
+    },
+    "04-auth-dispatch-and-oauth1": {
+      "content_hash": "011f08248f4a1ec53a50f422b340b2c447dcd63228769f847d984582ac4212ed",
+      "word_count": 3141,
+      "has_concept_markers": true
+    },
+    "05-oauth2-flow": {
+      "content_hash": "42e733c49089fdd7457da93ee951ee72aa715e4ce20846214dce81fc025f5eff",
+      "word_count": 3153,
+      "has_concept_markers": true
+    },
+    "06-secret-storage": {
+      "content_hash": "0ed0749ed195924052a3b244c23a673defa3918ca03af5db00a67f30b6fa8f54",
+      "word_count": 3067,
+      "has_concept_markers": true
+    },
+    "07-callback-server-and-token-errors": {
+      "content_hash": "4a09604eb8079154833306d6a974323b781ead8179a76b33783d0d9d5abd1ba2",
+      "word_count": 2990,
+      "has_concept_markers": true
+    },
+    "08-connection-mixins-and-token-lifecycle": {
+      "content_hash": "784f7081e5da211209ac70ed0c4b602102cc085ea64a7394e68c557216808b1d",
+      "word_count": 3273,
+      "has_concept_markers": true
+    }
+  },
+  "learning_graph_state": {
+    "concept_count": 85,
+    "edge_count": 117,
+    "enriched_count": 43,
+    "content_hash": "e50645ecdd392b83d8df10afdf97fd2f388b77f25ba49c5946f1346c81db75dd"
+  },
+  "faq_state": {
+    "question_count": 40,
+    "content_hash": "05aff26f6c4ffae14b30b85aaf47e444ebdda492d076965cb622a5e60e1f8fe9"
+  },
+  "refresh_history": []
+}

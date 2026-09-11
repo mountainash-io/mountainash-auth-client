@@ -1,0 +1,53 @@
+{
+  "id": "schemas.dispatch",
+  "path": "src/mountainash_auth_client/schemas/dispatch.py",
+  "summary": "Maps AuthSpec instances to driver kwargs via AUTH_TO_DRIVER_KWARGS registry. Provides auth_to_driver_kwargs() and convenience auth_kwargs() for profile objects.",
+  "role": "orchestration",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers", "backend-architecture"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": ["AUTH_TO_DRIVER_KWARGS", "auth_to_driver_kwargs", "auth_kwargs"],
+  "key_classes": [],
+  "key_functions": [
+    {"name": "auth_to_driver_kwargs", "summary": "Looks up the registered mapper for an AuthSpec instance and returns driver kwargs. Raises KeyError if no mapper registered."},
+    {"name": "auth_kwargs", "summary": "Convenience: extracts .auth from any object and dispatches to auth_to_driver_kwargs. Returns {} if no auth attribute."},
+    {"name": "_noauth", "summary": "Returns empty dict."},
+    {"name": "_password", "summary": "Returns {user, password}."},
+    {"name": "_token", "summary": "Returns {token}."},
+    {"name": "_jwt", "summary": "Returns {token}."},
+    {"name": "_oauth2", "summary": "Returns {token} or {credential} depending on available fields."},
+    {"name": "_iam", "summary": "Returns AWS credential kwargs (role_arn, access_key_id, etc.)."}
+  ],
+  "dependencies": ["schemas.base", "schemas.auth-types"],
+  "dependents": [],
+  "extension_points": [
+    "Register new auth type mappers by adding entries to AUTH_TO_DRIVER_KWARGS dict",
+    "Backend adapters can override individual auth types with bespoke match statements"
+  ],
+  "lifecycle_notes": [
+    "WindowsAuth, AzureADAuth, KerberosAuth, ServiceAccountAuth, CertificateAuth have no default mapper — their backend adapters handle mapping directly"
+  ],
+  "documentation_hooks": [
+    "Table showing which auth types have default mappers vs. require backend-specific handling",
+    "Example of adding a custom mapper"
+  ],
+  "examples": [],
+  "tests": ["tests/test_schemas.py"],
+  "risks": [
+    "KeyError if caller passes an auth type without a registered mapper and doesn't handle it"
+  ],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/schemas/dispatch.py", "detail": "AUTH_TO_DRIVER_KWARGS dict with 6 registered mappers"},
+    {"kind": "test", "path": "tests/test_schemas.py", "detail": "TestAuthToDriverKwargs and TestAuthKwargs classes"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

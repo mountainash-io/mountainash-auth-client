@@ -1,0 +1,50 @@
+{
+  "id": "schemas.base",
+  "path": "src/mountainash_auth_client/schemas/base.py",
+  "summary": "Base Pydantic model (AuthSpec) for the discriminated-union auth schema system. All auth types inherit from this class.",
+  "role": "protocol",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers", "backend-architecture"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": ["AuthSpec"],
+  "key_classes": [
+    {
+      "name": "AuthSpec",
+      "summary": "Frozen Pydantic BaseModel with extra='forbid'. Subclasses declare a Literal 'kind' field used as discriminator."
+    }
+  ],
+  "key_functions": [],
+  "dependencies": ["pydantic"],
+  "dependents": [
+    "schemas.auth-types",
+    "schemas.dispatch"
+  ],
+  "extension_points": [
+    "Subclass AuthSpec with a new Literal 'kind' to add a new auth type"
+  ],
+  "lifecycle_notes": [
+    "Base class intentionally omits 'kind' field to avoid reportIncompatibleVariableOverride in subclasses"
+  ],
+  "documentation_hooks": [
+    "Explain the discriminated union pattern for auth types",
+    "Show how to add a new auth type"
+  ],
+  "examples": [],
+  "tests": ["tests/test_schemas.py"],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/schemas/base.py", "detail": "AuthSpec class exported in __all__"},
+    {"kind": "import", "path": "src/mountainash_auth_client/__init__.py", "detail": "AuthSpec re-exported at package root"},
+    {"kind": "test", "path": "tests/test_schemas.py", "detail": "Tests exercise NoAuth, PasswordAuth, OAuth2AuthCodeAuth, OAuth1Auth"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

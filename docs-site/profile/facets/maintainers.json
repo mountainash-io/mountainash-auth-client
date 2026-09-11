@@ -1,0 +1,51 @@
+{
+  "audience": "maintainers",
+  "summary": "mountainash-auth-client is structured around a discriminated-union auth type system, a spec/metadata convention that drives OAuth flows, a token lifecycle state machine in connection mixins, a protocol-based credential store with strong filesystem security, and an optional dependency boundary for OAuth1. Understanding these architectural seams is key to maintaining and extending the library confidently.",
+  "use_cases": [
+    "Add a new auth type by following the AuthSpec subclass pattern through schemas, dispatch, re-exports, and tests",
+    "Maintain the token lifecycle state machine and understand how file-locked refresh, tombstones, and migration interact",
+    "Audit or strengthen the security model across file permissions, symlink rejection, atomic writes, and localhost-only callbacks",
+    "Manage the optional dependency boundary when updating authlib or considering new optional integrations"
+  ],
+  "concepts": [
+    {
+      "name": "Discriminated Union Architecture",
+      "module_ids": ["schemas.base", "schemas.auth-types", "schemas.dispatch"],
+      "description": "AuthSpec intentionally omits 'kind' at the base level to avoid reportIncompatibleVariableOverride issues in type checkers. Each subclass declares its own Literal 'kind'. The dispatch registry maps auth types to driver-kwarg callables, with some types deliberately left unmapped to signal that backend-specific handling is required."
+    },
+    {
+      "name": "Spec/Metadata Convention",
+      "module_ids": ["flows.oauth2", "flows.oauth1", "mixins.oauth2", "mixins.oauth1"],
+      "description": "Spec objects provide a .name identifier and a .metadata dictionary with flow-specific configuration (URLs, flags, ports). Mixins reference specs via _spec and _base_url ClassVars set at class definition time. This convention keeps provider configuration declarative and separate from flow logic."
+    },
+    {
+      "name": "Token Lifecycle State Machine",
+      "module_ids": ["mixins.oauth2", "flows.oauth2", "store"],
+      "description": "The connect() method implements a full decision tree: load from store, check expiry, acquire file lock, attempt refresh, and fall back to re-authorization. A migration path moves legacy inline profile tokens to the credential store. Tombstone semantics in clear() prevent re-migration of intentionally removed credentials."
+    },
+    {
+      "name": "Security Invariants",
+      "module_ids": ["store", "server"],
+      "description": "The filesystem store enforces 0o600 file and 0o700 directory permissions, rejects symlinks on load, and uses atomic writes via temp file and os.replace. The local callback server binds exclusively to localhost. These invariants should be preserved across all changes to the storage and server layers."
+    },
+    {
+      "name": "Optional Dependency Boundary (authlib)",
+      "module_ids": ["flows.oauth1", "mixins.oauth1"],
+      "description": "OAuth1 modules use runtime deferred imports with clear ImportError messages, and are deliberately excluded from package-root re-exports. The optional dependency is declared in pyproject.toml under [project.optional-dependencies]. This boundary keeps the core install lightweight."
+    },
+    {
+      "name": "Test Coverage",
+      "module_ids": ["errors", "flows.oauth2", "flows.oauth1", "mixins.oauth2", "store", "server", "schemas.auth-types"],
+      "description": "Test files cover all major public modules. OAuth1ConnectionMixin is an area where additional test coverage would strengthen confidence in the OAuth1 integration path."
+    }
+  ],
+  "featured_modules": [
+    "schemas.base",
+    "schemas.dispatch",
+    "mixins.oauth2",
+    "store",
+    "flows.oauth2"
+  ],
+  "hidden_or_internal_modules": [],
+  "open_questions": []
+}
