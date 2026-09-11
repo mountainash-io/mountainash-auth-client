@@ -1,0 +1,63 @@
+{
+  "id": "schemas.auth-types",
+  "path": "src/mountainash_auth_client/schemas/",
+  "summary": "Thirteen AuthSpec subclasses covering auth methods: NoAuth, PasswordAuth, TokenAuth, JWTAuth, OAuth2Auth, OAuth2AuthCodeAuth, OAuth1Auth, IAMAuth, AzureADAuth, WindowsAuth, KerberosAuth, CertificateAuth, ServiceAccountAuth.",
+  "role": "model",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers", "backend-architecture"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": [
+    "NoAuth", "PasswordAuth", "TokenAuth", "JWTAuth",
+    "OAuth2Auth", "OAuth2AuthCodeAuth", "OAuth1Auth",
+    "IAMAuth", "AzureADAuth", "WindowsAuth",
+    "KerberosAuth", "CertificateAuth", "ServiceAccountAuth"
+  ],
+  "key_classes": [
+    {"name": "NoAuth", "summary": "No authentication (SQLite, DuckDB). kind='none'."},
+    {"name": "PasswordAuth", "summary": "Username + password. kind='password'."},
+    {"name": "TokenAuth", "summary": "Opaque bearer token. kind='token'."},
+    {"name": "JWTAuth", "summary": "JSON Web Token. kind='jwt'."},
+    {"name": "OAuth2Auth", "summary": "OAuth2 client-credentials/token. kind='oauth2'. Fields: client_id, client_secret, token, refresh_token, server_uri, scope."},
+    {"name": "OAuth2AuthCodeAuth", "summary": "OAuth2 Authorization Code grant. kind='oauth2_authcode'. Fields: client_id, client_secret, access_token, refresh_token, token_expires_at, scope."},
+    {"name": "OAuth1Auth", "summary": "OAuth 1.0a credentials. kind='oauth1'. Fields: consumer_key, consumer_secret, access_token, access_token_secret."},
+    {"name": "IAMAuth", "summary": "AWS IAM credentials. kind='iam'. Fields: role_arn, access_key_id, secret_access_key, session_token, profile_name."},
+    {"name": "AzureADAuth", "summary": "Azure AD auth. kind='azure_ad'. Fields: tenant_id, client_id, client_secret, managed_identity, msi_endpoint."},
+    {"name": "WindowsAuth", "summary": "Windows integrated auth (MSSQL). kind='windows'. Fields: username, domain."},
+    {"name": "KerberosAuth", "summary": "Kerberos/GSSAPI. kind='kerberos'. Fields: service_name, principal, keytab."},
+    {"name": "CertificateAuth", "summary": "Private-key/certificate auth (Snowflake JWT). kind='certificate'. Fields: private_key, private_key_path, passphrase."},
+    {"name": "ServiceAccountAuth", "summary": "Google service account. kind='service_account'. Fields: info, file."}
+  ],
+  "key_functions": [],
+  "dependencies": ["pydantic", "schemas.base"],
+  "dependents": ["schemas.dispatch", "flows.oauth2", "flows.oauth1", "mixins.oauth2", "mixins.oauth1"],
+  "extension_points": [
+    "Add a new .py file in schemas/ with a new AuthSpec subclass and unique Literal 'kind', then re-export from schemas/__init__.py"
+  ],
+  "lifecycle_notes": [
+    "Secrets use pydantic.SecretStr. Paths use pathlib.Path.",
+    "All models are frozen (immutable) with extra='forbid'."
+  ],
+  "documentation_hooks": [
+    "Table of all auth types with their kind discriminator values",
+    "Required vs optional fields per auth type",
+    "Which backends each auth type targets"
+  ],
+  "examples": [],
+  "tests": ["tests/test_schemas.py"],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/schemas/__init__.py", "detail": "All 13 auth types re-exported"},
+    {"kind": "import", "path": "src/mountainash_auth_client/__init__.py", "detail": "All auth types re-exported at package root"},
+    {"kind": "test", "path": "tests/test_schemas.py", "detail": "Tests cover NoAuth, PasswordAuth, OAuth1Auth, OAuth2AuthCodeAuth round-trips"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

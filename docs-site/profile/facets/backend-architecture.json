@@ -1,0 +1,53 @@
+{
+  "audience": "backend-architecture",
+  "summary": "mountainash-auth-client is built around a discriminated-union type system with pluggable dispatch, protocol-based extensibility, and a clear separation between auth schemas, protocol flows, connection lifecycle, and credential persistence. Key architectural seams -- the AuthSpec subclass hierarchy, AUTH_TO_DRIVER_KWARGS registry, SecretStore protocol, and spec/metadata convention -- allow each layer to evolve independently while keeping the overall design cohesive.",
+  "use_cases": [
+    "Evaluate how the discriminated-union pattern and dispatch registry support adding new auth strategies with minimal coupling",
+    "Understand the token lifecycle state machine and how file-locked refresh prevents concurrency issues",
+    "Assess the SecretStore protocol as an integration point for enterprise credential backends",
+    "Review the spec/metadata convention that decouples OAuth flows from provider-specific configuration"
+  ],
+  "concepts": [
+    {
+      "name": "Discriminated Union + Dispatch Pattern",
+      "module_ids": ["schemas.base", "schemas.auth-types", "schemas.dispatch"],
+      "description": "AuthSpec subclasses use a Literal 'kind' discriminator to form a closed union of auth strategies. The AUTH_TO_DRIVER_KWARGS registry maps auth types to callable mappers that produce driver-ready keyword arguments. Some auth types intentionally have no default mapper, signaling that backend-specific handling is expected -- a deliberate design choice that keeps the dispatch layer honest about what it can generalize."
+    },
+    {
+      "name": "Spec/Metadata Convention",
+      "module_ids": ["flows.oauth2", "flows.oauth1", "mixins.oauth2", "mixins.oauth1"],
+      "description": "Provider configuration is carried by spec objects exposing a .name identifier and a .metadata dictionary containing flow-specific URLs, flags, and settings. OAuth2 metadata includes authorize_url, token_url, use_pkce, default_scope, and callback_port. OAuth1 metadata carries request_token_url, authorize_url, and access_token_url. Mixins reference specs via a _spec ClassVar set at class definition, keeping provider config static and declarative."
+    },
+    {
+      "name": "OAuth2 Flow with PKCE",
+      "module_ids": ["flows.oauth2"],
+      "description": "Implements the Authorization Code grant with S256 PKCE code challenge generation, synchronous token exchange via httpx, refresh with automatic fallback to full re-authorization, and expiry checking with a configurable buffer window. The flow is designed to be composable -- usable standalone or through the connection mixin."
+    },
+    {
+      "name": "Token Lifecycle State Machine (Mixin)",
+      "module_ids": ["mixins.oauth2"],
+      "description": "The connection mixin manages five token states: no-token, valid-token, expired-with-refresh, expired-no-refresh, and cleared. The connect() method walks a decision tree that loads stored tokens, checks expiry, acquires a file lock for concurrent-safe refresh, and falls back to re-authorization when needed. A one-time migration path moves inline profile tokens to the credential store."
+    },
+    {
+      "name": "SecretStore Protocol + Filesystem Backend",
+      "module_ids": ["store"],
+      "description": "A runtime-checkable Protocol defining six methods for credential persistence, with a production-ready filesystem backend. The filesystem store uses a domain/provider/user three-level key space, YAML serialization, restrictive permissions (0o600 files, 0o700 directories), symlink rejection, atomic writes via temp-file-and-replace, tombstone-based clear tracking to prevent re-migration, and fcntl exclusive file locking for concurrent refresh safety."
+    },
+    {
+      "name": "Optional Dependency Boundary",
+      "module_ids": ["flows.oauth1", "mixins.oauth1"],
+      "description": "OAuth1 support depends on authlib, managed as an optional dependency with a clear import boundary. OAuth1 modules use deferred imports with descriptive ImportError messages, and are intentionally not re-exported from the package root -- keeping the default install lightweight while making the upgrade path straightforward."
+    }
+  ],
+  "featured_modules": [
+    "schemas.base",
+    "schemas.dispatch",
+    "flows.oauth2",
+    "mixins.oauth2",
+    "store"
+  ],
+  "hidden_or_internal_modules": [
+    "server (infrastructure, not architecturally significant)"
+  ],
+  "open_questions": []
+}
