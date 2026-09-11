@@ -1,0 +1,57 @@
+{
+  "id": "mixins.oauth2",
+  "path": "src/mountainash_auth_client/mixins/oauth2.py",
+  "summary": "OAuth2ConnectionMixin provides reusable connect/refresh lifecycle for OAuth2 providers. Handles token loading from store, migration from profile.auth fields, token refresh with file locking, and auto-authorization. Exposes .client property for the underlying httpx.Client.",
+  "role": "api-builder",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers", "backend-architecture", "contributors"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": ["OAuth2ConnectionMixin"],
+  "key_classes": [
+    {
+      "name": "OAuth2ConnectionMixin",
+      "summary": "Mixin class. Subclasses must set _spec (with .name and .metadata) and _base_url class variables. connect() returns Self with _client set to an authenticated httpx.Client. Supports context manager protocol."
+    }
+  ],
+  "key_functions": [
+    {"name": "OAuth2ConnectionMixin.connect", "summary": "Main entry point. Loads tokens from store, migrates from profile.auth if needed, refreshes expired tokens with file lock, or triggers auto_authorize. Returns Self."},
+    {"name": "OAuth2ConnectionMixin.client", "summary": "Property exposing the underlying httpx.Client (or None before connect)."},
+    {"name": "OAuth2ConnectionMixin.__enter__/__exit__", "summary": "Context manager delegates to disconnect()."}
+  ],
+  "dependencies": ["httpx", "flows.oauth2", "errors", "store.protocol"],
+  "dependents": [],
+  "extension_points": [
+    "Subclass and set _spec + _base_url to create a provider-specific connection class",
+    "Override _client usage patterns in subclass methods"
+  ],
+  "lifecycle_notes": [
+    "Token migration path: if store has no token but profile.auth has access_token, saves it to store",
+    "Refresh uses file locking (store.lock) to prevent concurrent refresh races",
+    "On refresh failure: clears stored tokens and raises AuthorizationRequired (unless auto_authorize)"
+  ],
+  "documentation_hooks": [
+    "Token lifecycle state machine: load -> check expiry -> refresh -> re-authorize",
+    "How to subclass for a new provider",
+    "Migration behavior from inline profile credentials to store"
+  ],
+  "examples": [],
+  "tests": ["tests/test_oauth2_mixin.py"],
+  "risks": [
+    "Refresh failure clears tokens — if auto_authorize is False, user must re-authorize"
+  ],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/mixins/oauth2.py", "detail": "OAuth2ConnectionMixin class with connect(), client property, context manager"},
+    {"kind": "import", "path": "src/mountainash_auth_client/__init__.py", "detail": "OAuth2ConnectionMixin re-exported at package root"},
+    {"kind": "test", "path": "tests/test_oauth2_mixin.py", "detail": "Tests for no-token, valid-token, expired-token, client property scenarios"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

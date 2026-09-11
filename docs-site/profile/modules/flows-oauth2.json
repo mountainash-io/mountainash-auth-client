@@ -1,0 +1,55 @@
+{
+  "id": "flows.oauth2",
+  "path": "src/mountainash_auth_client/flows/oauth2.py",
+  "summary": "OAuthFlow class implementing OAuth 2.0 Authorization Code grant with optional PKCE. Handles authorize URL building, code exchange, token refresh, and expiry checking.",
+  "role": "public-api",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers", "backend-architecture"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": ["OAuthFlow"],
+  "key_classes": [
+    {
+      "name": "OAuthFlow",
+      "summary": "Runs OAuth 2.0 Authorization Code flow. Takes a spec object with metadata containing authorize_url, token_url, optional use_pkce, default_scope, callback_port. Supports local_server and manual redirect modes."
+    }
+  ],
+  "key_functions": [
+    {"name": "OAuthFlow.build_authorize_url", "summary": "Returns (url, state) tuple. Adds PKCE code_challenge if use_pkce=True in metadata."},
+    {"name": "OAuthFlow.exchange_code", "summary": "POST to token_url with auth code. Returns flat dict with access_token, refresh_token, token_expires_at, scope."},
+    {"name": "OAuthFlow.refresh", "summary": "POST to token_url with refresh_token grant. Returns flat dict with new access_token and updated refresh_token."},
+    {"name": "OAuthFlow.is_expired", "summary": "Static method. Returns True if token_expires_at is within buffer_seconds (default 300s) of now."},
+    {"name": "OAuthFlow.authorize", "summary": "Full end-to-end flow: build URL, open browser or prompt, wait for callback, exchange code."}
+  ],
+  "dependencies": ["httpx", "errors", "server"],
+  "dependents": ["mixins.oauth2"],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "PKCE code_verifier is stored as instance state (_code_verifier), tied to a single authorize/exchange cycle",
+    "Uses httpx.Client (sync) for token exchange"
+  ],
+  "documentation_hooks": [
+    "Flow diagram: build_authorize_url -> browser -> callback -> exchange_code",
+    "PKCE support explanation",
+    "Token refresh lifecycle"
+  ],
+  "examples": [],
+  "tests": ["tests/test_oauth2_flow.py"],
+  "risks": [
+    "CSRF: state comparison is only checked in authorize(), not in exchange_code() directly"
+  ],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/flows/oauth2.py", "detail": "OAuthFlow class with 5 public methods"},
+    {"kind": "import", "path": "src/mountainash_auth_client/__init__.py", "detail": "OAuthFlow re-exported at package root"},
+    {"kind": "test", "path": "tests/test_oauth2_flow.py", "detail": "Tests for build_authorize_url, exchange_code, refresh, is_expired"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

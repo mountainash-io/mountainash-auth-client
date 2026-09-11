@@ -1,0 +1,53 @@
+{
+  "id": "flows.oauth1",
+  "path": "src/mountainash_auth_client/flows/oauth1.py",
+  "summary": "OAuth1Flow class implementing OAuth 1.0a 3-legged authorization flow. Requires optional 'authlib' dependency. Handles request token, authorize URL, verifier exchange, and full authorize cycle.",
+  "role": "public-api",
+  "visibility": "semi-public",
+  "stability": "evolving",
+  "audiences": ["users", "maintainers", "backend-architecture"],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": ["OAuth1Flow"],
+  "key_classes": [
+    {
+      "name": "OAuth1Flow",
+      "summary": "Runs OAuth 1.0a 3-legged flow. Takes a spec with metadata containing request_token_url, authorize_url, access_token_url. Uses authlib OAuth1Client for signing."
+    }
+  ],
+  "key_functions": [
+    {"name": "OAuth1Flow.request_token", "summary": "Fetches a request token using consumer credentials. Requires authlib."},
+    {"name": "OAuth1Flow.build_authorize_url", "summary": "Returns authorization URL with oauth_token parameter."},
+    {"name": "OAuth1Flow.exchange_verifier", "summary": "Exchanges verifier for access token and secret. Requires authlib."},
+    {"name": "OAuth1Flow.authorize", "summary": "Full end-to-end flow: request_token -> browser -> callback -> exchange_verifier."}
+  ],
+  "dependencies": ["httpx", "authlib (optional)", "errors", "server"],
+  "dependents": ["mixins.oauth1"],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "Not re-exported from flows/__init__.py or package root — requires authlib optional dependency",
+    "Import path: mountainash_auth_client.flows.oauth1.OAuth1Flow"
+  ],
+  "documentation_hooks": [
+    "Installation: pip install mountainash-auth-client[oauth1]",
+    "OAuth1 3-legged flow diagram"
+  ],
+  "examples": [],
+  "tests": ["tests/test_oauth1_flow.py"],
+  "risks": [
+    "authlib ImportError if optional dep not installed — clear error message provided"
+  ],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/flows/oauth1.py", "detail": "OAuth1Flow class with 4 public methods"},
+    {"kind": "doc", "path": "src/mountainash_auth_client/flows/__init__.py", "detail": "Comment: 'OAuth1Flow not re-exported: requires authlib optional dependency'"},
+    {"kind": "test", "path": "tests/test_oauth1_flow.py", "detail": "Tests for build_authorize_url, properties, authlib import requirement"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

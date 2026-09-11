@@ -1,0 +1,45 @@
+{
+  "audience": "contributors",
+  "summary": "mountainash-auth-client follows a clear, consistent structure: auth types live in schemas/, protocol interactions in flows/, connection lifecycle management in mixins/, credential persistence in store/, and callback infrastructure in server/. Each layer follows established naming conventions and re-export patterns, making it straightforward to add new auth types and OAuth providers.",
+  "use_cases": [
+    "Add a new auth type by creating an AuthSpec subclass, registering it in dispatch, and wiring up re-exports",
+    "Integrate a new OAuth provider by subclassing a connection mixin with a spec object and provider-specific methods",
+    "Write tests following established patterns: FakeSpec/FakeAuth/FakeProfile fixtures, tmp_path for store tests, httpx mocking for token exchanges",
+    "Set up a development environment with Hatch, Ruff, and pytest"
+  ],
+  "concepts": [
+    {
+      "name": "Module Layout and Conventions",
+      "module_ids": ["schemas.base", "schemas.auth-types", "flows.oauth2", "mixins.oauth2", "store", "server", "errors"],
+      "description": "The package is organized into five functional areas: schemas/ for auth type models, flows/ for protocol interactions, mixins/ for connection lifecycle, store/ for persistence, and server/ for callback infrastructure. Auth types use the AuthSpec suffix, flows use the Flow suffix, and mixins use the ConnectionMixin suffix. Public symbols are re-exported through subpackage __init__.py files and the package root __init__.py."
+    },
+    {
+      "name": "Adding a New Auth Type",
+      "module_ids": ["schemas.base", "schemas.auth-types", "schemas.dispatch"],
+      "description": "Create a new file in schemas/ with an AuthSpec subclass and a unique Literal 'kind' value. Re-export from schemas/__init__.py, then from the package root __init__.py and add to __all__. Optionally register a default mapper in dispatch.py. Add tests in tests/test_schemas.py. All existing auth types follow this same pattern."
+    },
+    {
+      "name": "Adding a New OAuth Provider",
+      "module_ids": ["flows.oauth2", "mixins.oauth2", "flows.oauth1", "mixins.oauth1"],
+      "description": "Define a spec object with a .name identifier and a .metadata dictionary containing provider URLs and configuration. Subclass OAuth2ConnectionMixin or OAuth1ConnectionMixin, set the _spec and _base_url class variables, and add any provider-specific methods. The mixin handles token lifecycle automatically."
+    },
+    {
+      "name": "Test Patterns",
+      "module_ids": ["errors", "flows.oauth2", "store", "server"],
+      "description": "Tests use FakeSpec, FakeAuth, and FakeProfile patterns for test isolation. FilesystemStore tests use pytest's tmp_path fixture. Token exchange tests use httpx mocking via unittest.mock.patch. These patterns are consistent across all test files and should be followed for new contributions."
+    },
+    {
+      "name": "Build and Tooling",
+      "module_ids": [],
+      "description": "The project uses Hatch as its build system (hatchling backend), Ruff for linting (E, F, FA, TCH rules with 120-character line length), pytest for testing with the tests/ directory, and coverage configured for both src/mountainash_auth_client and tests/."
+    }
+  ],
+  "featured_modules": [
+    "schemas.auth-types",
+    "schemas.dispatch",
+    "mixins.oauth2",
+    "store"
+  ],
+  "hidden_or_internal_modules": [],
+  "open_questions": []
+}

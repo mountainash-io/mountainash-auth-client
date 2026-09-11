@@ -1,0 +1,50 @@
+{
+  "id": "server",
+  "path": "src/mountainash_auth_client/server/",
+  "summary": "OAuth callback infrastructure: LocalCallbackServer (ephemeral HTTP server capturing a single OAuth redirect) and manual auth utilities (extract_code_from_input, prompt_for_code).",
+  "role": "io",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers"],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": ["LocalCallbackServer", "prompt_for_code", "extract_code_from_input"],
+  "key_classes": [
+    {
+      "name": "LocalCallbackServer",
+      "summary": "Ephemeral HTTPServer on localhost that captures a single OAuth callback. Configurable port (0=ephemeral) and timeout. Exposes .port, .redirect_uri, .wait_for_callback()."
+    }
+  ],
+  "key_functions": [
+    {"name": "extract_code_from_input", "summary": "Parses user input (URL or bare code) into dict with 'code' and optional 'state'."},
+    {"name": "prompt_for_code", "summary": "Prints authorize URL and prompts user for redirect URL or code. Returns parsed dict."}
+  ],
+  "dependencies": ["http.server (stdlib)", "urllib.parse (stdlib)"],
+  "dependents": ["flows.oauth2", "flows.oauth1"],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "LocalCallbackServer silences request logging (log_message is a no-op)",
+    "Server closes after first callback received"
+  ],
+  "documentation_hooks": [
+    "When to use local_server vs manual redirect mode",
+    "Security: localhost-only binding"
+  ],
+  "examples": [],
+  "tests": ["tests/test_server.py"],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/server/callback.py", "detail": "LocalCallbackServer class"},
+    {"kind": "symbol", "path": "src/mountainash_auth_client/server/manual.py", "detail": "extract_code_from_input, prompt_for_code functions"},
+    {"kind": "import", "path": "src/mountainash_auth_client/__init__.py", "detail": "LocalCallbackServer re-exported at package root"},
+    {"kind": "test", "path": "tests/test_server.py", "detail": "Tests for callback capture, URL parsing, manual code extraction"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

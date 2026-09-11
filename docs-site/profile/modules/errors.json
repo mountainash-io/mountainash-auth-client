@@ -1,0 +1,42 @@
+{
+  "id": "errors",
+  "path": "src/mountainash_auth_client/errors.py",
+  "summary": "Three auth-specific exception types: TokenExchangeError (code exchange failure), TokenRefreshError (refresh failure), AuthorizationRequired (no valid token and auto_authorize=False).",
+  "role": "model",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": ["TokenExchangeError", "TokenRefreshError", "AuthorizationRequired"],
+  "key_classes": [
+    {"name": "TokenExchangeError", "summary": "Raised when OAuth token exchange POST fails. Attributes: url, status_code, body. Body truncated to 200 chars in str."},
+    {"name": "TokenRefreshError", "summary": "Raised when OAuth token refresh POST fails. Same attributes as TokenExchangeError."},
+    {"name": "AuthorizationRequired", "summary": "Raised when no valid token exists and auto_authorize is False. Attributes: provider, user."}
+  ],
+  "key_functions": [],
+  "dependencies": [],
+  "dependents": ["flows.oauth2", "flows.oauth1", "mixins.oauth2", "mixins.oauth1"],
+  "extension_points": [],
+  "lifecycle_notes": [],
+  "documentation_hooks": [
+    "Error handling guide for callers",
+    "When each error is raised in the flow lifecycle"
+  ],
+  "examples": [],
+  "tests": ["tests/test_errors.py"],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/errors.py", "detail": "Three exception classes with keyword-only constructors"},
+    {"kind": "import", "path": "src/mountainash_auth_client/__init__.py", "detail": "All three errors re-exported at package root"},
+    {"kind": "test", "path": "tests/test_errors.py", "detail": "Tests for attributes, str formatting, body truncation, raise/catch"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

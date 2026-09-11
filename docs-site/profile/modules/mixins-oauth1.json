@@ -1,0 +1,54 @@
+{
+  "id": "mixins.oauth1",
+  "path": "src/mountainash_auth_client/mixins/oauth1.py",
+  "summary": "OAuth1ConnectionMixin provides reusable connect/auth lifecycle for OAuth 1.0a providers. Handles token loading from store, migration from profile.auth fields, auto-authorization, and builds httpx.Client with authlib OAuth1Auth signing.",
+  "role": "api-builder",
+  "visibility": "semi-public",
+  "stability": "evolving",
+  "audiences": ["users", "maintainers", "backend-architecture"],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": ["OAuth1ConnectionMixin"],
+  "key_classes": [
+    {
+      "name": "OAuth1ConnectionMixin",
+      "summary": "Mixin class. Subclasses must set _spec and _base_url. connect() loads/migrates tokens and builds an authlib-signed httpx.Client. Requires authlib optional dependency."
+    }
+  ],
+  "key_functions": [
+    {"name": "OAuth1ConnectionMixin.connect", "summary": "Loads tokens from store, migrates from profile.auth, or triggers auto_authorize flow. Returns Self."},
+    {"name": "OAuth1ConnectionMixin._build_client", "summary": "Creates httpx.Client with authlib OAuth1Auth for request signing."}
+  ],
+  "dependencies": ["httpx", "authlib (optional)", "flows.oauth1", "errors", "store.protocol"],
+  "dependents": [],
+  "extension_points": [
+    "Subclass and set _spec + _base_url to create an OAuth1 provider connection"
+  ],
+  "lifecycle_notes": [
+    "Not re-exported from mixins/__init__.py or package root — requires authlib optional dependency",
+    "Import path: mountainash_auth_client.mixins.oauth1.OAuth1ConnectionMixin"
+  ],
+  "documentation_hooks": [
+    "Installation: pip install mountainash-auth-client[oauth1]",
+    "How to subclass for an OAuth1 provider (e.g. Garmin)"
+  ],
+  "examples": [],
+  "tests": [],
+  "risks": [
+    "authlib ImportError if optional dep not installed"
+  ],
+  "open_questions": [
+    {"question": "No dedicated test file for OAuth1ConnectionMixin", "evidence_gap": "tests/test_oauth1_flow.py tests the flow but not the mixin"}
+  ],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_auth_client/mixins/oauth1.py", "detail": "OAuth1ConnectionMixin class with connect(), _build_client(), context manager"},
+    {"kind": "doc", "path": "src/mountainash_auth_client/mixins/__init__.py", "detail": "Comment: 'OAuth1ConnectionMixin not re-exported: requires authlib optional dependency'"}
+  ],
+  "source_hash": "bea71b46178a4a764a6a289218f2e701490fe08e",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}
