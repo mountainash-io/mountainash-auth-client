@@ -1,0 +1,10 @@
+{
+  "title": "Mountainash Auth Client Concept Graph",
+  "description": "A concept dependency graph for the mountainash-auth-client type-safe multi-provider authentication library. 85 concepts across 9 categories covering auth types, OAuth flows, connection mixins, token lifecycle, and secret storage.",
+  "creator": "Nathaniel Ramm",
+  "date": "2026-06-03",
+  "version": "1.0",
+  "format": "Learning Graph JSON v1.0",
+  "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
+  "license": "CC BY-NC-SA 4.0 DEED"
+}
