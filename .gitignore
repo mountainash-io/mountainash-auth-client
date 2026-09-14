@@ -32,3 +32,20 @@ htmlcov/
 .vscode/
 *.swp
 *~
+
+#Rye
+**.**lock
+
+#testing artifacts
+junit.*
+coverage.*
+.coverage
+.ruff_cache/
+.substrait_cache/
+.benchmarks/
+junit.*
+uv.lock
+
+# hiivmind-pulse-gh
+.hiivmind/github/user.yaml
+.hiivmind/github/log/
