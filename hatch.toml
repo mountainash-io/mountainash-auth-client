@@ -12,6 +12,25 @@ include = ["/src", "/pyproject.toml", "/hatch.toml", "/README.md", "/LICENSE"]
 
 
 #================
+# Env: build_github
+#================
+[envs.build_github]
+installer = "uv"
+# Hatch installs the project before syncing environment dependencies.
+pre-install-commands = ['uv pip install "{root}/temp/mountainash-settings" "{root}/temp/mountainash-secrets"']
+dependencies = [
+    "cyclonedx-bom==4.5.0",
+    "mountainash-settings @ {root:uri}/temp/mountainash-settings",
+    "mountainash-secrets @ {root:uri}/temp/mountainash-secrets",
+]
+
+[envs.build_github.scripts]
+sbom-all = "cyclonedx-py environment > ./sbom-full.json"
+export-requirements = "hatch dep show requirements > ./requirements.txt"
+sbom-direct = "cyclonedx-py requirements > ./sbom-direct.json"
+
+
+#================
 # Env: dev
 #================
 
@@ -38,6 +57,7 @@ python = ["3.12"]
 [envs.test]
 type = "virtual"
 installer = "uv"
+pre-install-commands = ['uv pip install "{root}/../mountainash-settings" "{root}/../mountainash-secrets"']
 dependencies = [
     "coverage[toml]>=6.5",
     "pytest>=8.0",
@@ -79,6 +99,45 @@ test-target = [
 test-target-quick = "pytest {args}"
 
 #================
+# Env: test_github
+#================
+[[envs.test_github.matrix]]
+python = ["3.12"]
+
+[envs.test_github]
+type = "virtual"
+installer = "uv"
+pre-install-commands = ['uv pip install "{root}/temp/mountainash-settings" "{root}/temp/mountainash-secrets"']
+dependencies = [
+    "coverage[toml]>=6.5",
+    "pytest>=8.0",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.1.0",
+    "mountainash-settings @ {root:uri}/temp/mountainash-settings",
+    "mountainash-secrets @ {root:uri}/temp/mountainash-secrets",
+    "authlib>=1.3.0",
+    "paramiko>=3.0.0",
+]
+
+[envs.test_github.scripts]
+test = [
+    "pytest --cov --junitxml=junit.xml {args}",
+    "coverage json --pretty-print",
+    "coverage xml",
+    "coverage html",
+    "coverage report --show-missing",
+]
+test-quick = "pytest {args}"
+test-target = [
+    "coverage run --source=src -m pytest {args}",
+    "coverage xml",
+    "coverage json --pretty-print",
+    "coverage report --show-missing",
+]
+test-target-quick = "pytest {args}"
+
+
+#================
 # Env: ruff
 #================
 [envs.ruff]
@@ -89,3 +148,15 @@ dependencies = ["ruff==0.3.7"]
 [envs.ruff.scripts]
 check = "ruff check ./src"
 fix = "ruff check ./src --fix"
+
+#================
+# Env: radon
+#================
+[envs.radon]
+installer = "uv"
+detached = true
+dependencies = ["radon==6.0.1"]
+
+[envs.radon.scripts]
+radon-cc = "radon cc ./src -nd"
+radon-mi = "radon mi ./src -nd"

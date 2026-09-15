@@ -1,0 +1,24 @@
+name: Validate Main Release PR Source Branch
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate-source-branch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require a release or hotfix branch
+        shell: bash
+        env:
+          SOURCE_BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_BRANCH" =~ ^(release|hotfix)/ ]]; then
+            echo "Only release/* or hotfix/* branches can target main." >&2
+            exit 1
+          fi

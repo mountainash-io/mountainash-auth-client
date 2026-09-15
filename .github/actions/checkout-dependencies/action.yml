@@ -1,0 +1,87 @@
+name: Checkout Dependencies
+description: Check out Mountain Ash dependency repositories into temp/.
+
+inputs:
+  dependencies:
+    description: JSON array of dependency definitions.
+    required: true
+  target-branch:
+    description: Branch to use when it exists in a dependency repository.
+    required: true
+  default-branch:
+    description: Branch to use when the target branch does not exist.
+    required: false
+    default: main
+  token:
+    description: GitHub App token used to read private dependency repositories.
+    required: true
+  org-name:
+    description: Default GitHub organization for dependencies without org-name.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check out dependencies
+      shell: bash
+      env:
+        DEPENDENCIES: ${{ inputs.dependencies }}
+        TARGET_BRANCH: ${{ inputs.target-branch }}
+        DEFAULT_BRANCH: ${{ inputs.default-branch }}
+        TOKEN: ${{ inputs.token }}
+        ORG_NAME: ${{ inputs.org-name }}
+      run: |
+        set -euo pipefail
+
+        if [[ -z "$TARGET_BRANCH" || -z "$DEFAULT_BRANCH" || -z "$TOKEN" || -z "$ORG_NAME" ]]; then
+          echo "Dependency checkout inputs must not be empty." >&2
+          exit 1
+        fi
+
+        if ! jq -e \
+          --arg org "$ORG_NAME" \
+          'type == "array" and all(.[]; type == "object" and (.name | type == "string" and test("^[A-Za-z0-9._-]+$")) and ((.["org-name"] // $org) | type == "string" and test("^[A-Za-z0-9._-]+$")))' \
+          <<< "$DEPENDENCIES" >/dev/null; then
+          echo "Dependencies must be a JSON array of valid repository definitions." >&2
+          exit 1
+        fi
+
+        auth_header=$(printf 'x-access-token:%s' "$TOKEN" | base64 --wrap=0)
+        mkdir -p temp
+
+        while IFS= read -r dependency; do
+          repository=$(jq -r '.name' <<< "$dependency")
+          organization=$(jq -r '.["org-name"] // $org' --arg org "$ORG_NAME" <<< "$dependency")
+          repository_url="https://github.com/${organization}/${repository}.git"
+          destination="temp/${repository}"
+
+          if [[ -e "$destination" ]]; then
+            echo "Dependency destination already exists: $destination" >&2
+            exit 1
+          fi
+
+          encoded_target_branch=$(python -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["TARGET_BRANCH"], safe=""))')
+          branch_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer $TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/${organization}/${repository}/branches/${encoded_target_branch}")
+
+          case "$branch_status" in
+            200)
+              selected_branch="$TARGET_BRANCH"
+              ;;
+            404)
+              selected_branch="$DEFAULT_BRANCH"
+              ;;
+            *)
+              echo "Unable to determine whether $organization/$repository has branch $TARGET_BRANCH (HTTP $branch_status)." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "Checking out $organization/$repository at $selected_branch"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth_header" \
+            clone --depth 1 --branch "$selected_branch" "$repository_url" "$destination"
+          git -C "$destination" remote set-url origin "$repository_url"
+        done < <(jq -c '.[]' <<< "$DEPENDENCIES")
