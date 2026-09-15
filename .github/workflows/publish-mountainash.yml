@@ -1,0 +1,221 @@
+name: Publish MountainAsh release
+
+on:
+  workflow_call:
+    inputs:
+      dist-artifact-id:
+        description: ID of the approved distribution artifact
+        required: true
+        type: number
+      evidence-artifact-id:
+        description: ID of the approved evidence artifact
+        required: true
+        type: number
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish verified release artifacts
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download approved distributions by artifact ID
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ inputs.dist-artifact-id }}
+          path: ${{ runner.temp }}/mountainash-publish/dist
+          merge-multiple: true
+
+      - name: Download approved evidence by artifact ID
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ inputs.evidence-artifact-id }}
+          path: ${{ runner.temp }}/mountainash-publish/evidence
+          merge-multiple: true
+
+      - name: Verify artifacts and load release metadata
+        id: metadata
+        env:
+          DIST_DIR: ${{ runner.temp }}/mountainash-publish/dist
+          EVIDENCE_DIR: ${{ runner.temp }}/mountainash-publish/evidence
+          CALLER_REPOSITORY: ${{ github.repository }}
+        run: |
+          python -I - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import zipfile
+          from email.parser import Parser
+          from pathlib import Path
+
+          dist_dir = Path(os.environ['DIST_DIR'])
+          evidence_dir = Path(os.environ['EVIDENCE_DIR'])
+          caller_repository = os.environ['CALLER_REPOSITORY']
+          release_path = evidence_dir / 'release.json'
+          sbom_full = evidence_dir / 'sbom-full.json'
+          sbom_direct = evidence_dir / 'sbom-direct.json'
+
+          if not release_path.is_file():
+              raise SystemExit('approved evidence is missing release.json')
+          if not sbom_full.is_file() or not sbom_direct.is_file():
+              raise SystemExit('approved evidence is missing sbom-full.json or sbom-direct.json')
+
+          release = json.loads(release_path.read_text(encoding='utf-8'))
+          required = {'distribution', 'version', 'source_sha', 'repository', 'files', 'prerelease'}
+          missing = required - release.keys()
+          if missing:
+              raise SystemExit(f'release.json is missing required fields: {sorted(missing)}')
+
+          distribution = release['distribution']
+          version = release['version']
+          source_sha = release['source_sha']
+          repository = release['repository']
+          files = release['files']
+          prerelease = release['prerelease']
+
+          if not isinstance(distribution, str) or not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', distribution):
+              raise SystemExit('release.json has an invalid distribution')
+          if not isinstance(version, str) or not re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z.!+_-]*', version):
+              raise SystemExit('release.json has an invalid version')
+          if not isinstance(source_sha, str) or not re.fullmatch(r'[0-9a-f]{40,64}', source_sha):
+              raise SystemExit('release.json has an invalid source_sha')
+          if not isinstance(repository, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
+              raise SystemExit('release.json has an invalid repository')
+          if repository != caller_repository:
+              raise SystemExit('release.json repository does not match the workflow repository')
+          if type(prerelease) is not bool:
+              raise SystemExit('release.json prerelease must be a boolean')
+          if not isinstance(files, dict) or len(files) != 2:
+              raise SystemExit('release.json files must map exactly one wheel and one sdist')
+
+          names = set()
+          for name, digest in files.items():
+              if not isinstance(name, str) or Path(name).name != name or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name):
+                  raise SystemExit('release.json contains an unsafe artifact filename')
+              if not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest):
+                  raise SystemExit(f'release.json has an invalid SHA256 for {name}')
+              names.add(name)
+
+          wheel_names = [name for name in names if name.endswith('.whl')]
+          sdist_names = [name for name in names if name.endswith('.tar.gz')]
+          if len(wheel_names) != 1 or len(sdist_names) != 1:
+              raise SystemExit('release.json files must contain exactly one wheel and one sdist')
+
+          actual_paths = {path.name: path for path in dist_dir.iterdir() if path.is_file()}
+          if set(actual_paths) != names:
+              raise SystemExit(f'downloaded distribution filenames do not match release.json: {sorted(actual_paths)}')
+          for name, path in actual_paths.items():
+              actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              if actual_digest != files[name]:
+                  raise SystemExit(f'SHA256 mismatch for {name}')
+
+          wheel_name = wheel_names[0]
+          with zipfile.ZipFile(actual_paths[wheel_name]) as archive:
+              metadata_name = next(
+                  (name for name in archive.namelist() if name.endswith('.dist-info/METADATA')),
+                  None,
+              )
+              if metadata_name is None:
+                  raise SystemExit('wheel is missing distribution metadata')
+              metadata = Parser().parsestr(archive.read(metadata_name).decode('utf-8'))
+          wheel_distribution = re.sub(r'[-_.]+', '-', metadata['Name']).lower()
+          if wheel_distribution != distribution or metadata['Version'] != version:
+              raise SystemExit('wheel metadata does not match release.json')
+
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          values = {
+              'distribution': distribution,
+              'version': version,
+              'source-sha': source_sha,
+              'repository': repository,
+              'prerelease': str(prerelease).lower(),
+              'wheel-name': wheel_name,
+              'sdist-name': sdist_names[0],
+          }
+          with output.open('a', encoding='utf-8') as stream:
+              for name, value in values.items():
+                  print(f'{name}={value}', file=stream)
+          PY
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: mountainash-io
+
+      - name: Publish GitHub release without replacing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ steps.metadata.outputs.version }}
+          DISTRIBUTION: ${{ steps.metadata.outputs.distribution }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          SOURCE_SHA: ${{ steps.metadata.outputs.source-sha }}
+          REPOSITORY: ${{ steps.metadata.outputs.repository }}
+          PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
+          WHEEL: ${{ runner.temp }}/mountainash-publish/dist/${{ steps.metadata.outputs.wheel-name }}
+          SDIST: ${{ runner.temp }}/mountainash-publish/dist/${{ steps.metadata.outputs.sdist-name }}
+          SBOM_FULL: ${{ runner.temp }}/mountainash-publish/evidence/sbom-full.json
+          SBOM_DIRECT: ${{ runner.temp }}/mountainash-publish/evidence/sbom-direct.json
+        run: |
+          args=(release create "$RELEASE_TAG" "$WHEEL" "$SDIST" "$SBOM_FULL" "$SBOM_DIRECT"
+            --repo "$REPOSITORY"
+            --target "$SOURCE_SHA"
+            --title "$DISTRIBUTION v$VERSION"
+            --notes "Verified wheel, sdist, and SBOMs from $SOURCE_SHA.")
+          if [ "$PRERELEASE" = true ]; then
+            args+=(--prerelease)
+          fi
+          gh "${args[@]}"
+
+      - name: Checkout wheels repository
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-wheels
+          ref: develop
+          token: ${{ steps.app-token.outputs.token }}
+          path: wheels-repository
+          fetch-depth: 1
+
+      - name: Add verified wheel on a release branch
+        env:
+          WHEELS_REPOSITORY: ${{ github.workspace }}/wheels-repository
+          DISTRIBUTION: ${{ steps.metadata.outputs.distribution }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          WHEEL_NAME: ${{ steps.metadata.outputs.wheel-name }}
+          WHEEL_PATH: ${{ runner.temp }}/mountainash-publish/dist/${{ steps.metadata.outputs.wheel-name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          branch="release/${DISTRIBUTION}-${VERSION}-${RUN_ID}-${RUN_ATTEMPT}"
+          git -C "$WHEELS_REPOSITORY" config user.name "mountainash-ci[bot]"
+          git -C "$WHEELS_REPOSITORY" config user.email "mountainash-ci[bot]@users.noreply.github.com"
+          git -C "$WHEELS_REPOSITORY" switch --create "$branch"
+          install -D --mode=0644 "$WHEEL_PATH" "$WHEELS_REPOSITORY/$DISTRIBUTION/$WHEEL_NAME"
+          git -C "$WHEELS_REPOSITORY" add -- "$DISTRIBUTION/$WHEEL_NAME"
+          git -C "$WHEELS_REPOSITORY" commit -m "Add $WHEEL_NAME"
+          git -C "$WHEELS_REPOSITORY" push --set-upstream origin "$branch"
+          printf 'branch=%s\n' "$branch" >> "$GITHUB_OUTPUT"
+        id: wheels-branch
+
+      - name: Open wheels repository pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          WHEELS_REPOSITORY: mountainash-io/mountainash-wheels
+          BRANCH: ${{ steps.wheels-branch.outputs.branch }}
+          DISTRIBUTION: ${{ steps.metadata.outputs.distribution }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          WHEEL_NAME: ${{ steps.metadata.outputs.wheel-name }}
+          SOURCE_REPOSITORY: ${{ steps.metadata.outputs.repository }}
+        run: |
+          gh pr create \
+            --repo "$WHEELS_REPOSITORY" \
+            --base develop \
+            --head "$BRANCH" \
+            --title "Add $DISTRIBUTION v$VERSION wheel" \
+            --body "Adds $WHEEL_NAME from $SOURCE_REPOSITORY."
