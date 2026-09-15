@@ -244,7 +244,7 @@ does to preserve its public `AuthorizationRequired` contract.
 
 ## Integration checklist
 
-1. **Depend on** `mountainash-auth-client` (+ `[oauth1]`/`[sftp]` extras only if used). It pulls `mountainash-settings`.
+1. **Depend on** `mountainash-auth-client` (+ `[oauth1]`/`[sftp]` extras only if used). It pulls `mountainash_settings` and `mountainash_secrets`.
 2. **Credential injection:** call `auth_profile.emit(family, base=sdk_config)` and feed the result to your SDK constructor. Treat `NoAuthProfile`/`None` as passthrough; layer onto nested `base_kwargs` when present.
 3. **Pick the family explicitly** — `emit()` is fail-closed; never call it untargeted.
 4. **OAuth:** register a secrets backend, acquire a token via `OAuth2TokenManager(...).acquire()` (OAuth2) or `OAuth1TokenManager(...).acquire_auth()` (OAuth1), then `emit` the resolved token onto your endpoint config. Provide a `callback_server` factory if you support interactive authorize.

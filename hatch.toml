@@ -7,6 +7,9 @@ path = "src/mountainash_auth_client/__version__.py"
 [build.targets.wheel]
 packages = ["src/mountainash_auth_client"]
 
+[build.targets.sdist]
+include = ["/src", "/pyproject.toml", "/hatch.toml", "/README.md", "/LICENSE"]
+
 
 #================
 # Env: dev
