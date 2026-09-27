@@ -1,8 +1,13 @@
 """Tests for OAuth1Flow."""
 from __future__ import annotations
 
-import pytest
+from types import SimpleNamespace
+from unittest.mock import patch
 
+import pytest
+from mountainash_settings.secrets import MemorySecretStore, NamespacedSecretStore
+
+from mountainash_auth_client.errors import AuthorizationRequired, MalformedCallbackError
 from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
 from mountainash_auth_client.oauth.providers.oauth1 import OAuth1ProviderProfile
 
@@ -74,9 +79,6 @@ class TestOAuth1FlowAuthlib:
             flow.exchange_verifier("ck", "cs", "tok", "tok_sec", "verifier")
 
 
-from mountainash_auth_client.errors import MalformedCallbackError
-
-
 class _OAuth1Echo:
     """Test double whose obtain_callback returns a verifier (+ matching token)."""
 
@@ -142,19 +144,11 @@ class TestOAuth1Authorize:
                                params={"oauth_verifier": "V", "oauth_token": "WRONG"}))
 
 
-from types import SimpleNamespace
-from unittest.mock import patch
-
-from mountainash_auth_client.errors import AuthorizationRequired
-from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
-
-
 class _Auth1:
     CONSUMER_KEY = "ck"
     CONSUMER_SECRET = property(
         lambda self: type("S", (), {"get_secret_value": lambda s: "cs"})()
     )
-    SETTINGS_SOURCE_SECRETS_PROVIDER = "rtp_mem"
 
     def persist_key(self):
         return "rtp.oauth1"
@@ -162,9 +156,8 @@ class _Auth1:
 
 @pytest.fixture
 def rtp_env():
-    store = InMemorySecretStore()
+    store = MemorySecretStore()
     return SimpleNamespace(
-        resolver=SecretRegistryResolver({"rtp_mem": store}),
         tokens=NamespacedSecretStore(store, "oauth"),
         store=store,
     )
@@ -173,19 +166,19 @@ def rtp_env():
 class TestResolveTokenPair:
     def test_returns_cached_pair(self, rtp_env):
         rtp_env.tokens.set("rtp.oauth1", {"oauth_token": "AT", "oauth_token_secret": "ATS"})
-        pair = OAuth1Flow(_provider(), resolver=rtp_env.resolver).resolve_token_pair(_Auth1())
+        pair = OAuth1Flow(_provider(), token_store=rtp_env.store).resolve_token_pair(_Auth1())
         assert pair == ("AT", "ATS")
 
     def test_raises_when_no_token_and_not_auto(self, rtp_env):
         with pytest.raises(AuthorizationRequired) as exc:
-            OAuth1Flow(_provider(), resolver=rtp_env.resolver).resolve_token_pair(_Auth1())
+            OAuth1Flow(_provider(), token_store=rtp_env.store).resolve_token_pair(_Auth1())
         assert exc.value.provider == "testprovider_oauth1"
 
     def test_auto_authorize_persists_and_returns_pair(self, rtp_env):
         with patch.object(OAuth1Flow, "authorize", return_value={
             "oauth_token": "newAT", "oauth_token_secret": "newATS",
         }):
-            pair = OAuth1Flow(_provider(), resolver=rtp_env.resolver).resolve_token_pair(
+            pair = OAuth1Flow(_provider(), token_store=rtp_env.store).resolve_token_pair(
                 _Auth1(), auto_authorize=True)
         assert pair == ("newAT", "newATS")
         assert rtp_env.tokens.get("rtp.oauth1")["oauth_token"] == "newAT"
@@ -199,6 +192,6 @@ class TestResolveTokenPair:
             return {"oauth_token": "AT", "oauth_token_secret": "ATS"}
 
         with patch.object(OAuth1Flow, "authorize", side_effect=fake_authorize):
-            OAuth1Flow(_provider(), resolver=rtp_env.resolver).resolve_token_pair(
+            OAuth1Flow(_provider(), token_store=rtp_env.store).resolve_token_pair(
                 _Auth1(), auto_authorize=True, callback_server=sentinel)
         assert captured["callback_server"] is sentinel

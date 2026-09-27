@@ -13,10 +13,10 @@ from mountainash_auth_client.errors import (
 )
 from mountainash_auth_client._optional import require_authlib
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
-from mountainash_auth_client.oauth.persistence import token_store
+from mountainash_auth_client.oauth.persistence import token_store as oauth_token_store
 
 if TYPE_CHECKING:
-    from mountainash_secrets import SecretStoreResolver
+    from mountainash_settings.secrets import ClearableSecretStore
     from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
     from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
@@ -29,11 +29,11 @@ class OAuth1Flow:
         self,
         provider: OAuth1ProviderProfileProtocol,
         *,
-        resolver: SecretStoreResolver | None = None,
+        token_store: ClearableSecretStore | None = None,
         callback_server: CallbackServerFactory | None = None,
     ) -> None:
         self._provider = provider
-        self._resolver = resolver
+        self._token_store = token_store
         self._callback_server = callback_server
 
     @property
@@ -115,14 +115,15 @@ class OAuth1Flow:
         ``auto_authorize`` is False.
         """
         provider = self._provider.NAME
-        if self._resolver is None:
-            raise RuntimeError("OAuth1Flow.resolve_token_pair requires a resolver")
-        backend = token_store(self._resolver, auth_profile)
+        if self._token_store is None:
+            raise RuntimeError("OAuth persistence requires token_store")
+        backend = oauth_token_store(self._token_store)
         key = auth_profile.persist_key()
-        tokens = backend.get(key)
-
-        if tokens and tokens.get("oauth_token"):
-            return tokens["oauth_token"], tokens["oauth_token_secret"]
+        with backend.transaction(key):
+            cleared = backend.is_cleared(key)
+            tokens = None if cleared else backend.get(key)
+            if tokens and tokens.get("oauth_token"):
+                return tokens["oauth_token"], tokens["oauth_token_secret"]
 
         if auto_authorize:
             new_tokens = self.authorize(
