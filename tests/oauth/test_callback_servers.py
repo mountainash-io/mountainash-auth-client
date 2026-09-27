@@ -4,8 +4,10 @@ from __future__ import annotations
 import pytest
 
 import mountainash_auth_client.oauth.server.callback as cb
+import mountainash_auth_client.oauth.server.manual as man
 from mountainash_auth_client.oauth.protocols import CallbackServerProtocol
 from mountainash_auth_client.oauth.server.callback import LocalCallbackServer
+from mountainash_auth_client.oauth.server.manual import ManualCallbackServer
 from mountainash_auth_client.errors import CallbackTimeoutError
 
 
@@ -65,10 +67,6 @@ def test_wait_for_callback_times_out_with_callback_timeout_error():
             s.wait_for_callback()
     finally:
         s._server.server_close()
-
-
-import mountainash_auth_client.oauth.server.manual as man
-from mountainash_auth_client.oauth.server.manual import ManualCallbackServer
 
 
 def test_manual_conforms_and_defaults_to_oauth2_oob():

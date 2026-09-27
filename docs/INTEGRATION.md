@@ -17,6 +17,9 @@ secrets backend) and is consumed *above* by transport/client layers.
 
 ## Install
 
+Requires **Python 3.12+**. Runtime metadata selects
+`mountainash-settings>=0.1.0,<0.2`.
+
 ```toml
 # pyproject.toml
 dependencies = ["mountainash-auth-client"]
@@ -148,12 +151,12 @@ from mountainash_auth_client import OAuthFlow              # OAuth2
 from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
 
 # OAuth2: cache → refresh → authorize → persist → access token
-token = OAuthFlow(provider, resolver=resolver).resolve_access_token(
+token = OAuthFlow(provider, token_store=store).resolve_access_token(
     auth_profile, auto_authorize=False, callback_server=None,
 )  # -> str ; raises AuthorizationRequired when no usable token and auto_authorize=False
 
 # OAuth1: cache → authorize → persist → token pair
-oauth_token, oauth_token_secret = OAuth1Flow(provider, resolver=resolver).resolve_token_pair(
+oauth_token, oauth_token_secret = OAuth1Flow(provider, token_store=store).resolve_token_pair(
     auth_profile, auto_authorize=False, callback_server=None,
 )  # -> tuple[str, str]
 ```
@@ -163,13 +166,14 @@ Bind the resolved token onto **your** endpoint config via `emit()`:
 ```python
 from mountainash_auth_client import TokenAuthProfile, TargetFamily
 
-token = OAuthFlow(provider, resolver=resolver).resolve_access_token(auth_profile)
+token = OAuthFlow(provider, token_store=store).resolve_access_token(auth_profile)
 kwargs = TokenAuthProfile(TOKEN=token).emit(TargetFamily.HTTP, base=my_endpoint_config)
 client = httpx.Client(**kwargs)
 ```
 
-This is exactly how transport keeps its per-endpoint httpx config (timeouts, TLS, redirects)
-while reusing auth-client's one lifecycle.
+This lets transport keep its per-endpoint httpx config (timeouts, TLS, redirects)
+while reusing auth-client's lifecycle. Here `store` is the raw, open store selected
+by the application, as shown below. Downstream callers must migrate to this interface.
 
 ### Token acquisition seam (`acquire()` / `acquire_auth()`)
 
@@ -178,13 +182,18 @@ token (cache → refresh → authorize → persist) and return a credential you 
 
 ```python
 from mountainash_auth_client import OAuth2TokenManager, TokenAuthProfile, TargetFamily
+from mountainash_settings.secrets import FilesystemBackend
 
-cred = OAuth2TokenManager(provider, auth_profile, resolver=resolver).acquire()  # TokenCredential
-kw = TokenAuthProfile(TOKEN=cred.access_token).emit(TargetFamily.HTTP)           # {"headers": {...}}
-# hand kw to the consumer's transport (http-client HttpConfig); wire creds_provider for refresh.
+# root, provider and auth_profile are supplied by the application.
+with FilesystemBackend(root) as store:
+    manager = OAuth2TokenManager(provider, auth_profile, token_store=store)
+    cred = manager.acquire()  # TokenCredential; non-interactive
+    kw = TokenAuthProfile(TOKEN=cred.access_token).emit(TargetFamily.HTTP)
+    # Use kw with the consumer's transport inside this application-owned lifetime.
+    # Any creds_provider callback using manager must finish before store closes.
 ```
 
-For OAuth 1.0a, `OAuth1TokenManager(...).acquire_auth()` returns an `httpx.Auth` signer for
+For OAuth 1.0a, `OAuth1TokenManager(provider, auth_profile, token_store=store).acquire_auth()` returns an `httpx.Auth` signer for
 `RequestCreds(auth=…)` — OAuth1 is per-request signing, not a Bearer header, so the signer is
 passed directly rather than emitted as headers.
 
@@ -193,20 +202,28 @@ interactive authorize is disabled) or `TokenRefreshError` (refresh call failed).
 through http-client's request path these arrive as `SourceAuthenticationError`; the consumer
 maps `__cause__` to detect which domain error triggered reauth (Phase 3 §6 / Phase 4).
 
-### Secrets backend (required for OAuth)
+### Selected token store and ownership
 
-The resolvers persist/read tokens through a **secrets backend** keyed by the auth profile's
-`SETTINGS_SOURCE_SECRETS_PROVIDER` + `persist_key()`. You must register one before resolving:
+Both lifecycle managers require an explicit `token_store=` implementing settings'
+`ClearableSecretStore`: `get`, `set`, `delete`, `is_cleared`, and per-key `transaction`.
+There is no token-store registry, implicit backend, or provider-name lookup.
+Flows may omit the store for wire-only authorization/exchange operations; persistence
+operations require it and report missing capabilities as errors.
 
-```python
-from mountainash_settings.secrets.registry import register_secrets_backend
+Pass the **raw store** to managers and flows, never a pre-namespaced wrapper.
+auth-client applies `oauth` exactly once, retaining `persist_key()`, token field names,
+clear markers, and on-disk addressing. A clear marker takes precedence over stale data.
+Store errors propagate rather than becoming a missing token or successful authentication.
 
-register_secrets_backend("my_provider", my_backend)  # get/set/delete/transaction
-# auth_profile.SETTINGS_SOURCE_SECRETS_PROVIDER == "my_provider"
-```
+The application constructs and closes the store (for example, with
+`with FilesystemBackend(root) as store:` above). Managers and flows borrow it and never
+close it. Refresh read/decision/exchange/write is serialized per key; interactive
+authorization happens outside the transaction, followed by a short serialized write.
 
-A backend implements `get(key)`, `set(key, data)`, `delete(key)`, and a `transaction(key)`
-context manager. (Non-OAuth profiles need no backend.)
+Configured credential profiles remain data consumed by existing, consumer-selected
+renderers. Acquired OAuth tokens live in the selected store; selecting that store
+does not mutate renderers or turn configured profiles into acquired-token records.
+Non-OAuth credential emission needs no token store.
 
 ### Callback servers (interactive authorize)
 
@@ -247,7 +264,7 @@ does to preserve its public `AuthorizationRequired` contract.
 1. **Depend on** `mountainash-auth-client` (+ `[oauth1]`/`[sftp]` extras only if used). It pulls `mountainash-settings`.
 2. **Credential injection:** call `auth_profile.emit(family, base=sdk_config)` and feed the result to your SDK constructor. Treat `NoAuthProfile`/`None` as passthrough; layer onto nested `base_kwargs` when present.
 3. **Pick the family explicitly** — `emit()` is fail-closed; never call it untargeted.
-4. **OAuth:** register a secrets backend, acquire a token via `OAuth2TokenManager(...).acquire()` (OAuth2) or `OAuth1TokenManager(...).acquire_auth()` (OAuth1), then `emit` the resolved token onto your endpoint config. Provide a `callback_server` factory if you support interactive authorize.
+4. **OAuth:** select and own a raw `ClearableSecretStore`, pass `token_store=store` to `OAuth2TokenManager(provider, auth_profile, token_store=store).acquire()` (OAuth2) or `OAuth1TokenManager(provider, auth_profile, token_store=store).acquire_auth()` (OAuth1), then render the acquired credential for your endpoint config. Provide a `callback_server` factory if you support interactive authorize.
 5. **Secrets stay `SecretStr`** — pass profile secret fields through; never unwrap at the call site.
 6. **Errors:** catch auth-client's error types; translate to your own at the boundary if you have a public contract.
 7. **Don't fork** the flow/callback/connection code into your layer — import it. auth-client is the single source of truth (transport's former fork was deleted; see its connections-dedup spec).
