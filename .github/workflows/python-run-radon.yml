@@ -1,0 +1,39 @@
+name: Radon Complexity Checks
+
+on:
+  pull_request:
+    paths:
+      - src/mountainash_auth_client/**
+      - tests/**
+      - pyproject.toml
+      - hatch.toml
+      - .github/workflows/python-run-radon.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  complexity:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Hatch
+        run: python -m pip install --disable-pip-version-check --no-input hatch
+
+      - name: Create Radon environment
+        run: hatch env create radon
+
+      - name: Run cyclomatic complexity checks
+        run: hatch run radon:radon-cc
+
+      - name: Run maintainability checks
+        run: hatch run radon:radon-mi

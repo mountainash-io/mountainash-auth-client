@@ -10,6 +10,7 @@ dist/
 build/
 *.egg-info/
 *.egg
+temp/
 
 # Virtual environments
 .venv/
