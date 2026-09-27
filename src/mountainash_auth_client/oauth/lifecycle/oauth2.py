@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import typing as t
 
+from mountainash_auth_client.errors import AuthorizationRequired
 from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
 from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
@@ -10,7 +11,7 @@ from mountainash_auth_client.oauth.lifecycle.status import TokenState, TokenStat
 from mountainash_auth_client.oauth.persistence import token_store
 
 if t.TYPE_CHECKING:
-    from mountainash_secrets import SecretStoreResolver
+    from mountainash_settings.secrets import ClearableSecretStore
     from mountainash_auth_client.oauth.providers.protocols import OAuth2ProviderProfileProtocol
     from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
@@ -19,7 +20,7 @@ __all__ = ["OAuth2TokenManager"]
 
 
 class OAuth2TokenManager:
-    """Full OAuth2 token lifecycle over an injected resolver.
+    """Full OAuth2 token lifecycle over a consumer-selected store.
 
     Manages *tokens* (persisted under the "oauth" namespace by persist_key()).
     ``acquire()`` returns a ``TokenCredential``; render it for HTTP via ``emit(HTTP)``.
@@ -31,12 +32,12 @@ class OAuth2TokenManager:
         provider: OAuth2ProviderProfileProtocol,
         auth_profile: PersistableAuthProfile,
         *,
-        resolver: SecretStoreResolver,
+        token_store: ClearableSecretStore,
         callback_server: CallbackServerFactory | None = None,
     ) -> None:
         self._provider = provider
         self._auth = auth_profile
-        self._resolver = resolver
+        self._token_store = token_store
         self._callback_server = callback_server
 
     @classmethod
@@ -45,7 +46,7 @@ class OAuth2TokenManager:
         return OAuthFlow
 
     def _store(self):
-        return token_store(self._resolver, self._auth)
+        return token_store(self._token_store)
 
     def authorize(self, *, mode: str = "local_server", manual_redirect_uri: str | None = None) -> TokenStatus:
         factory = resolve_callback_factory(
@@ -65,7 +66,7 @@ class OAuth2TokenManager:
                 self._auth.CLIENT_SECRET.get_secret_value()
                 if self._auth.CLIENT_SECRET else None
             )
-        tokens = self._flow_cls()(self._provider, resolver=self._resolver).authorize(
+        tokens = self._flow_cls()(self._provider, token_store=self._token_store).authorize(
             client_id=client_id,
             client_secret=client_secret,
             scope=self._auth.SCOPE,
@@ -82,7 +83,7 @@ class OAuth2TokenManager:
         TokenCredential. Non-interactive: raises AuthorizationRequired when no usable
         token exists — it never launches the interactive authorize dance.
         """
-        flow = self._flow_cls()(self._provider, resolver=self._resolver)
+        flow = self._flow_cls()(self._provider, token_store=self._token_store)
         flow.resolve_access_token(self._auth, auto_authorize=False)   # refresh-or-raise, single-flight
         return self._credential()
 
@@ -91,30 +92,30 @@ class OAuth2TokenManager:
         endpoint under the per-key transaction (ignores is_expired), then return the
         credential. Contrast acquire(), which is refresh-if-stale.
         """
-        self._flow_cls()(self._provider, resolver=self._resolver).force_refresh(self._auth)
+        self._flow_cls()(self._provider, token_store=self._token_store).force_refresh(self._auth)
         return self._credential()
 
     def _credential(self) -> TokenCredential:
         backend = self._store()
         key = self._auth.persist_key()
         with backend.transaction(key):
+            if backend.is_cleared(key):
+                raise AuthorizationRequired(provider=self._provider.NAME, user="default")
             record = backend.get(key)
         if not record or not record.get("access_token"):
-            from mountainash_auth_client.errors import AuthorizationRequired
             raise AuthorizationRequired(provider=self._provider.NAME, user="default")
         return TokenCredential.from_record(record)
 
     def access_token(self) -> str:
-        return self._flow_cls()(self._provider, resolver=self._resolver).resolve_access_token(self._auth)
+        return self._flow_cls()(self._provider, token_store=self._token_store).resolve_access_token(self._auth)
 
     def status(self) -> TokenStatus:
         backend = self._store()
         key = self._auth.persist_key()
         with backend.transaction(key):  # consistent is_cleared + get snapshot
-            cleared = backend.is_cleared(key)
+            if backend.is_cleared(key):
+                return TokenStatus(TokenState.CLEARED)
             record = backend.get(key)
-        if cleared:
-            return TokenStatus(TokenState.CLEARED)
         return classify_oauth2(record)
 
     def revoke(self) -> None:

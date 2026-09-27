@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from tempfile import TemporaryDirectory
+from threading import Event
 from unittest.mock import patch
 
+import httpx
 import pytest
 
+from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
 from mountainash_auth_client.oauth.lifecycle.oauth2 import OAuth2TokenManager
 from mountainash_auth_client.oauth.lifecycle.status import TokenState
 from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
 from mountainash_auth_client.oauth.server.manual import ManualCallbackServer
-from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
-from mountainash_secrets.stores.filesystem import FilesystemSecretStore
+from mountainash_settings.secrets import FilesystemBackend, MemorySecretStore, NamespacedSecretStore
 
 
 def _provider():
@@ -28,16 +33,15 @@ class _Auth:
         lambda self: type("S", (), {"get_secret_value": lambda s: "csec"})()
     )
     SCOPE = "read"
-    SETTINGS_SOURCE_SECRETS_PROVIDER = "mem"
 
     def persist_key(self) -> str:
         return "testprovider.default"
 
 
 def _env():
-    store = InMemorySecretStore()
+    store = MemorySecretStore()
     return (
-        OAuth2TokenManager(_provider(), _Auth(), resolver=SecretRegistryResolver({"mem": store})),
+        OAuth2TokenManager(_provider(), _Auth(), token_store=store),
         NamespacedSecretStore(store, "oauth"),  # the "oauth"-namespaced view to seed/read
     )
 
@@ -123,7 +127,7 @@ def test_authorize_tolerates_missing_client_secret():
 
     mgr = OAuth2TokenManager(
         _provider(), _NoSecretAuth(),
-        resolver=SecretRegistryResolver({"mem": InMemorySecretStore()}),
+        token_store=MemorySecretStore(),
     )
     captured = {}
 
@@ -134,9 +138,6 @@ def test_authorize_tolerates_missing_client_secret():
     with patch.object(type(mgr)._flow_cls(), "authorize", new=fake_authorize):
         mgr.authorize()
     assert captured["client_secret"] is None
-
-
-from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
 
 
 def test_acquire_returns_token_credential():
@@ -182,16 +183,125 @@ def test_refresh_forces_endpoint_call():
 
 
 @pytest.mark.parametrize("bad_key", ["bad/key", "a..b"])
-def test_bad_persist_key_is_rejected_by_filesystem(tmp_path, bad_key):
+def test_bad_persist_key_is_rejected_by_filesystem(bad_key):
     # "/" (illegal char) and ".." (empty segment) both violate the §4 grammar;
-    # FilesystemSecretStore._key_to_paths validates each segment and raises ValueError.
+    # FilesystemBackend validates each segment and raises ValueError.
     class _BadAuth(_Auth):
-        SETTINGS_SOURCE_SECRETS_PROVIDER = "fs"
-
         def persist_key(self) -> str:
             return bad_key
 
-    resolver = SecretRegistryResolver({"fs": FilesystemSecretStore(base_dir=tmp_path)})
-    mgr = OAuth2TokenManager(_provider(), _BadAuth(), resolver=resolver)
-    with pytest.raises(ValueError):
-        mgr.status()  # opens transaction(key) -> _key_to_paths validates the segment
+    with TemporaryDirectory() as root, FilesystemBackend(base_dir=root) as store:
+        mgr = OAuth2TokenManager(_provider(), _BadAuth(), token_store=store)
+        with pytest.raises(ValueError):
+            mgr.status()
+
+
+def test_interrupted_clear_blocks_credential_and_refresh(monkeypatch):
+    from mountainash_auth_client.errors import AuthorizationRequired
+    from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
+
+    class InterruptedClear(MemorySecretStore):
+        def is_cleared(self, key):
+            return True
+
+        def get(self, key):
+            raise AssertionError("cleared record was read")
+
+    store = InterruptedClear()
+    store.set("oauth.testprovider.default", {
+        "access_token": "must-not-return", "refresh_token": "must-not-exchange",
+        "token_expires_at": 4102444800,
+    })
+    manager = OAuth2TokenManager(_provider(), _Auth(), token_store=store)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("cleared record reached endpoint")
+
+    monkeypatch.setattr(OAuthFlow, "refresh", forbidden)
+    assert manager.status().state is TokenState.CLEARED
+    for operation in (manager.acquire, manager.access_token, manager.refresh, manager._credential):
+        with pytest.raises(AuthorizationRequired):
+            operation()
+
+
+def test_selected_stores_are_isolated():
+    first, first_tokens = _env()
+    second, second_tokens = _env()
+    first_tokens.set("testprovider.default", {"access_token": "one", "token_expires_at": 4102444800})
+    second_tokens.set("testprovider.default", {"access_token": "two", "token_expires_at": 4102444800})
+    assert first.acquire().access_token == "one"
+    assert second.acquire().access_token == "two"
+    first.revoke()
+    assert second.acquire().access_token == "two"
+
+
+def test_revoke_at_flow_return_blocks_acquire(monkeypatch):
+    from mountainash_auth_client.errors import AuthorizationRequired
+    from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
+
+    class InterruptedClear(MemorySecretStore):
+        def delete(self, key):
+            retained = self.get(key)
+            super().delete(key)
+            self._data[key] = retained
+
+    store = InterruptedClear()
+    store.set("oauth.testprovider.default", {"access_token": "retained", "token_expires_at": 4102444800})
+    manager = OAuth2TokenManager(_provider(), _Auth(), token_store=store)
+    resolve = OAuthFlow.resolve_access_token
+
+    def revoke_after_resolution(flow, *args, **kwargs):
+        result = resolve(flow, *args, **kwargs)
+        manager.revoke()
+        return result
+
+    monkeypatch.setattr(OAuthFlow, "resolve_access_token", revoke_after_resolution)
+    with pytest.raises(AuthorizationRequired):
+        manager.acquire()
+    assert store.is_cleared("oauth.testprovider.default")
+    assert store.get("oauth.testprovider.default")["access_token"] == "retained"
+
+
+def test_two_managers_acquire_single_flight(monkeypatch):
+    store = MemorySecretStore()
+    store.set("oauth.testprovider.default", {
+        "access_token": "old", "refresh_token": "RT", "token_expires_at": 1,
+    })
+    entered, release, second_waiting = Event(), Event(), Event()
+    real_transaction = store.transaction
+
+    @contextmanager
+    def observed_transaction(key):
+        if entered.is_set():
+            second_waiting.set()
+        with real_transaction(key):
+            yield
+
+    monkeypatch.setattr(store, "transaction", observed_transaction)
+    exchanges = []
+
+    def post(client, url, **kwargs):
+        exchanges.append(kwargs["data"])
+        entered.set()
+        assert release.wait(5)
+        return httpx.Response(200, json={
+            "access_token": "NEW", "refresh_token": "ROTATED", "expires_in": 3600,
+        }, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.Client, "post", post)
+    first = OAuth2TokenManager(_provider(), _Auth(), token_store=store)
+    second = OAuth2TokenManager(_provider(), _Auth(), token_store=store)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a = pool.submit(first.acquire)
+        try:
+            assert entered.wait(5)
+            b = pool.submit(second.acquire)
+            assert second_waiting.wait(5)
+        finally:
+            release.set()
+        first_credential, second_credential = a.result(timeout=5), b.result(timeout=5)
+    assert first_credential == second_credential
+    assert first_credential.access_token == "NEW"
+    assert first_credential.refresh_token == "ROTATED"
+    assert len(exchanges) == 1
+    assert exchanges[0]["refresh_token"] == "RT"
