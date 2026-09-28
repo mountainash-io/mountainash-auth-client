@@ -15,7 +15,7 @@ from mountainash_auth_client.schemas.oauth1 import OAuth1AuthProfile
 from mountainash_auth_client.targets import TargetFamily
 
 if t.TYPE_CHECKING:
-    from mountainash_secrets import SecretStoreResolver
+    from mountainash_settings.secrets import ClearableSecretStore
     from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
     from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
@@ -29,12 +29,12 @@ class OAuth1TokenManager:
         provider: OAuth1ProviderProfileProtocol,
         auth_profile: PersistableAuthProfile,
         *,
-        resolver: SecretStoreResolver,
+        token_store: ClearableSecretStore,
         callback_server: CallbackServerFactory | None = None,
     ) -> None:
         self._provider = provider
         self._auth = auth_profile
-        self._resolver = resolver
+        self._token_store = token_store
         self._callback_server = callback_server
 
     @classmethod
@@ -42,7 +42,7 @@ class OAuth1TokenManager:
         return OAuth1Flow
 
     def _store(self):
-        return token_store(self._resolver, self._auth)
+        return token_store(self._token_store)
 
     def authorize(self, *, mode: str = "local_server", manual_redirect_uri: str | None = None) -> TokenStatus:
         factory = resolve_callback_factory(
@@ -52,7 +52,7 @@ class OAuth1TokenManager:
             callback_port=self._provider.CALLBACK_PORT,
             manual_redirect_uri=manual_redirect_uri or "oob",
         )
-        tokens = self._flow_cls()(self._provider, resolver=self._resolver).authorize(
+        tokens = self._flow_cls()(self._provider, token_store=self._token_store).authorize(
             consumer_key=self._auth.CONSUMER_KEY,
             consumer_secret=self._auth.CONSUMER_SECRET.get_secret_value(),
             callback_server=factory,
@@ -64,16 +64,15 @@ class OAuth1TokenManager:
         return self.status()
 
     def token_pair(self) -> tuple[str, str]:
-        return self._flow_cls()(self._provider, resolver=self._resolver).resolve_token_pair(self._auth)
+        return self._flow_cls()(self._provider, token_store=self._token_store).resolve_token_pair(self._auth)
 
     def status(self) -> TokenStatus:
         backend = self._store()
         key = self._auth.persist_key()
         with backend.transaction(key):
-            cleared = backend.is_cleared(key)
+            if backend.is_cleared(key):
+                return TokenStatus(TokenState.CLEARED)
             record = backend.get(key)
-        if cleared:
-            return TokenStatus(TokenState.CLEARED)
         if record is None:
             return TokenStatus(TokenState.MISSING)
         return TokenStatus(TokenState.PRESENT)

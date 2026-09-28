@@ -2,13 +2,27 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from threading import Event
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
+from mountainash_settings.secrets import MemorySecretStore, NamespacedSecretStore
 
-from mountainash_auth_client.errors import TokenExchangeError, TokenRefreshError
+from mountainash_auth_client.errors import (
+    AuthorizationDeniedError,
+    AuthorizationRequired,
+    MalformedCallbackError,
+    TokenExchangeError,
+    TokenRefreshError,
+)
 from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
+from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
+from mountainash_auth_client.oauth.providers.oauth1 import OAuth1ProviderProfile
 from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
 
 
@@ -246,14 +260,6 @@ class TestIsExpired:
         assert OAuthFlow.is_expired(near_future) is True
 
 
-from urllib.parse import parse_qs, urlparse
-
-from mountainash_auth_client.errors import (
-    AuthorizationDeniedError,
-    MalformedCallbackError,
-)
-
-
 class _EchoServer:
     """Test double: echoes the state from the authorize URL back as a callback."""
 
@@ -340,19 +346,12 @@ class TestAuthorizeCallbackValidation:
             flow.authorize("cid", "csec", callback_server=lambda: _NoCode())
 
 
-from types import SimpleNamespace
-
-from mountainash_auth_client.errors import AuthorizationRequired
-from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
-
-
 class _Auth:
     CLIENT_ID = "cid"
     CLIENT_SECRET = property(
         lambda self: type("S", (), {"get_secret_value": lambda s: "csec"})()
     )
     SCOPE = "read"
-    SETTINGS_SOURCE_SECRETS_PROVIDER = "rat_mem"
 
     def persist_key(self):
         return "rat.oauth2"
@@ -360,12 +359,11 @@ class _Auth:
 
 @pytest.fixture
 def rat_env():
-    # A real mountainash-secrets store resolved by name exactly as the flow does.
+    # A real selected settings store, with a namespaced view for test setup.
     # `tokens` is the "oauth"-namespaced view the flow writes through, so tests
     # seed/read with the bare persist_key and the prefix is handled for them.
-    store = InMemorySecretStore()
+    store = MemorySecretStore()
     return SimpleNamespace(
-        resolver=SecretRegistryResolver({"rat_mem": store}),
         tokens=NamespacedSecretStore(store, "oauth"),
         store=store,
     )
@@ -378,12 +376,12 @@ class TestResolveAccessToken:
             "refresh_token": "r",
             "token_expires_at": int(time.time()) + 3600,
         })
-        token = OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+        token = OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
         assert token == "cached_tok"
 
     def test_raises_when_no_token_and_not_auto(self, rat_env):
         with pytest.raises(AuthorizationRequired) as exc:
-            OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+            OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
         assert exc.value.provider == "testprovider"
 
     def test_raises_when_expired_and_no_refresh(self, rat_env):
@@ -393,7 +391,7 @@ class TestResolveAccessToken:
             "token_expires_at": int(time.time()) - 1000,
         })
         with pytest.raises(AuthorizationRequired):
-            OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+            OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
 
     def test_refresh_persists_and_returns_new_token(self, rat_env):
         rat_env.tokens.set("rat.oauth2", {
@@ -406,7 +404,7 @@ class TestResolveAccessToken:
             "refresh_token": "new_r",
             "token_expires_at": int(time.time()) + 3600,
         }):
-            token = OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+            token = OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
         assert token == "new_tok"
         assert rat_env.tokens.get("rat.oauth2")["access_token"] == "new_tok"
 
@@ -425,7 +423,7 @@ class TestResolveAccessToken:
             "refresh_token": "new_r",
             "token_expires_at": int(time.time()) + 3600,
         }):
-            OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+            OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
         assert rat_env.store.get("oauth.rat.oauth2")["access_token"] == "new_tok"
         assert rat_env.store.get("rat.oauth2") is None
 
@@ -446,30 +444,14 @@ class TestResolveAccessToken:
             "token_expires_at": int(time.time()) + 3600,
         }):
             with pytest.raises(RuntimeError, match="disk full"):
-                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+                OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
         assert rat_env.tokens.get("rat.oauth2")["refresh_token"] == "r_xyz"
 
-    def test_refresh_branch_leaves_concurrent_record_when_refresh_token_vanished(self, rat_env):
-        # Stale-read race: pre-lock we read an expired token WITH a refresh_token
-        # and commit to the refresh branch. Under the lock, a concurrent writer has
-        # replaced the record with one that has NO refresh_token (e.g. provider
-        # rotation). The fix re-derives the decision from the re-read record: with
-        # no refresh_token it must NOT subscript a missing key, must NOT delete the
-        # concurrent writer's record, and must NOT attempt a refresh — it just fails
-        # closed. (Old code did `tokens["refresh_token"]` -> KeyError -> except ->
-        # backend.delete(key), destroying the other writer's record.)
-        pre_lock = {"access_token": "old", "refresh_token": "r_xyz",
-                    "token_expires_at": int(time.time()) - 1000}
+    def test_record_without_refresh_token_is_preserved(self, rat_env):
+        # The decision uses only the record observed under the transaction.
         concurrent = {"access_token": "concurrent",
                       "token_expires_at": int(time.time()) - 1000}  # no refresh_token key
-
-        n = {"get": 0}
-
-        def racing_get(key):
-            n["get"] += 1
-            return pre_lock if n["get"] == 1 else concurrent
-
-        rat_env.store.get = racing_get
+        rat_env.tokens.set("rat.oauth2", concurrent)
 
         deleted = {"called": False}
         real_delete = rat_env.store.delete
@@ -482,9 +464,10 @@ class TestResolveAccessToken:
 
         with patch.object(OAuthFlow, "refresh") as mock_refresh:
             with pytest.raises(AuthorizationRequired):
-                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+                OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
             mock_refresh.assert_not_called()
         assert deleted["called"] is False
+        assert rat_env.tokens.get("rat.oauth2") == concurrent
 
     def test_auto_authorize_forwards_callback_server(self, rat_env):
         sentinel = object()
@@ -495,7 +478,7 @@ class TestResolveAccessToken:
             return {"access_token": "auth_tok", "refresh_token": "", "token_expires_at": None}
 
         with patch.object(OAuthFlow, "authorize", side_effect=fake_authorize):
-            token = OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(
+            token = OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(
                 _Auth(), auto_authorize=True, callback_server=sentinel)
         assert token == "auth_tok"
         assert captured["callback_server"] is sentinel
@@ -509,7 +492,7 @@ class TestResolveAccessToken:
             "token_expires_at": int(time.time()) + 3600,
         })
         with pytest.raises(AuthorizationRequired):
-            OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+            OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
 
     def test_empty_token_from_authorize_is_failclosed(self, rat_env):
         # Even when authorize() succeeds, an empty access_token must fail closed
@@ -518,7 +501,7 @@ class TestResolveAccessToken:
             "access_token": "", "refresh_token": "", "token_expires_at": None,
         }):
             with pytest.raises(AuthorizationRequired):
-                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(
+                OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(
                     _Auth(), auto_authorize=True)
 
     def test_transient_refresh_failure_keeps_record(self, rat_env):
@@ -534,7 +517,7 @@ class TestResolveAccessToken:
         rat_env.store.delete = spy_delete
         with patch.object(OAuthFlow, "refresh", side_effect=httpx.ConnectError("down")):
             with pytest.raises(httpx.ConnectError):
-                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+                OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
         assert deleted["called"] is False
         assert rat_env.tokens.get("rat.oauth2")["refresh_token"] == "r_xyz"
 
@@ -546,12 +529,13 @@ class TestResolveAccessToken:
         err = TokenRefreshError(url="https://t", status_code=401, body='{"error":"invalid_grant"}')
         with patch.object(OAuthFlow, "refresh", side_effect=err):
             with pytest.raises(AuthorizationRequired):
-                OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+                OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
         assert rat_env.tokens.get("rat.oauth2") is None
 
 
 def test_refresh_derives_expiry_from_jwt_when_no_expires_in():
-    import base64, json, time
+    import base64
+    import json
     def _jwt(payload):
         def seg(d): return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
         return f"{seg({'alg':'ES256'})}.{seg(payload)}.{seg({'s':'x'})}"
@@ -569,7 +553,8 @@ def test_refresh_derives_expiry_from_jwt_when_no_expires_in():
 def test_exchange_code_derives_expiry_from_jwt_when_no_expires_in():
     # Symmetric to the refresh test: when the token response omits `expires_in`,
     # exchange_code falls back to the access token's JWT `exp` claim.
-    import base64, json, time
+    import base64
+    import json
     def _jwt(payload):
         def seg(d): return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
         return f"{seg({'alg':'ES256'})}.{seg(payload)}.{seg({'s':'x'})}"
@@ -643,7 +628,7 @@ class TestForceRefresh:
             "refresh_token": "new_r",
             "token_expires_at": int(time.time()) + 3600,
         }):
-            token = OAuthFlow(_provider(), resolver=rat_env.resolver).force_refresh(_Auth())
+            token = OAuthFlow(_provider(), token_store=rat_env.store).force_refresh(_Auth())
 
         assert token == "forced_new_tok"
         assert rat_env.tokens.get("rat.oauth2")["access_token"] == "forced_new_tok"
@@ -651,7 +636,7 @@ class TestForceRefresh:
         # Sanity contrast: a plain resolve_access_token on the same (now-updated) store
         # returns the cached "forced_new_tok" without hitting the endpoint again.
         with patch.object(OAuthFlow, "refresh") as mock_refresh:
-            cached = OAuthFlow(_provider(), resolver=rat_env.resolver).resolve_access_token(_Auth())
+            cached = OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
         assert cached == "forced_new_tok"
         mock_refresh.assert_not_called()
 
@@ -663,4 +648,191 @@ class TestForceRefresh:
             "token_expires_at": int(time.time()) + 4000,
         })
         with pytest.raises(AuthorizationRequired):
-            OAuthFlow(_provider(), resolver=rat_env.resolver).force_refresh(_Auth())
+            OAuthFlow(_provider(), token_store=rat_env.store).force_refresh(_Auth())
+
+
+class _ObservedStore:
+    """Real memory storage plus an interrupted-clear marker and lock observations."""
+
+    def __init__(self, *, cleared=False):
+        self.memory = MemorySecretStore()
+        self.cleared = cleared
+        self.held = False
+        self.operations = []
+
+    @contextmanager
+    def transaction(self, key):
+        with self.memory.transaction(key):
+            assert not self.held, "nested transaction"
+            self.held = True
+            self.operations.append(("enter", key, True))
+            try:
+                yield
+            finally:
+                self.operations.append(("exit", key, True))
+                self.held = False
+
+    def get(self, key):
+        self.operations.append(("get", key, self.held))
+        return self.memory.get(key)
+
+    def is_cleared(self, key):
+        self.operations.append(("marker", key, self.held))
+        assert self.held
+        return self.cleared or self.memory.is_cleared(key)
+
+    def set(self, key, data):
+        assert self.held
+        self.memory.set(key, data)
+        self.cleared = False
+
+    def delete(self, key):
+        assert self.held
+        self.memory.delete(key)
+
+
+@pytest.fixture(params=["oauth1", "oauth2", "force_refresh"])
+def selected_flow(request):
+    auth = _Auth()
+    auth.CONSUMER_KEY = "ck"
+    auth.CONSUMER_SECRET = auth.CLIENT_SECRET
+    if request.param == "oauth1":
+        provider = OAuth1ProviderProfile(
+            NAME="testprovider", REQUEST_TOKEN_URL="https://auth.example.com/request",
+            AUTHORIZE_URL="https://auth.example.com/authorize",
+            ACCESS_TOKEN_URL="https://auth.example.com/access",
+            BASE_URL="https://api.example.com",
+        )
+        return OAuth1Flow, provider, auth, "resolve_token_pair", ("AT", "ATS")
+    method = "force_refresh" if request.param == "force_refresh" else "resolve_access_token"
+    return OAuthFlow, _provider(), auth, method, "AT"
+
+
+@pytest.mark.parametrize("state", ["valid-cleared", "expired-cleared", "missing"])
+def test_marker_precedes_retained_record(selected_flow, state):
+    flow_type, provider, auth, method, _ = selected_flow
+    store = _ObservedStore(cleared=state != "missing")
+    if state != "missing":
+        store.memory.set("oauth.rat.oauth2", {
+            "oauth_token": "STALE", "oauth_token_secret": "STALE_SECRET",
+            "access_token": "STALE", "refresh_token": "STALE_REFRESH",
+            "token_expires_at": 1 if state == "expired-cleared" else int(time.time()) + 3600,
+        })
+    flow = flow_type(provider, token_store=store)
+    with patch.object(flow, "authorize") as authorize, patch.object(
+        OAuthFlow, "refresh"
+    ) as refresh:
+        with pytest.raises(AuthorizationRequired):
+            getattr(flow, method)(auth)
+        authorize.assert_not_called()
+        refresh.assert_not_called()
+    assert store.operations[0] == ("enter", "oauth.rat.oauth2", True)
+    assert store.operations[1] == ("marker", "oauth.rat.oauth2", True)
+    assert all(held for _, _, held in store.operations)
+    if store.cleared:
+        assert not any(op == "get" for op, _, _ in store.operations)
+
+
+@pytest.mark.parametrize("selected_flow", ["oauth1", "oauth2"], indirect=True)
+def test_selected_stores_isolate_same_key(selected_flow):
+    flow_type, provider, auth, method, expected = selected_flow
+    populated, empty = _ObservedStore(), _ObservedStore()
+    populated.memory.set("oauth.rat.oauth2", {
+        "oauth_token": "AT", "oauth_token_secret": "ATS",
+        "access_token": "AT", "token_expires_at": None,
+    })
+    assert getattr(flow_type(provider, token_store=populated), method)(auth) == expected
+    with pytest.raises(AuthorizationRequired):
+        getattr(flow_type(provider, token_store=empty), method)(auth)
+    assert all(held for _, _, held in populated.operations + empty.operations)
+    assert [op for op, _, _ in populated.operations] == ["enter", "marker", "get", "exit"]
+
+
+@pytest.mark.parametrize("selected_flow", ["oauth1", "oauth2"], indirect=True)
+def test_explicit_authorization_replaces_marker_outside_lock(selected_flow):
+    flow_type, provider, auth, method, expected = selected_flow
+    store = _ObservedStore(cleared=True)
+    store.memory.set("oauth.rat.oauth2", {
+        "oauth_token": "STALE", "oauth_token_secret": "STALE_SECRET",
+        "access_token": "STALE", "refresh_token": "STALE_REFRESH",
+        "token_expires_at": 1,
+    })
+    flow = flow_type(provider, token_store=store)
+    fresh = {"oauth_token": "AT", "oauth_token_secret": "ATS",
+             "access_token": "AT", "refresh_token": "RT", "token_expires_at": None}
+
+    def authorize(**kwargs):
+        assert not store.held
+        return fresh
+
+    with patch.object(flow, "authorize", side_effect=authorize), patch.object(
+        OAuthFlow, "refresh"
+    ) as refresh:
+        assert getattr(flow, method)(auth, auto_authorize=True) == expected
+        refresh.assert_not_called()
+    assert store.memory.get("oauth.rat.oauth2") == fresh
+    assert not store.cleared
+    assert all(held for _, _, held in store.operations)
+
+
+def test_persistence_requires_selected_store(selected_flow):
+    flow_type, provider, auth, method, _ = selected_flow
+    with pytest.raises(RuntimeError, match="OAuth persistence requires token_store"):
+        getattr(flow_type(provider), method)(auth)
+
+
+@pytest.mark.parametrize("operation", ["get", "is_cleared", "transaction"])
+def test_store_errors_propagate(selected_flow, operation, monkeypatch):
+    flow_type, provider, auth, method, _ = selected_flow
+    store = MemorySecretStore()
+    error = OSError("store unavailable")
+
+    def fail(key):
+        raise error
+
+    monkeypatch.setattr(store, operation, fail)
+    with pytest.raises(OSError) as caught:
+        getattr(flow_type(provider, token_store=store), method)(auth)
+    assert caught.value is error
+
+
+def test_two_flows_refresh_single_flight(rat_env, monkeypatch):
+    rat_env.tokens.set("rat.oauth2", {
+        "access_token": "old", "refresh_token": "RT", "token_expires_at": 1,
+    })
+    entered, release, second_waiting = Event(), Event(), Event()
+    real_transaction = rat_env.store.transaction
+
+    @contextmanager
+    def observed_transaction(key):
+        if entered.is_set():
+            second_waiting.set()
+        with real_transaction(key):
+            yield
+
+    monkeypatch.setattr(rat_env.store, "transaction", observed_transaction)
+    exchanges = []
+
+    def post(client, url, **kwargs):
+        exchanges.append(kwargs["data"])
+        entered.set()
+        assert release.wait(5)
+        return httpx.Response(200, json={
+            "access_token": "NEW", "refresh_token": "ROTATED", "expires_in": 3600,
+        }, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.Client, "post", post)
+    first = OAuthFlow(_provider(), token_store=rat_env.store)
+    second = OAuthFlow(_provider(), token_store=rat_env.store)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a = pool.submit(first.resolve_access_token, _Auth())
+        try:
+            assert entered.wait(5)
+            b = pool.submit(second.resolve_access_token, _Auth())
+            assert second_waiting.wait(5)
+        finally:
+            release.set()
+        assert a.result(timeout=5) == b.result(timeout=5) == "NEW"
+    assert len(exchanges) == 1
+    assert exchanges[0]["refresh_token"] == "RT"
+    assert rat_env.tokens.get("rat.oauth2")["refresh_token"] == "ROTATED"

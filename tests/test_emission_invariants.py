@@ -13,7 +13,7 @@ from mountainash_auth_client.schemas.registry import AUTH_REGISTRY
 
 def _adapter_bearing_profiles():
     out = []
-    for name in AUTH_REGISTRY.descriptors:
+    for name in AUTH_REGISTRY.specs:
         cls = AUTH_REGISTRY.get_settings_class(name)
         if getattr(cls, "__adapters__", {}):
             out.append((name, cls))

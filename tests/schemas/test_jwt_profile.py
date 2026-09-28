@@ -1,4 +1,5 @@
-import base64, json
+import base64
+import json
 import pytest
 from mountainash_auth_client.schemas.token import JWTAuthProfile
 from mountainash_auth_client.errors import MalformedJWTError

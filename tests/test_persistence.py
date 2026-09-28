@@ -3,17 +3,13 @@ from __future__ import annotations
 import pytest
 
 from mountainash_auth_client.oauth.persistence import PersistableAuthProfile, token_store
-from mountainash_secrets import (
+from mountainash_settings.secrets import (
     SecretCapabilityError,
-    InMemorySecretStore,
-    NamespacedSecretStore,
-    SecretRegistryResolver,
+    MemorySecretStore,
 )
 
 
 class _Auth:
-    SETTINGS_SOURCE_SECRETS_PROVIDER = "mem"
-
     def persist_key(self) -> str:
         return "garmin.default"
 
@@ -24,22 +20,22 @@ class _ReadOnly:
     def get(self, key):
         return None
 
+    def __repr__(self):
+        raise AssertionError("must not render store")
+
 
 def test_satisfies_persistable_protocol():
     assert isinstance(_Auth(), PersistableAuthProfile)
 
 
-def test_token_store_namespaces_under_oauth():
-    store = InMemorySecretStore()
-    resolver = SecretRegistryResolver({"mem": store})
-    ts = token_store(resolver, _Auth())
-    assert isinstance(ts, NamespacedSecretStore)
-    ts.set("k", {"v": 1})
-    # The raw underlying key carries the dot-prefixed "oauth" namespace.
-    assert store.get("oauth.k") == {"v": 1}
+def test_token_store_uses_selected_instance_and_one_namespace():
+    first, second = MemorySecretStore(), MemorySecretStore()
+    token_store(first).set("garmin.default", {"oauth_token": "first"})
+    assert first.get("oauth.garmin.default") == {"oauth_token": "first"}
+    assert first.get("oauth.oauth.garmin.default") is None
+    assert second.get("oauth.garmin.default") is None
 
 
-def test_token_store_capability_error_for_read_only_store():
-    resolver = SecretRegistryResolver({"mem": _ReadOnly()})
+def test_read_only_store_is_rejected_without_repr():
     with pytest.raises(SecretCapabilityError):
-        token_store(resolver, _Auth())
+        token_store(_ReadOnly())

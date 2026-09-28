@@ -18,14 +18,15 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Security",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
 dependencies = [
-    "mountainash_settings>=26.5.0",
-    "mountainash_secrets>=26.6.0",
+    "mountainash-settings>=0.1.0,<0.2",
+    "pydantic>=2.9.0",
     "httpx>=0.27.0",
     "StrEnum>=0.4.15,<1",
 ]

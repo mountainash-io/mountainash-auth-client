@@ -18,10 +18,10 @@ from mountainash_auth_client.errors import (
     TokenRefreshError,
 )
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
-from mountainash_auth_client.oauth.persistence import token_store
+from mountainash_auth_client.oauth.persistence import token_store as oauth_token_store
 
 if TYPE_CHECKING:
-    from mountainash_secrets import SecretStoreResolver
+    from mountainash_settings.secrets import ClearableSecretStore
     from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
     from mountainash_auth_client.oauth.providers.protocols import OAuth2ProviderProfileProtocol
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
@@ -34,11 +34,11 @@ class OAuthFlow:
         self,
         provider: OAuth2ProviderProfileProtocol,
         *,
-        resolver: SecretStoreResolver | None = None,
+        token_store: ClearableSecretStore | None = None,
         callback_server: CallbackServerFactory | None = None,
     ) -> None:
         self._provider = provider
-        self._resolver = resolver
+        self._token_store = token_store
         self._pending_verifiers: dict[str, str] = {}
         self._last_state: str | None = None
         self._callback_server = callback_server
@@ -264,56 +264,44 @@ class OAuthFlow:
         hit the token endpoint (used by force_refresh).
         """
         provider = self._provider.NAME
-        if self._resolver is None:
-            raise RuntimeError("OAuthFlow.resolve_access_token requires a resolver")
-        backend = token_store(self._resolver, auth_profile)
+        if self._token_store is None:
+            raise RuntimeError("OAuth persistence requires token_store")
+        backend = oauth_token_store(self._token_store)
         key = auth_profile.persist_key()
-        tokens = backend.get(key)
-
         access_token: str | None = None
 
-        if tokens and not force and not self.is_expired(tokens.get("token_expires_at")):
-            access_token = tokens["access_token"]
-        elif tokens and tokens.get("refresh_token"):
-            with backend.transaction(key):
-                # Re-derive the decision from the under-lock record, not the stale
-                # pre-lock read: a concurrent writer may have refreshed, revoked, or
-                # rotated it while we waited for the lock.
-                tokens = backend.get(key)
-                if tokens and not force and not self.is_expired(tokens.get("token_expires_at")):
-                    # A concurrent caller already produced a valid token — use it.
-                    access_token = tokens["access_token"]
-                elif tokens and tokens.get("refresh_token"):
-                    _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
-                    if _method == "none":
-                        _cid = _csec = None
+        with backend.transaction(key):
+            cleared = backend.is_cleared(key)
+            tokens = None if cleared else backend.get(key)
+            if tokens and not force and not self.is_expired(tokens.get("token_expires_at")):
+                access_token = tokens["access_token"]
+            elif tokens and tokens.get("refresh_token"):
+                _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
+                if _method == "none":
+                    _cid = _csec = None
+                else:
+                    _cid = auth_profile.CLIENT_ID
+                    _csec = auth_profile.CLIENT_SECRET.get_secret_value() if auth_profile.CLIENT_SECRET else None
+                try:
+                    new_tokens = self.refresh(
+                        refresh_token=tokens["refresh_token"],
+                        client_id=_cid,
+                        client_secret=_csec,
+                    )
+                except TokenRefreshError as exc:
+                    if exc.error_code in {"invalid_grant", "invalid_token"}:
+                        backend.delete(key)
+                        if not auto_authorize:
+                            raise AuthorizationRequired(provider=provider, user="default")
+                        # auto_authorize: record cleared, no raise — access_token stays
+                        # None so control falls through to the re-authorize tail below.
                     else:
-                        _cid = auth_profile.CLIENT_ID
-                        _csec = auth_profile.CLIENT_SECRET.get_secret_value() if auth_profile.CLIENT_SECRET else None
-                    try:
-                        new_tokens = self.refresh(
-                            refresh_token=tokens["refresh_token"],
-                            client_id=_cid,
-                            client_secret=_csec,
-                        )
-                    except TokenRefreshError as exc:
-                        if exc.error_code in {"invalid_grant", "invalid_token"}:
-                            backend.delete(key)
-                            if not auto_authorize:
-                                raise AuthorizationRequired(provider=provider, user="default")
-                            # auto_authorize: record cleared, no raise — access_token stays
-                            # None so control falls through to the re-authorize tail below.
-                        else:
-                            raise  # transient/server error: keep the record, surface retryably
-                    except Exception:
-                        raise  # network/parse error: never destroy a valid refresh token
-                    else:
-                        backend.set(key, new_tokens)
-                        access_token = new_tokens["access_token"]
-                # else: the record vanished or lost its refresh_token under the lock
-                # (concurrent revoke/rotate). Don't subscript a possibly-None record
-                # or delete another writer's data — fall through to the authorize /
-                # fail-closed tail below.
+                        raise  # transient/server error: keep the record, surface retryably
+                except Exception:
+                    raise  # network/parse error: never destroy a valid refresh token
+                else:
+                    backend.set(key, new_tokens)
+                    access_token = new_tokens["access_token"]
 
         if not access_token and auto_authorize:
             _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")

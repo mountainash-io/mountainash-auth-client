@@ -7,7 +7,7 @@ import pytest
 from mountainash_auth_client.oauth.lifecycle.oauth1 import OAuth1TokenManager
 from mountainash_auth_client.oauth.lifecycle.status import TokenState
 from mountainash_auth_client.oauth.providers.oauth1 import OAuth1ProviderProfile
-from mountainash_secrets import InMemorySecretStore, NamespacedSecretStore, SecretRegistryResolver
+from mountainash_settings.secrets import MemorySecretStore, NamespacedSecretStore
 
 
 def _provider():
@@ -25,16 +25,15 @@ class _Auth:
     CONSUMER_SECRET = property(
         lambda self: type("S", (), {"get_secret_value": lambda s: "cs"})()
     )
-    SETTINGS_SOURCE_SECRETS_PROVIDER = "mem"
 
     def persist_key(self) -> str:
         return "garmin.default"
 
 
 def _env():
-    store = InMemorySecretStore()
+    store = MemorySecretStore()
     return (
-        OAuth1TokenManager(_provider(), _Auth(), resolver=SecretRegistryResolver({"mem": store})),
+        OAuth1TokenManager(_provider(), _Auth(), token_store=store),
         NamespacedSecretStore(store, "oauth"),
     )
 
@@ -82,3 +81,51 @@ def test_authorize_persists_and_returns_present():
         status = mgr.authorize()
     assert status.state is TokenState.PRESENT
     assert tokens.get("garmin.default")["oauth_token"] == "newAT"
+
+
+def test_interrupted_clear_blocks_credential(monkeypatch):
+    from mountainash_auth_client.errors import AuthorizationRequired
+    from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
+
+    class InterruptedClear(MemorySecretStore):
+        def is_cleared(self, key):
+            return True
+
+        def get(self, key):
+            raise AssertionError("cleared record was read")
+
+    store = InterruptedClear()
+    store.set("oauth.garmin.default", {
+        "oauth_token": "must-not-return", "oauth_token_secret": "must-not-return",
+    })
+    manager = OAuth1TokenManager(_provider(), _Auth(), token_store=store)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("cleared record reached endpoint")
+
+    monkeypatch.setattr(OAuth1Flow, "authorize", forbidden)
+    assert manager.status().state is TokenState.CLEARED
+    for operation in (manager.token_pair, manager.acquire_auth):
+        with pytest.raises(AuthorizationRequired):
+            operation()
+
+
+def test_selected_stores_are_isolated():
+    first, first_tokens = _env()
+    second, second_tokens = _env()
+    first_tokens.set("garmin.default", {"oauth_token": "one", "oauth_token_secret": "s1"})
+    second_tokens.set("garmin.default", {"oauth_token": "two", "oauth_token_secret": "s2"})
+    assert first.token_pair() == ("one", "s1")
+    assert second.token_pair() == ("two", "s2")
+    first.revoke()
+    assert second.token_pair() == ("two", "s2")
+
+
+def test_revoke_then_authorize_returns_present():
+    manager, _ = _env()
+    manager.revoke()
+    with patch.object(type(manager)._flow_cls(), "authorize", return_value={
+        "oauth_token": "fresh", "oauth_token_secret": "secret",
+    }):
+        assert manager.authorize().state is TokenState.PRESENT
+    assert manager.token_pair() == ("fresh", "secret")
