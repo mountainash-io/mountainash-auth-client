@@ -27,15 +27,15 @@ and preserves the profile's `persist_key()` addressing. The application owns sto
 closure; managers and flows never close it. Wire-only flows can omit a store,
 but persistence requires one. See the [integration guide](docs/INTEGRATION.md).
 
-The M4b candidate retains version **26.6.1** for installed verification only.
-Exact artifact hashes identify this candidate, not its version. Before publication,
-assign a new release version and downstream minimum dependency bounds.
+The coordinated development baseline is **0.1.0**, with internal dependencies
+bounded to `>=0.1.0,<0.2`. Source commits and artifact hashes identify verification
+inputs; publication is a separate step.
 Requires Python 3.12 or later.
 
 ## Candidate verification and publishing
 
-CI uses the MountainAsh sibling-checkout convention, not public PyPI releases of
-`mountainash-settings>=26.5.0` and `mountainash-secrets>=26.6.0`. The dependency
+CI uses the MountainAsh sibling-checkout convention for settings `>=0.1.0,<0.2`.
+The dependency
 manifest is `.github/config/mountainash_dependencies.yml`. The checkout action
 selects a matching source branch, falling back to the PR base branch or the manual
 `fallback_branch` input, and installs dependencies from `temp/`.
