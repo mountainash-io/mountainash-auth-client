@@ -64,7 +64,6 @@ jobs:
           owner: mountainash-io
           repositories: |
             mountainash-settings
-            mountainash-secrets
 
       - name: Load Dependencies
         id: deps
@@ -141,7 +140,7 @@ jobs:
           RELEASE_ROOT: ${{ runner.temp }}/mountainash-release
         run: |
           mkdir -p "$RELEASE_ROOT/evidence/dependency-wheels"
-          for dependency in mountainash-settings mountainash-secrets; do
+          for dependency in mountainash-settings; do
             env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple \
               python -I -m build --wheel --outdir "$RELEASE_ROOT/evidence/dependency-wheels" "temp/$dependency"
             git -C "temp/$dependency" rev-parse HEAD > "$RELEASE_ROOT/evidence/$dependency-revision.txt"
