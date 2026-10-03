@@ -1,5 +1,9 @@
 """Tests for the built-in callback servers."""
+
 from __future__ import annotations
+
+import errno
+import socket
 
 import pytest
 
@@ -9,6 +13,20 @@ from mountainash_auth_client.oauth.protocols import CallbackServerProtocol
 from mountainash_auth_client.oauth.server.callback import LocalCallbackServer
 from mountainash_auth_client.oauth.server.manual import ManualCallbackServer
 from mountainash_auth_client.errors import CallbackTimeoutError
+
+
+@pytest.fixture
+def local_server():
+    server = LocalCallbackServer(port=0)
+    try:
+        yield server
+    finally:
+        server._server.server_close()
+
+
+def _assert_port_available(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("localhost", port))
 
 
 def test_local_conforms_to_protocol():
@@ -21,43 +39,72 @@ def test_local_conforms_to_protocol():
         s._server.server_close()
 
 
-def test_obtain_callback_opens_browser_and_returns_params(monkeypatch):
-    s = LocalCallbackServer(port=0)
-    opened = {}
-    monkeypatch.setattr(cb.webbrowser, "open", lambda url: opened.setdefault("url", url) or True)
-    monkeypatch.setattr(s, "wait_for_callback", lambda: {"code": "abc", "state": "xyz"})
-    result = s.obtain_callback("https://auth/authorize?x=1")
-    assert opened["url"] == "https://auth/authorize?x=1"
+def test_obtain_callback_opens_browser_and_returns_params(monkeypatch, local_server):
+    opened = []
+    port = local_server.port
+
+    def browser(url):
+        opened.append(url)
+        return True
+
+    monkeypatch.setattr(cb.webbrowser, "open", browser)
+    monkeypatch.setattr(local_server, "wait_for_callback", lambda: {"code": "abc", "state": "xyz"})
+    result = local_server.obtain_callback("https://auth/authorize?x=1")
+    assert opened == ["https://auth/authorize?x=1"]
     assert result == {"code": "abc", "state": "xyz"}
+    _assert_port_available(port)
 
 
-def test_obtain_callback_prints_url_when_no_browser(monkeypatch, capsys):
-    s = LocalCallbackServer(port=0)
+def test_obtain_callback_prints_url_when_no_browser(monkeypatch, capsys, local_server):
+    port = local_server.port
     monkeypatch.setattr(cb.webbrowser, "open", lambda url: False)
-    monkeypatch.setattr(s, "wait_for_callback", lambda: {"code": "abc"})
-    s.obtain_callback("https://auth/SHOWME")
+    monkeypatch.setattr(local_server, "wait_for_callback", lambda: {"code": "abc"})
+    result = local_server.obtain_callback("https://auth/SHOWME")
+    assert result == {"code": "abc"}
     assert "https://auth/SHOWME" in capsys.readouterr().out
+    _assert_port_available(port)
 
 
-def test_obtain_callback_closes_socket_on_failure(monkeypatch):
-    s = LocalCallbackServer(port=0)
-    monkeypatch.setattr(cb.webbrowser, "open", lambda url: True)
+@pytest.mark.parametrize(
+    ("stage", "error_type"),
+    [
+        pytest.param("browser", RuntimeError, id="browser-error"),
+        pytest.param("print", OSError, id="fallback-output-error"),
+        pytest.param("wait", CallbackTimeoutError, id="timeout"),
+        pytest.param("browser", KeyboardInterrupt, id="interrupted"),
+    ],
+)
+def test_obtain_callback_releases_port_on_failure(monkeypatch, local_server, stage, error_type):
+    port = local_server.port
+    with pytest.raises(OSError) as busy:
+        _assert_port_available(port)
+    assert busy.value.errno == errno.EADDRINUSE
+    sentinel = error_type("synthetic callback failure")
+    waited = []
 
-    def boom():
-        raise CallbackTimeoutError("nope")
+    def browser(url):
+        if stage == "browser":
+            raise sentinel
+        return stage != "print"
 
-    monkeypatch.setattr(s, "wait_for_callback", boom)
-    calls = {"n": 0}
-    real_close = s._server.server_close
+    def fail_print(*args, **kwargs):
+        raise sentinel
 
-    def counting_close():
-        calls["n"] += 1
-        real_close()
+    def wait():
+        waited.append(True)
+        if stage == "wait":
+            raise sentinel
+        raise AssertionError("presentation failed but waiting was entered")
 
-    monkeypatch.setattr(s._server, "server_close", counting_close)
-    with pytest.raises(CallbackTimeoutError):
-        s.obtain_callback("https://auth/x")
-    assert calls["n"] >= 1
+    monkeypatch.setattr(cb.webbrowser, "open", browser)
+    monkeypatch.setattr(local_server, "wait_for_callback", wait)
+    if stage == "print":
+        monkeypatch.setattr(cb, "print", fail_print, raising=False)
+    with pytest.raises(error_type) as caught:
+        local_server.obtain_callback("https://auth.example/authorize")
+    assert caught.value is sentinel
+    assert bool(waited) == (stage == "wait")
+    _assert_port_available(port)
 
 
 def test_wait_for_callback_times_out_with_callback_timeout_error():
