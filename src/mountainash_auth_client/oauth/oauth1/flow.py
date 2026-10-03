@@ -1,10 +1,10 @@
 """OAuth1 3-legged flow for providers like Garmin Health API."""
+
 from __future__ import annotations
 
+from functools import partial
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlencode
-
-import httpx
 
 from mountainash_auth_client.errors import (
     AuthorizationRequired,
@@ -16,10 +16,22 @@ from mountainash_auth_client.oauth.server.factory import resolve_callback_factor
 from mountainash_auth_client.oauth.persistence import token_store as oauth_token_store
 
 if TYPE_CHECKING:
+    from httpx import Response
     from mountainash_settings.secrets import ClearableSecretStore
     from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
     from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
+
+
+def _raise_token_endpoint_error(response: Response, *, url: str) -> None:
+    """Reject HTTP token failures before Authlib creates a body-bearing error."""
+    if response.status_code >= 400:
+        response.read()
+        raise TokenExchangeError(
+            url=url,
+            status_code=response.status_code,
+            body=response.text[:2000],
+        )
 
 
 class OAuth1Flow:
@@ -58,19 +70,14 @@ class OAuth1Flow:
         callback_url: str = "oob",
     ) -> dict[str, str]:
         OAuth1Client = require_authlib("OAuth1Client")
-
-        client = OAuth1Client(client_id=consumer_key, client_secret=consumer_secret)
-        try:
-            token = client.fetch_request_token(
-                self.request_token_url, params={"oauth_callback": callback_url}
-            )
-        except httpx.HTTPStatusError as exc:
-            raise TokenExchangeError(
-                url=self.request_token_url,
-                status_code=exc.response.status_code,
-                body=exc.response.text[:2000],
-            ) from exc
-        return token
+        hook = partial(_raise_token_endpoint_error, url=self.request_token_url)
+        with OAuth1Client(
+            client_id=consumer_key,
+            client_secret=consumer_secret,
+            redirect_uri=callback_url,
+            event_hooks={"response": [hook]},
+        ) as client:
+            return client.fetch_request_token(self.request_token_url)
 
     def exchange_verifier(
         self,
@@ -82,20 +89,15 @@ class OAuth1Flow:
     ) -> dict[str, str]:
         OAuth1Client = require_authlib("OAuth1Client")
 
-        client = OAuth1Client(
+        hook = partial(_raise_token_endpoint_error, url=self.access_token_url)
+        with OAuth1Client(
             client_id=consumer_key,
             client_secret=consumer_secret,
             token=oauth_token,
             token_secret=oauth_token_secret,
-        )
-        try:
+            event_hooks={"response": [hook]},
+        ) as client:
             token = client.fetch_access_token(self.access_token_url, verifier=verifier)
-        except httpx.HTTPStatusError as exc:
-            raise TokenExchangeError(
-                url=self.access_token_url,
-                status_code=exc.response.status_code,
-                body=exc.response.text[:2000],
-            ) from exc
         return {
             "oauth_token": token["oauth_token"],
             "oauth_token_secret": token["oauth_token_secret"],

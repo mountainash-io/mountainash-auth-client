@@ -15,8 +15,9 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.end_headers()
-        self.wfile.write(b"<html><body><h1>Authorization complete.</h1>"
-                         b"<p>You can close this window.</p></body></html>")
+        self.wfile.write(
+            b"<html><body><h1>Authorization complete.</h1>" b"<p>You can close this window.</p></body></html>"
+        )
 
     def log_message(self, format, *args) -> None:
         pass
@@ -51,13 +52,10 @@ class LocalCallbackServer:
         return self._server._callback_params
 
     def obtain_callback(self, authorize_url: str) -> dict[str, str]:
-        """Open the URL in a browser (or print it if none is available), then
-        wait for the callback. Always releases the socket — on success or
-        failure.
-        """
-        if not webbrowser.open(authorize_url):
-            print(f"Open this URL to authorize:\n\n  {authorize_url}\n")
+        """Present the authorization URL and release the socket on every exit."""
         try:
+            if not webbrowser.open(authorize_url):
+                print(f"Open this URL to authorize:\n\n  {authorize_url}\n")
             return self.wait_for_callback()
         finally:
             self._server.server_close()
