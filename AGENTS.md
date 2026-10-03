@@ -14,14 +14,6 @@ mountainash-central/01.principles/mountainash-auth-client/
     └── connections-single-source-of-truth.md   # ADOPTED
 ```
 
-(Sibling repo — typically `../mountainash-central/01.principles/mountainash-auth-client/`.)
-
-Before changing the connection layer or deciding where new connection/OAuth/callback
-work belongs, read the relevant principle. Key one in force:
-
-- **Connections Single Source of Truth (ADOPTED):** `mountainash-auth-client` is the
-  single source of truth for the OAuth connection layer — OAuth 1.0a / OAuth 2.0 flows,
-  connection classes, callback servers, and the callback/connection protocols.
 
 The implementation backlog also lives in `mountainash-central`:
 [`04.planning/mountainash-auth-client/a.backlog/INDEX.md`](../mountainash-central/04.planning/mountainash-auth-client/a.backlog/INDEX.md)
