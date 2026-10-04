@@ -341,5 +341,6 @@ does to preserve its public `AuthorizationRequired` contract.
 ## Reference
 
 - Canonical `emit()` consumer: `mountainash-transport` `connections/` (factory `_emit_kwargs`). `mountainash-wearables` consumes the `acquire()` + `creds_provider`/`emit(HTTP)` seam — http-client builds the authenticated client from the emitted kwargs.
-- Emission design: `docs/superpowers/specs/2026-06-12-unified-profile-kwargs-emission-design.md`.
-- Connections-dedup (why transport imports auth-client instead of forking): `docs/superpowers/specs/2026-06-13-connections-dedup-design.md`.
+- [Emission design](https://github.com/mountainash-io/mountainash-central/blob/main/04.planning/mountainash-auth-client/superpowers/specs/2026-06-12-unified-profile-kwargs-emission-design.md).
+- [Connections-dedup design](https://github.com/mountainash-io/mountainash-central/blob/main/04.planning/mountainash-auth-client/superpowers/specs/2026-06-13-connections-dedup-design.md) — why transport imports auth-client instead of forking.
+- [Central specifications and plans](https://github.com/mountainash-io/mountainash-central/blob/main/04.planning/mountainash-auth-client/superpowers/INDEX.md), including the OAuth split phases.
