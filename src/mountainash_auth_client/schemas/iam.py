@@ -1,8 +1,15 @@
 """AWS IAM authentication."""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from ..targets import TargetFamily
 from .registry import register
+
+if TYPE_CHECKING:
+    from pydantic import SecretStr
 
 __all__ = ["IAMAuthProfile", "IAM_SPEC"]
 
@@ -26,4 +33,11 @@ IAM_SPEC = ProfileSpec(
 
 @register
 class IAMAuthProfile(Profile):
+    if TYPE_CHECKING:
+        ROLE_ARN: str | None
+        ACCESS_KEY_ID: str | None
+        SECRET_ACCESS_KEY: SecretStr | None
+        SESSION_TOKEN: SecretStr | None
+        PROFILE_NAME: str | None
+
     __spec__ = IAM_SPEC

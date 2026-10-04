@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import typing as t
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
@@ -22,4 +23,8 @@ SERVICE_ACCOUNT_SPEC = ProfileSpec(
 
 @register
 class ServiceAccountAuthProfile(Profile):
+    if TYPE_CHECKING:
+        INFO: dict[str, t.Any] | None
+        FILE: Path | None
+
     __spec__ = SERVICE_ACCOUNT_SPEC

@@ -93,7 +93,8 @@ class TestOAuth1FlowAuthlib:
 
 @pytest.fixture
 def oauth_http(monkeypatch):
-    from authlib.integrations.httpx_client import OAuth1Client
+    # Authlib ships no typing marker; keep this dependency-local suppression checked.
+    from authlib.integrations.httpx_client import OAuth1Client  # type: ignore[import-untyped]
 
     clients = []
     requests = []

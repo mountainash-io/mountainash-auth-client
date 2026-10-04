@@ -1,10 +1,16 @@
 """Classic username + password authentication."""
+from __future__ import annotations
+
 import base64
+from typing import TYPE_CHECKING
 
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from ..targets import TargetFamily
 from .registry import register
+
+if TYPE_CHECKING:
+    from pydantic import SecretStr
 
 __all__ = ["PasswordAuthProfile", "PASSWORD_SPEC"]
 
@@ -40,5 +46,9 @@ PASSWORD_SPEC = ProfileSpec(
 
 @register
 class PasswordAuthProfile(Profile):
+    if TYPE_CHECKING:
+        USERNAME: str
+        PASSWORD: SecretStr
+
     __spec__ = PASSWORD_SPEC
     __adapters__ = {TargetFamily.HTTP: _basic_header}

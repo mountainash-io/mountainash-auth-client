@@ -1,5 +1,8 @@
 """Kerberos / GSSAPI authentication."""
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
@@ -34,5 +37,10 @@ KERBEROS_SPEC = ProfileSpec(
 
 @register
 class KerberosAuthProfile(Profile):
+    if TYPE_CHECKING:
+        SERVICE_NAME: str
+        PRINCIPAL: str | None
+        KEYTAB: Path | None
+
     __spec__ = KERBEROS_SPEC
     __adapters__ = {TargetFamily.PARAMIKO: _gss_flags}

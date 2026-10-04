@@ -81,6 +81,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # __init__.py files re-export symbols intentionally
 "__init__.py" = ["F401"]
+# PEP 562 lazy exports remain type-only; __getattr__ resolves runtime access.
+"src/mountainash_auth_client/__init__.py" = ["F401", "TCH004"]
 # Pydantic schema files need type imports at runtime for field definitions
 "src/mountainash_auth_client/schemas/**" = ["TCH001", "TCH002", "TCH003"]
 

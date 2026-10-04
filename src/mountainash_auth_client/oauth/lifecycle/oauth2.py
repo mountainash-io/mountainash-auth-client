@@ -9,11 +9,12 @@ from mountainash_auth_client.oauth.server.factory import resolve_callback_factor
 from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
 from mountainash_auth_client.oauth.lifecycle.status import TokenState, TokenStatus, classify_oauth2
 from mountainash_auth_client.oauth.persistence import token_store
+from mountainash_auth_client.oauth.records import token_record
 
 if t.TYPE_CHECKING:
-    from mountainash_settings.secrets import ClearableSecretStore
+    from mountainash_settings.secrets import ClearableSecretStore, NamespacedSecretStore
     from mountainash_auth_client.oauth.providers.protocols import OAuth2ProviderProfileProtocol
-    from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
+    from mountainash_auth_client.oauth.persistence import OAuth2CredentialProfile
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
 
 __all__ = ["OAuth2TokenManager"]
@@ -30,7 +31,7 @@ class OAuth2TokenManager:
     def __init__(
         self,
         provider: OAuth2ProviderProfileProtocol,
-        auth_profile: PersistableAuthProfile,
+        auth_profile: OAuth2CredentialProfile,
         *,
         token_store: ClearableSecretStore,
         callback_server: CallbackServerFactory | None = None,
@@ -45,10 +46,13 @@ class OAuth2TokenManager:
         """The flow class this manager constructs (a test seam for patching)."""
         return OAuthFlow
 
-    def _store(self):
+    def _store(self) -> NamespacedSecretStore:
         return token_store(self._token_store)
 
     def authorize(self, *, mode: str = "local_server", manual_redirect_uri: str | None = None) -> TokenStatus:
+        client_id = self._auth.CLIENT_ID
+        if not isinstance(client_id, str) or not client_id:
+            raise ValueError("OAuth2 authorization requires a non-empty client_id")
         factory = resolve_callback_factory(
             redirect_mode=mode,
             callback_server=None,
@@ -59,9 +63,8 @@ class OAuth2TokenManager:
         # Interactive dance runs OUTSIDE any lock (can take minutes).
         method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
         if method == "none":
-            client_id = client_secret = None
+            client_secret = None
         else:
-            client_id = self._auth.CLIENT_ID
             client_secret = (
                 self._auth.CLIENT_SECRET.get_secret_value()
                 if self._auth.CLIENT_SECRET else None
@@ -75,7 +78,7 @@ class OAuth2TokenManager:
         backend = self._store()
         key = self._auth.persist_key()
         with backend.transaction(key):  # short serialized write
-            backend.set(key, tokens)
+            backend.set(key, token_record(tokens))
         return self.status()
 
     def acquire(self) -> TokenCredential:
@@ -102,9 +105,12 @@ class OAuth2TokenManager:
             if backend.is_cleared(key):
                 raise AuthorizationRequired(provider=self._provider.NAME, user="default")
             record = backend.get(key)
-        if not record or not record.get("access_token"):
+        if not record:
             raise AuthorizationRequired(provider=self._provider.NAME, user="default")
-        return TokenCredential.from_record(record)
+        credential = TokenCredential.from_record(record)
+        if not credential.access_token:
+            raise AuthorizationRequired(provider=self._provider.NAME, user="default")
+        return credential
 
     def access_token(self) -> str:
         return self._flow_cls()(self._provider, token_store=self._token_store).resolve_access_token(self._auth)

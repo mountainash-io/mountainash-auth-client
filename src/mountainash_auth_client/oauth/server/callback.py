@@ -7,7 +7,13 @@ from urllib.parse import parse_qs, urlparse
 from mountainash_auth_client.errors import CallbackTimeoutError
 
 
+class _CallbackHTTPServer(HTTPServer):
+    _callback_params: dict[str, str] | None = None
+
+
 class _CallbackHandler(BaseHTTPRequestHandler):
+    server: _CallbackHTTPServer
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
@@ -27,7 +33,7 @@ class LocalCallbackServer:
     """Ephemeral HTTP server that captures a single OAuth callback."""
 
     def __init__(self, port: int = 0, timeout: int = 120) -> None:
-        self._server = HTTPServer(("localhost", port), _CallbackHandler)
+        self._server = _CallbackHTTPServer(("localhost", port), _CallbackHandler)
         self._server._callback_params = None
         self._timeout = timeout
 

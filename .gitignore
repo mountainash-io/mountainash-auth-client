@@ -24,6 +24,7 @@ coverage.xml
 junit.xml
 htmlcov/
 .pytest_cache/
+.mypy_cache/
 
 # Hatch
 .hatch/
