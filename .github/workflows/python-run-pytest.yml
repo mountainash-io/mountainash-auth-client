@@ -5,6 +5,8 @@ on:
     paths:
       - src/mountainash_auth_client/**
       - tests/**
+      - examples/**
+      - README.md
       - pyproject.toml
       - hatch.toml
       - requirements-hatch.txt

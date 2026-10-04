@@ -1,0 +1,3 @@
+CLIENT_ID: reports-client
+CLIENT_SECRET: secret:client.secret
+SCOPE: reports.read
