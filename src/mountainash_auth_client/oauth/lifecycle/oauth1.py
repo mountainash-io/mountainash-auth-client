@@ -11,13 +11,14 @@ from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
 from mountainash_auth_client.oauth.lifecycle.status import TokenState, TokenStatus
 from mountainash_auth_client.oauth.persistence import token_store
+from mountainash_auth_client.oauth.records import token_record
 from mountainash_auth_client.schemas.oauth1 import OAuth1AuthProfile
 from mountainash_auth_client.targets import TargetFamily
 
 if t.TYPE_CHECKING:
-    from mountainash_settings.secrets import ClearableSecretStore
+    from mountainash_settings.secrets import ClearableSecretStore, NamespacedSecretStore
     from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
-    from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
+    from mountainash_auth_client.oauth.persistence import OAuth1CredentialProfile
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
 
 __all__ = ["OAuth1TokenManager"]
@@ -27,7 +28,7 @@ class OAuth1TokenManager:
     def __init__(
         self,
         provider: OAuth1ProviderProfileProtocol,
-        auth_profile: PersistableAuthProfile,
+        auth_profile: OAuth1CredentialProfile,
         *,
         token_store: ClearableSecretStore,
         callback_server: CallbackServerFactory | None = None,
@@ -41,7 +42,7 @@ class OAuth1TokenManager:
     def _flow_cls(cls) -> type[OAuth1Flow]:
         return OAuth1Flow
 
-    def _store(self):
+    def _store(self) -> NamespacedSecretStore:
         return token_store(self._token_store)
 
     def authorize(self, *, mode: str = "local_server", manual_redirect_uri: str | None = None) -> TokenStatus:
@@ -60,7 +61,7 @@ class OAuth1TokenManager:
         backend = self._store()
         key = self._auth.persist_key()
         with backend.transaction(key):
-            backend.set(key, tokens)
+            backend.set(key, token_record(tokens))
         return self.status()
 
     def token_pair(self) -> tuple[str, str]:

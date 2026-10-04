@@ -1,9 +1,16 @@
 """OAuth 1.0a authentication."""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .._optional import require_authlib
 from ..targets import TargetFamily
 from .registry import register
+
+if TYPE_CHECKING:
+    from pydantic import SecretStr
 
 __all__ = ["OAuth1AuthProfile", "OAUTH1_SPEC"]
 
@@ -36,5 +43,11 @@ OAUTH1_SPEC = ProfileSpec(
 
 @register
 class OAuth1AuthProfile(Profile):
+    if TYPE_CHECKING:
+        CONSUMER_KEY: str
+        CONSUMER_SECRET: SecretStr
+        ACCESS_TOKEN: SecretStr | None
+        ACCESS_TOKEN_SECRET: SecretStr | None
+
     __spec__ = OAUTH1_SPEC
     __adapters__ = {TargetFamily.HTTP: _oauth1_signer}

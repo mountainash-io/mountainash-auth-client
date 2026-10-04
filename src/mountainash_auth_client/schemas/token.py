@@ -1,12 +1,18 @@
 """Bearer-token and JWT authentication."""
+from __future__ import annotations
+
 import base64 as _b64
 import json as _json
+from typing import TYPE_CHECKING
 
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from ..errors import MalformedJWTError
 from ..targets import TargetFamily
 from .registry import register
+
+if TYPE_CHECKING:
+    from pydantic import SecretStr
 
 __all__ = ["TokenAuthProfile", "JWTAuthProfile", "TOKEN_SPEC", "JWT_SPEC"]
 
@@ -51,6 +57,9 @@ TOKEN_SPEC = ProfileSpec(
 
 @register
 class TokenAuthProfile(Profile):
+    if TYPE_CHECKING:
+        TOKEN: SecretStr
+
     __spec__ = TOKEN_SPEC
     __adapters__ = {TargetFamily.HTTP: _bearer_header}
 
@@ -66,6 +75,9 @@ JWT_SPEC = ProfileSpec(
 
 @register
 class JWTAuthProfile(Profile):
+    if TYPE_CHECKING:
+        TOKEN: SecretStr
+
     __spec__ = JWT_SPEC
     __adapters__ = {TargetFamily.HTTP: _bearer_header}
 

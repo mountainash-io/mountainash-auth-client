@@ -1,6 +1,8 @@
 """OAuth1 provider coordinates — typed, validated Profile (not an auth mode)."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from mountainash_auth_client.targets import TargetFamily
@@ -27,5 +29,13 @@ OAUTH1_PROVIDER_SPEC = ProfileSpec(
 
 
 class OAuth1ProviderProfile(Profile):
+    if TYPE_CHECKING:
+        NAME: str
+        REQUEST_TOKEN_URL: str
+        AUTHORIZE_URL: str
+        ACCESS_TOKEN_URL: str
+        BASE_URL: str
+        CALLBACK_PORT: int | None
+
     __spec__ = OAUTH1_PROVIDER_SPEC
     __adapters__ = {TargetFamily.HTTP: _provider_http_kwargs}

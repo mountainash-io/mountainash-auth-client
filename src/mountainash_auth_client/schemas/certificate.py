@@ -1,12 +1,18 @@
 """Private-key / certificate authentication (Snowflake JWT, SSH keys)."""
+from __future__ import annotations
+
 import io
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .._optional import require_paramiko
 from ..targets import TargetFamily
 from .registry import register
+
+if TYPE_CHECKING:
+    from pydantic import SecretStr
 
 __all__ = ["CertificateAuthProfile", "CERTIFICATE_SPEC"]
 
@@ -60,5 +66,10 @@ CERTIFICATE_SPEC = ProfileSpec(
 
 @register
 class CertificateAuthProfile(Profile):
+    if TYPE_CHECKING:
+        PRIVATE_KEY: SecretStr | None
+        PRIVATE_KEY_PATH: Path | None
+        PASSPHRASE: SecretStr | None
+
     __spec__ = CERTIFICATE_SPEC
     __adapters__ = {TargetFamily.PARAMIKO: _ssh_key}

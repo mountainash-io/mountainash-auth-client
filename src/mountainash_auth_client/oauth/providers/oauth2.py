@@ -6,6 +6,8 @@ so provider data lives with the client, not here.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from mountainash_auth_client.targets import TargetFamily
@@ -40,5 +42,17 @@ OAUTH2_PROVIDER_SPEC = ProfileSpec(
 
 
 class OAuth2ProviderProfile(Profile):
+    if TYPE_CHECKING:
+        NAME: str
+        AUTHORIZE_URL: str
+        TOKEN_URL: str
+        BASE_URL: str
+        DEFAULT_SCOPE: str | None
+        USE_PKCE: bool
+        CALLBACK_PORT: int | None
+        TOKEN_ENDPOINT_AUTH_METHOD: str
+        TOKEN_REQUEST_HEADERS: dict | None
+        TOKEN_REQUEST_CONTENT_TYPE: str
+
     __spec__ = OAUTH2_PROVIDER_SPEC
     __adapters__ = {TargetFamily.HTTP: _provider_http_kwargs}

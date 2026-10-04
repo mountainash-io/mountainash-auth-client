@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+from typing import TYPE_CHECKING
 
 from mountainash_auth_client.constants import CONST_AUTH_PROFILES
 from mountainash_auth_client.targets import TargetFamily
@@ -29,6 +30,31 @@ from mountainash_auth_client.schemas import (
     TokenAuthProfile,
     WindowsAuthProfile,
 )
+
+if TYPE_CHECKING:
+    from mountainash_auth_client.oauth.lifecycle import (
+        OAuth1TokenManager as OAuth1TokenManager,
+        OAuth2TokenManager as OAuth2TokenManager,
+        TokenState as TokenState,
+        TokenStatus as TokenStatus,
+    )
+    from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential as TokenCredential
+    from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow as OAuth1Flow
+    from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow as OAuthFlow
+    from mountainash_auth_client.oauth.persistence import PersistableAuthProfile as PersistableAuthProfile
+    from mountainash_auth_client.oauth.protocols import (
+        CallbackServerFactory as CallbackServerFactory,
+        CallbackServerProtocol as CallbackServerProtocol,
+    )
+    from mountainash_auth_client.oauth.providers import (
+        OAuth1ProviderProfile as OAuth1ProviderProfile,
+        OAuth1ProviderProfileProtocol as OAuth1ProviderProfileProtocol,
+        OAuth2ProviderProfile as OAuth2ProviderProfile,
+        OAuth2ProviderProfileProtocol as OAuth2ProviderProfileProtocol,
+        ProviderProfileProtocol as ProviderProfileProtocol,
+    )
+    from mountainash_auth_client.oauth.server.callback import LocalCallbackServer as LocalCallbackServer
+    from mountainash_auth_client.oauth.server.manual import ManualCallbackServer as ManualCallbackServer
 
 # Lazy (PEP 562) re-exports for the OAuth ops layer. These names stay exported but resolve
 # on first attribute access, so `import mountainash_auth_client` / `import …schemas` never

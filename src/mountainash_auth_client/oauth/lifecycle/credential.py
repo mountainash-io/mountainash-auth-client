@@ -8,6 +8,12 @@ refresh_token). NOT a persisted credential schema — live token state is ops-ma
 from __future__ import annotations
 
 import dataclasses
+from typing import TYPE_CHECKING
+
+from mountainash_auth_client.oauth.records import read_oauth2_record
+
+if TYPE_CHECKING:
+    from mountainash_settings.secrets import SecretRecord
 
 
 @dataclasses.dataclass(frozen=True)
@@ -18,9 +24,10 @@ class TokenCredential:
     refresh_token: str | None = None
 
     @classmethod
-    def from_record(cls, record: dict) -> "TokenCredential":
+    def from_record(cls, record: SecretRecord) -> "TokenCredential":
+        tokens = read_oauth2_record(record)
         return cls(
-            access_token=record["access_token"],
-            expires_at=record.get("token_expires_at"),
-            refresh_token=record.get("refresh_token"),
+            access_token=tokens["access_token"],
+            expires_at=tokens.get("token_expires_at"),
+            refresh_token=tokens.get("refresh_token"),
         )

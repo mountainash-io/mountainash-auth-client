@@ -5,7 +5,7 @@ import base64
 import json
 import secrets
 import time
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast, overload
 from urllib.parse import urlencode
 
 import httpx
@@ -19,10 +19,12 @@ from mountainash_auth_client.errors import (
 )
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
 from mountainash_auth_client.oauth.persistence import token_store as oauth_token_store
+from mountainash_auth_client.oauth.records import read_oauth2_record, token_record
 
 if TYPE_CHECKING:
     from mountainash_settings.secrets import ClearableSecretStore
-    from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
+    from mountainash_auth_client.oauth.persistence import OAuth2CredentialProfile, PersistableAuthProfile
+    from mountainash_auth_client.oauth.records import OAuth2Tokens
     from mountainash_auth_client.oauth.providers.protocols import OAuth2ProviderProfileProtocol
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
 
@@ -66,6 +68,8 @@ class OAuthFlow:
         scope: str | None = None,
     ) -> tuple[str, str]:
         """Build the authorization URL and generate state token."""
+        if not isinstance(client_id, str) or not client_id:
+            raise ValueError("OAuth2 authorization requires a non-empty client_id")
         state = secrets.token_urlsafe(32)
         self._last_state = state
         params: dict[str, str] = {
@@ -136,7 +140,7 @@ class OAuthFlow:
         client_secret: str | None = None,
         scope: str | None = None,
         state: str | None = None,
-    ) -> dict[str, str | int | None]:
+    ) -> OAuth2Tokens:
         """Exchange authorization code for tokens. Returns flat token dict."""
         base_data: dict[str, str] = {
             "grant_type": "authorization_code",
@@ -194,7 +198,7 @@ class OAuthFlow:
         refresh_token: str,
         client_id: str | None = None,
         client_secret: str | None = None,
-    ) -> dict[str, str | int | None]:
+    ) -> OAuth2Tokens:
         """Refresh an expired access token. Returns flat token dict."""
         post_kwargs = self._build_token_request(
             {"grant_type": "refresh_token", "refresh_token": refresh_token},
@@ -246,6 +250,24 @@ class OAuthFlow:
             return False
         return time.time() >= (token_expires_at - buffer_seconds)
 
+    @overload
+    def resolve_access_token(
+        self, auth_profile: PersistableAuthProfile, *, auto_authorize: Literal[False] = False,
+        callback_server: CallbackServerFactory | None = None, force: bool = False,
+    ) -> str: ...
+
+    @overload
+    def resolve_access_token(
+        self, auth_profile: OAuth2CredentialProfile, *, auto_authorize: Literal[True],
+        callback_server: CallbackServerFactory | None = None, force: bool = False,
+    ) -> str: ...
+
+    @overload
+    def resolve_access_token(
+        self, auth_profile: OAuth2CredentialProfile, *, auto_authorize: bool,
+        callback_server: CallbackServerFactory | None = None, force: bool = False,
+    ) -> str: ...
+
     def resolve_access_token(
         self,
         auth_profile: PersistableAuthProfile,
@@ -272,19 +294,24 @@ class OAuthFlow:
 
         with backend.transaction(key):
             cleared = backend.is_cleared(key)
-            tokens = None if cleared else backend.get(key)
+            record = None if cleared else backend.get(key)
+            tokens = read_oauth2_record(record) if record else None
+            refresh_token = tokens.get("refresh_token") if tokens else None
             if tokens and not force and not self.is_expired(tokens.get("token_expires_at")):
                 access_token = tokens["access_token"]
-            elif tokens and tokens.get("refresh_token"):
+            elif tokens and refresh_token:
                 _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
                 if _method == "none":
                     _cid = _csec = None
                 else:
-                    _cid = auth_profile.CLIENT_ID
-                    _csec = auth_profile.CLIENT_SECRET.get_secret_value() if auth_profile.CLIENT_SECRET else None
+                    # Preserve key-only cache hits; authenticated refresh needs credentials
+                    # only once the stored token is actually stale (or refresh is forced).
+                    credentials = cast("OAuth2CredentialProfile", auth_profile)
+                    _cid = credentials.CLIENT_ID
+                    _csec = credentials.CLIENT_SECRET.get_secret_value() if credentials.CLIENT_SECRET else None
                 try:
                     new_tokens = self.refresh(
-                        refresh_token=tokens["refresh_token"],
+                        refresh_token=refresh_token,
                         client_id=_cid,
                         client_secret=_csec,
                     )
@@ -300,24 +327,29 @@ class OAuthFlow:
                 except Exception:
                     raise  # network/parse error: never destroy a valid refresh token
                 else:
-                    backend.set(key, new_tokens)
+                    backend.set(key, token_record(new_tokens))
                     access_token = new_tokens["access_token"]
 
         if not access_token and auto_authorize:
+            # The interactive overload guarantees this refinement, without inspecting
+            # unrelated credential attributes on the cached-token path.
+            credentials = cast("OAuth2CredentialProfile", auth_profile)
+            client_id = credentials.CLIENT_ID
+            if not isinstance(client_id, str) or not client_id:
+                raise ValueError("OAuth2 authorization requires a non-empty client_id")
             _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
             if _method == "none":
-                _cid = _csec = None
+                _csec = None
             else:
-                _cid = auth_profile.CLIENT_ID
-                _csec = auth_profile.CLIENT_SECRET.get_secret_value() if auth_profile.CLIENT_SECRET else None
+                _csec = credentials.CLIENT_SECRET.get_secret_value() if credentials.CLIENT_SECRET else None
             new_tokens = self.authorize(
-                client_id=_cid,
+                client_id=client_id,
                 client_secret=_csec,
-                scope=auth_profile.SCOPE,
+                scope=credentials.SCOPE,
                 callback_server=callback_server,
             )
             with backend.transaction(key):
-                backend.set(key, new_tokens)
+                backend.set(key, token_record(new_tokens))
             access_token = new_tokens["access_token"]
 
         # Fail closed: no usable token — nothing cached/refreshed, authorize
@@ -339,12 +371,14 @@ class OAuthFlow:
     def authorize(
         self,
         client_id: str,
-        client_secret: str,
+        client_secret: str | None,
         redirect_mode: Literal["local_server", "manual"] = "local_server",
         scope: str | None = None,
         callback_server: CallbackServerFactory | None = None,
-    ) -> dict[str, str | int | None]:
+    ) -> OAuth2Tokens:
         """Run the full authorization code flow end-to-end. Returns flat token dict."""
+        if not isinstance(client_id, str) or not client_id:
+            raise ValueError("OAuth2 authorization requires a non-empty client_id")
         factory = resolve_callback_factory(
             redirect_mode=redirect_mode,
             callback_server=callback_server,

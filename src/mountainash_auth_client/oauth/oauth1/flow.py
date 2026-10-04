@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast, overload
 from urllib.parse import urlencode
 
 from mountainash_auth_client.errors import (
@@ -14,11 +14,13 @@ from mountainash_auth_client.errors import (
 from mountainash_auth_client._optional import require_authlib
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
 from mountainash_auth_client.oauth.persistence import token_store as oauth_token_store
+from mountainash_auth_client.oauth.records import token_record, token_string
 
 if TYPE_CHECKING:
     from httpx import Response
     from mountainash_settings.secrets import ClearableSecretStore
-    from mountainash_auth_client.oauth.persistence import PersistableAuthProfile
+    from mountainash_auth_client.oauth.persistence import OAuth1CredentialProfile, PersistableAuthProfile
+    from mountainash_auth_client.oauth.records import OAuth1Tokens
     from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
 
@@ -68,7 +70,7 @@ class OAuth1Flow:
         consumer_key: str,
         consumer_secret: str,
         callback_url: str = "oob",
-    ) -> dict[str, str]:
+    ) -> OAuth1Tokens:
         OAuth1Client = require_authlib("OAuth1Client")
         hook = partial(_raise_token_endpoint_error, url=self.request_token_url)
         with OAuth1Client(
@@ -86,7 +88,7 @@ class OAuth1Flow:
         oauth_token: str,
         oauth_token_secret: str,
         verifier: str,
-    ) -> dict[str, str]:
+    ) -> OAuth1Tokens:
         OAuth1Client = require_authlib("OAuth1Client")
 
         hook = partial(_raise_token_endpoint_error, url=self.access_token_url)
@@ -102,6 +104,24 @@ class OAuth1Flow:
             "oauth_token": token["oauth_token"],
             "oauth_token_secret": token["oauth_token_secret"],
         }
+
+    @overload
+    def resolve_token_pair(
+        self, auth_profile: PersistableAuthProfile, *, auto_authorize: Literal[False] = False,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> tuple[str, str]: ...
+
+    @overload
+    def resolve_token_pair(
+        self, auth_profile: OAuth1CredentialProfile, *, auto_authorize: Literal[True],
+        callback_server: CallbackServerFactory | None = None,
+    ) -> tuple[str, str]: ...
+
+    @overload
+    def resolve_token_pair(
+        self, auth_profile: OAuth1CredentialProfile, *, auto_authorize: bool,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> tuple[str, str]: ...
 
     def resolve_token_pair(
         self,
@@ -124,17 +144,23 @@ class OAuth1Flow:
         with backend.transaction(key):
             cleared = backend.is_cleared(key)
             tokens = None if cleared else backend.get(key)
-            if tokens and tokens.get("oauth_token"):
-                return tokens["oauth_token"], tokens["oauth_token_secret"]
+            if tokens:
+                token = token_string(tokens.get("oauth_token", ""), field="oauth_token")
+                if "oauth_token_secret" in tokens:
+                    token_string(tokens["oauth_token_secret"], field="oauth_token_secret")
+                if token:
+                    return token, token_string(tokens.get("oauth_token_secret"), field="oauth_token_secret")
 
         if auto_authorize:
+            # The interactive overload requires credentials; cached callers need only a key.
+            credentials = cast("OAuth1CredentialProfile", auth_profile)
             new_tokens = self.authorize(
-                consumer_key=auth_profile.CONSUMER_KEY,
-                consumer_secret=auth_profile.CONSUMER_SECRET.get_secret_value(),
+                consumer_key=credentials.CONSUMER_KEY,
+                consumer_secret=credentials.CONSUMER_SECRET.get_secret_value(),
                 callback_server=callback_server,
             )
             with backend.transaction(key):
-                backend.set(key, new_tokens)
+                backend.set(key, token_record(new_tokens))
             return new_tokens["oauth_token"], new_tokens["oauth_token_secret"]
 
         raise AuthorizationRequired(provider=provider, user="default")
@@ -145,7 +171,7 @@ class OAuth1Flow:
         consumer_secret: str,
         redirect_mode: Literal["local_server", "manual"] = "local_server",
         callback_server: CallbackServerFactory | None = None,
-    ) -> dict[str, str]:
+    ) -> OAuth1Tokens:
         factory = resolve_callback_factory(
             redirect_mode=redirect_mode,
             callback_server=callback_server,

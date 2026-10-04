@@ -65,8 +65,17 @@ This package uses **hatch** (with `uv` as the installer).
 - Tests: `hatch run test:test` (single file/test: `hatch run test:test <path>::<test> -v`)
 - Lint: `hatch run ruff:check src tests` (auto-fix: `hatch run ruff:fix`)
 - Tests live under `tests/`, mirroring the package (`tests/connections/…`).
-- No mypy environment is configured; type-correctness is enforced via ruff (incl. TCH
-  rules — keep type-only imports under `if TYPE_CHECKING:`).
+- Type checking: `hatch run mypy:check` (defaults to `src/mountainash_auth_client tests`;
+  pass paths or mypy options to override). The environment lives in `.hatch/mypy`;
+  typing dependencies are installed during provisioning. Existing diagnostics remain
+  visible until resolved.
+- Installed typing: see [docs/typing.md](docs/typing.md). Use
+  `hatch run mypy:qualify --settings-source ../mountainash-settings --output <new-outside-checkout-directory>`.
+  Record the actual interpreter version for both Python 3.12 and 3.13; local
+  Hatch defaults to 3.12. Keep the full source-plus-tests mypy target and use
+  `hatch run ruff:ruff check src tests tools` for an explicit whole-tree lint check.
+- Ruff handles linting, including TCH import-placement rules; mypy checks types.
+  Keep type-only imports under `if TYPE_CHECKING:` where runtime use permits.
 
 ## Conventions
 

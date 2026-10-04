@@ -10,7 +10,10 @@ import typing as t
 
 from mountainash_settings.secrets import ClearableSecretStore, NamespacedSecretStore, SecretCapabilityError
 
-__all__ = ["PersistableAuthProfile", "token_store"]
+if t.TYPE_CHECKING:
+    from pydantic import SecretStr
+
+__all__ = ["PersistableAuthProfile", "OAuth1CredentialProfile", "OAuth2CredentialProfile", "token_store"]
 
 
 @t.runtime_checkable
@@ -24,6 +27,29 @@ class PersistableAuthProfile(t.Protocol):
     """
 
     def persist_key(self) -> str: ...
+
+
+class OAuth2CredentialProfile(PersistableAuthProfile, t.Protocol):
+    """Credentials needed for OAuth2 authorization and authenticated refresh."""
+
+    @property
+    def CLIENT_ID(self) -> str | None: ...
+
+    @property
+    def CLIENT_SECRET(self) -> SecretStr | None: ...
+
+    @property
+    def SCOPE(self) -> str | None: ...
+
+
+class OAuth1CredentialProfile(PersistableAuthProfile, t.Protocol):
+    """Credentials needed for OAuth1 authorization and signing."""
+
+    @property
+    def CONSUMER_KEY(self) -> str: ...
+
+    @property
+    def CONSUMER_SECRET(self) -> SecretStr: ...
 
 
 def token_store(store: ClearableSecretStore) -> NamespacedSecretStore:
