@@ -124,6 +124,27 @@ Then hand `build_kwargs(...)` to your SDK constructor (`httpx.Client(**kwargs)`,
 
 > Reference implementation: `mountainash-transport` `connections/__init__.py::_emit_kwargs`.
 
+### File sources and consumer adapters
+
+Auth profiles inherit settings' source loading. Pass `config_files` and
+`env_prefix` directly to a profile, and `secret_store` when its configuration
+contains `secret:` references. The [file-backed example](../examples/file_backed_profiles/)
+demonstrates TOML defaults with YAML deployment values; the
+[configured-secrets example](../examples/configured_secrets/) distinguishes a
+configuration reader from an OAuth manager's token store.
+
+For a client envelope such as `{"session": {...}, "retry": {...}}`, the consumer
+owns assembly. The [nested adapter example](../examples/nested_client_adapter/)
+uses `ProfileField` mappings and an inline `__adapters__` entry on an
+application-owned endpoint profile, then applies auth rendering to `session`.
+Adapters must copy nested caller dictionaries before changing them: `emit()`
+only copies the outer base dictionary.
+
+A consumer needing a different credential shape supplies its own function or
+dispatch table. The [SDK credential example](../examples/consumer_credentials/)
+converts `TokenAuthProfile.TOKEN` into a typed consumer-owned object. It adds
+neither an alias nor an adapter registration to the shared credential class.
+
 ### Auth-profile catalogue
 
 | Profile | Key fields | Emits for | Injects |

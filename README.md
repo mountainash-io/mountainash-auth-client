@@ -15,6 +15,8 @@ the client and chooses how to use the credentials.
 | Area | Capabilities | Explore |
 |---|---|---|
 | Credential profiles | Password, bearer/JWT, IAM, certificate, Kerberos and other credential schemas; explicit target rendering | [Credential rendering](examples/credential_rendering/) |
+| Configuration sources | File-backed profiles, deployment overrides and selected secret readers | [Configuration-to-client recipes](examples/#from-configuration-to-client-options) |
+| Consumer adapters | Nested client options and custom credential objects, composed at the consumer boundary | [Nested adapters](examples/nested_client_adapter/) · [SDK credentials](examples/consumer_credentials/) |
 | Provider profiles | OAuth endpoint configuration kept separate from user credentials | [Provider profiles](examples/provider_profiles/) |
 | OAuth2 lifecycle | Cached acquisition, refresh, explicit authorization, status and local token removal | [Cached acquisition](examples/oauth2_cached_acquisition/) |
 | Token persistence | Application-selected stores, `oauth` namespacing and profile-defined record keys | [Store ownership](examples/token_store_ownership/) |
@@ -81,6 +83,27 @@ GET /sales.csv: bearer credential attached
 This builds a request without sending it. The profile keeps its token in a
 `SecretStr`; `emit()` unwraps it for the selected client. Emitted kwargs contain
 usable credentials, so the example prints only a summary.
+
+## From configuration to client options
+
+Auth profiles inherit settings' file loading and secret-reference support. The
+[file-backed recipe](examples/file_backed_profiles/) loads TOML defaults and YAML
+deployment values directly into a built-in auth profile. YAML has priority over
+TOML regardless of file-list order. The [configured-secrets recipe](examples/configured_secrets/)
+loads a `secret:` reference through a selected reader and uses a separate store
+for acquired OAuth tokens.
+
+Consumers can compose output beyond a flat kwargs dictionary:
+
+- The [nested-adapter recipe](examples/nested_client_adapter/) declares an
+  endpoint profile with `__adapters__`, builds nested session/retry options, then
+  renders authentication into the inner HTTP session.
+- The [SDK-credential recipe](examples/consumer_credentials/) adapts the same
+  token into a consumer-owned credential object as well as HTTP headers.
+
+Both check the real output and show a redacted structure. Consumer-specific
+names and shapes stay in those adapters; shared auth profiles retain their
+canonical credential fields.
 
 ## OAuth token storage
 

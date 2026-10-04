@@ -12,7 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES = ROOT / "examples"
-RECIPES = sorted(EXAMPLES.glob("*/example.py"))
+RECIPES = sorted(readme.parent / "example.py" for readme in EXAMPLES.glob("*/README.md"))
 
 
 def block(text: str, language: str) -> str:
@@ -22,8 +22,8 @@ def block(text: str, language: str) -> str:
 
 
 def run_script(script: Path, cwd: Path, expected: str) -> None:
-    # Explicitly configured profiles need no deployment inputs. Preserve OS necessities
-    # and coverage variables, but keep Python import/optimisation overrides out.
+    # Recipes own their deployment fixtures. Preserve OS necessities and coverage
+    # variables, but keep host REPORT_* and Python import/optimisation overrides out.
     environment = {
         key: value for key, value in os.environ.items()
         if not key.startswith(("PYTHON", "REPORT_", "AWS_"))
@@ -39,6 +39,7 @@ def run_script(script: Path, cwd: Path, expected: str) -> None:
 
 @pytest.mark.parametrize("recipe", RECIPES, ids=lambda path: path.parent.name)
 def test_recipe_prints_documented_output(recipe: Path, tmp_path: Path) -> None:
+    assert recipe.is_file(), f"Documented recipe needs a runnable script: {recipe}"
     # Copy only this recipe: it must not depend on another recipe or the checkout cwd.
     destination = tmp_path / "standalone recipe"
     shutil.copytree(recipe.parent, destination)

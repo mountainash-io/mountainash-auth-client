@@ -1,7 +1,8 @@
 # Authentication recipes
 
-Focused, independently runnable examples of credential rendering, provider
-configuration, token acquisition, store ownership, authorization URLs and signing.
+Focused, independently runnable examples of credential rendering, file-backed
+configuration, secret references, consumer adapters and OAuth lifecycles. Start
+with the small API examples, then follow the configuration-to-client recipes.
 Each recipe declares what it uses; none imports another recipe.
 
 ## Setup
@@ -16,6 +17,9 @@ python -m pip install -e ".[oauth1]"
 Only the signing recipe needs the `oauth1` extra. All commands below run from
 the repository root; an absolute script path also works from another directory.
 Run without Python's `-O` flag so the examples' assertions are evaluated.
+Unset `REPORT_*` environment variables to reproduce file-backed fixture values.
+Each file-backed recipe keeps its YAML/TOML inputs beside its script and resolves
+them relative to that script.
 
 No recipe contacts a network service or opens a browser. The signing recipe
 uses `httpx.MockTransport`; the filesystem recipe uses a temporary directory
@@ -28,12 +32,26 @@ The application is `reports_app`, its user is `report_user`, its client ID is
 use `identity.example.com`. Credentials are synthetic and never printed;
 random state, PKCE challenges and signatures are checked without printing them.
 
-## Credentials
+## Start with credentials
 
 | Recipe | Question |
 |---|---|
 | [Credential rendering](credential_rendering/) | How does one credential render for different client families? |
 | [Provider profiles](provider_profiles/) | How do endpoint configuration and user credentials combine? |
+
+## From configuration to client options
+
+| Recipe | Input → output | Question |
+|---|---|---|
+| [File-backed profiles](file_backed_profiles/) | TOML defaults + YAML deployment → SSH kwargs | How do settings sources configure built-in auth profiles? |
+| [Configured secrets](configured_secrets/) | Provider TOML + auth YAML + selected stores → acquired HTTP credential | How do config readers and OAuth token stores stay separate? |
+| [Nested client adapter](nested_client_adapter/) | Endpoint YAML + token TOML + caller options → nested session/retry options | How do consumer adapters compose endpoint and auth rendering? |
+| [Consumer-specific credentials](consumer_credentials/) | YAML secret reference → HTTP headers and a typed SDK object | How can one credential serve different client shapes? |
+
+These recipes print the actual resulting structure with credential values
+replaced for display, and assert the full unredacted results internally. Inline
+adapters live on application-owned endpoint profiles; credential reshaping lives
+in consumer-owned functions. Neither requires modifying shared auth classes.
 
 ## OAuth2 and persistence
 

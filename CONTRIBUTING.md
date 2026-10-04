@@ -29,6 +29,9 @@ hatch run test:test-quick tests/examples -q
 Each recipe lives in `examples/<topic>/` with `example.py` and `README.md`. Keep
 it independently runnable, use synthetic credentials, assert the demonstrated
 behavior, and document its expected output. Link it from `examples/README.md`.
+Keep any YAML/TOML fixtures inside the recipe directory and resolve their paths
+relative to `__file__`. Check real adapter output before making a redacted display
+copy; avoid printing emitted credentials.
 Tests run each copied recipe in its own process from a different working
 directory, and execute the root README quick start separately.
 
