@@ -1,114 +1,133 @@
 # mountainash-auth-client
 
-Client-side authentication for the mountainash ecosystem.
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 
-Requires **Python 3.12+** and **mountainash-settings>=0.1.0,<0.2**.
-Auth profiles describe configured credentials; OAuth lifecycle managers acquire
-and persist tokens separately. Consumers select credential renderers explicitly.
+Authentication profiles and OAuth token lifecycles for Python applications.
+Describe credentials once, render them for HTTP, Boto or Paramiko, and acquire
+OAuth tokens through an application-selected store. Your application constructs
+the client and chooses how to use the credentials.
+
+[Examples](examples/) · [Integration guide](docs/INTEGRATION.md) ·
+[Typing](docs/typing.md) · [Release process](RELEASE.md)
+
+## What it provides
+
+| Area | Capabilities | Explore |
+|---|---|---|
+| Credential profiles | Password, bearer/JWT, IAM, certificate, Kerberos and other credential schemas; explicit target rendering | [Credential rendering](examples/credential_rendering/) |
+| Provider profiles | OAuth endpoint configuration kept separate from user credentials | [Provider profiles](examples/provider_profiles/) |
+| OAuth2 lifecycle | Cached acquisition, refresh, explicit authorization, status and local token removal | [Cached acquisition](examples/oauth2_cached_acquisition/) |
+| Token persistence | Application-selected stores, `oauth` namespacing and profile-defined record keys | [Store ownership](examples/token_store_ownership/) |
+| Authorization | OAuth2 authorization URLs, state and optional PKCE; local, manual or injected callbacks | [Authorization URLs](examples/authorization_urls/) |
+| OAuth1 | Authorization flow, cached token pairs and request signing through optional Authlib | [OAuth1 signing](examples/oauth1_signing/) |
+
+Available credential schemas do not imply every target has a built-in renderer.
+See the [profile catalogue](docs/INTEGRATION.md#auth-profile-catalogue) for supported
+targets. Consumer-specific credential shapes belong in the consumer's adapter.
+
+## Installation
+
+Requires **Python 3.12+** and `mountainash-settings>=0.1.0,<0.2`.
+This README describes the **0.1.0 development baseline**. To use development
+checkouts before compatible public packages are available, install settings and
+auth-client side by side in your virtual environment:
+
+```bash
+git clone --branch develop https://github.com/mountainash-io/mountainash-settings.git
+git clone --branch develop https://github.com/mountainash-io/mountainash-auth-client.git
+python -m pip install -e ./mountainash-settings
+python -m pip install -e ./mountainash-auth-client
+cd mountainash-auth-client
+```
+
+| Extra | Adds | Install from this checkout |
+|---|---|---|
+| `oauth1` | Authlib for OAuth1 flows and signing | `python -m pip install -e ".[oauth1]"` |
+| `sftp` | Paramiko for private-key parsing | `python -m pip install -e ".[sftp]"` |
+
+OAuth2 needs no extra. Package imports leave optional integrations unloaded until
+used. Inline typing and the `py.typed` marker are qualified with installed consumers
+on Python 3.12/3.13; see [typing contracts and limits](docs/typing.md).
+
+## Quick start
+
+Render a bearer credential for a consumer-owned HTTP client. Save this as
+`quickstart.py` and run `python quickstart.py`:
+
+```python
+import httpx
+
+from mountainash_auth_client import TargetFamily, TokenAuthProfile
+
+auth = TokenAuthProfile(TOKEN="example-report-token")
+base = {"headers": {"Accept": "text/csv"}, "timeout": 10}
+kwargs = auth.emit(TargetFamily.HTTP, base=base)
+
+with httpx.Client(**kwargs) as client:
+    request = client.build_request("GET", "https://files.example.com/sales.csv")
+
+assert request.headers["Authorization"] == "Bearer example-report-token"
+assert request.headers["Accept"] == "text/csv"
+assert base == {"headers": {"Accept": "text/csv"}, "timeout": 10}
+print(f"{request.method} {request.url.path}: bearer credential attached")
+```
+
+Expected output:
+
+```text
+GET /sales.csv: bearer credential attached
+```
+
+This builds a request without sending it. The profile keeps its token in a
+`SecretStr`; `emit()` unwraps it for the selected client. Emitted kwargs contain
+usable credentials, so the example prints only a summary.
 
 ## OAuth token storage
 
-Select a raw `ClearableSecretStore` at the application boundary and keep it open
-for the lifetime of its managers and flows:
+OAuth provider profiles describe endpoints; auth profiles describe client/user
+credentials. For persisted tokens, subclass `OAuth2AuthProfile` or
+`OAuth1AuthProfile` and supply a stable `persist_key()` identifying the account.
+The [cached-acquisition recipe](examples/oauth2_cached_acquisition/) shows all
+three pieces together.
 
-```python
-from mountainash_auth_client import OAuth2TokenManager
-from mountainash_settings.secrets import FilesystemBackend
+Managers require a raw `ClearableSecretStore` through `token_store=`. Auth-client
+applies the `oauth` namespace once. The application keeps the store open for all
+manager operations and owns its closure. Configuration secret readers and token
+stores are selected separately. See [store ownership](examples/token_store_ownership/).
 
-# root, provider and auth_profile are supplied by your application.
-with FilesystemBackend(root) as store:
-    manager = OAuth2TokenManager(provider, auth_profile, token_store=store)
-    credential = manager.acquire()  # non-interactive; refreshes when needed
-```
+`OAuth2TokenManager.acquire()` is non-interactive: it uses a cached token,
+refreshes when necessary, or raises `AuthorizationRequired`. Call `authorize()`
+explicitly when interaction is appropriate. Authorization needs a non-empty
+client ID, including when token-endpoint authentication is `none`. Local and
+manual callbacks and custom factories are covered in the
+[integration guide](docs/INTEGRATION.md).
 
-Managers require `token_store=`. There is no token-store registry or provider-name
-lookup. Pass the raw store: auth-client applies the `oauth` namespace exactly once
-and preserves the profile's `persist_key()` addressing. The application owns store
-closure; managers and flows never close it. Wire-only flows can omit a store,
-but persistence requires one. See the [integration guide](docs/INTEGRATION.md).
+## Learn more
 
-The coordinated development baseline is **0.1.0**, with internal dependencies
-bounded to `>=0.1.0,<0.2`. Source commits and artifact hashes identify verification
-inputs; publication is a separate step.
-Requires Python 3.12 or later.
+The [authentication recipes](examples/) run independently and offline, with
+synthetic credentials and documented output.
 
-## Candidate verification and publishing
+| Guide | Contents |
+|---|---|
+| [Integration](docs/INTEGRATION.md) | Credential rendering, profile catalogue, OAuth lifecycle and callback injection |
+| [Typing](docs/typing.md) | Static profile fields, credential protocols, installed qualification and dynamic boundaries |
+| [Contributing](CONTRIBUTING.md) | Local setup, verification and PRs |
+| [Release process](RELEASE.md) | Candidate verification, dependency provenance and publication |
 
-CI uses the MountainAsh sibling-checkout convention for settings `>=0.1.0,<0.2`.
-The dependency
-manifest is `.github/config/mountainash_dependencies.yml`. The checkout action
-selects a matching source branch, falling back to the PR base branch or the manual
-`fallback_branch` input, and installs dependencies from `temp/`.
+Design principles, backlog, specs and plans live in
+[mountainash-central](https://github.com/mountainash-io/mountainash-central)
+under `mountainash-auth-client`.
 
-Configure `CI_APP_ID` and `CI_APP_PRIVATE_KEY` for a GitHub App with read access to
-the sibling repositories, plus contents/pull-request write access to
-`mountainash-wheels` for release distribution. Fork PRs do not receive these secrets;
-run their dependency-backed checks only after review on a trusted branch.
+## Contributing
 
-PR checks run pytest/coverage, Ruff, and Radon. PRs targeting `main` also require a
-`release/*` or `hotfix/*` source branch and build against siblings' `main` branches.
-`test_github` and `build_github` use CI checkouts; the local `test` environment
-continues to use adjacent sibling directories. Hatch pre-install commands install
-the siblings before auth-client so its runtime requirements resolve locally.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Branch from `develop`; PRs target `develop`.
 
-`build-and-release-package.yml` deliberately separates two checks. The
-**development rehearsal** (`build-and-verify`) builds one wheel and sdist,
-builds sibling wheels from the checked-out sources, and verifies the candidate
-and sdist-derived wheel in fresh external Python 3.12 environments. Its evidence
-contains install reports, `pip check`, module origins, sibling revisions/wheel
-hashes, and full/direct SBOMs. Distribution artifacts contain only auth-client;
-the sibling wheels remain development-rehearsal evidence.
+Part of the [Mountain Ash ecosystem](https://github.com/mountainash-io), alongside
+`mountainash-settings`, `mountainash-transport`, `mountainash-files`,
+`mountainash-data` and `mountainash`. Settings supplies configuration and storage
+primitives; auth-client owns authentication profiles and OAuth; transport owns
+file operations and storage connections.
 
-The opt-in **public-only readiness gate** (`verify-public`) downloads those exact
-wheel/sdist and evidence artifact IDs, rechecks their names and hashes, then
-installs the original and an sdist-derived wheel in fresh temporary environments.
-It permits public PyPI only for dependencies and build tools, including static and
-backend-reported dynamic sdist build requirements with retained provenance reports;
-it rejects missing or non-public install-report sources and never uses the sibling
-wheelhouse. Its rebuilt wheel is verification evidence and is never published.
+## License
 
-Public verification requires compatible PyPI wheels for dependencies and build tools. Source-only dependencies cannot pass and are not built implicitly; the candidate's own sdist is still rebuilt through the controlled path.
-
-| Trigger | GitHub release and wheels PR | PyPI |
-| --- | --- | --- |
-| Open or updated PR | No; build and verify only | No |
-| Merged PR | Yes | No |
-| Manual, default inputs | No; development rehearsal only | No |
-| Manual, `verify_public=true`, `release=false`, `publish=false` | No; public-only readiness rehearsal | No |
-| Manual, `release=true` | Yes | Only if separately enabled |
-| Manual on `main`, `publish=true` | Only if `release=true` | Yes, after public-only verification and approval |
-
-Merged PRs to `main` use the reviewed source version; merges to `develop` produce
-`rc<run_number>` versions and merges to other configured branches produce
-`b<run_number>` versions. Manual MountainAsh releases select `release_type`
-(`production`, `rc`, or `beta`). Prerelease suffixes are applied only in the build
-checkout, never committed. GitHub releases contain the verified wheel, sdist, and
-SBOMs; the wheel-distribution workflow opens a release-branch PR targeting
-`mountainash-wheels/develop`, without pushing directly to `develop` or `main`.
-
-To rehearse public-only readiness without publishing anything, dispatch on any
-allowed branch with `verify_public=true`, `release=false`, and `publish=false`:
-
-```sh
-gh workflow run build-and-release-package.yml --repo mountainash-io/mountainash-auth-client \
-  --ref develop -f verify_public=true -f release=false -f publish=false \
-  -f release_type=production -f fallback_branch=develop
-```
-
-To publish to both destinations, dispatch on `main` with `release=true`,
-`publish=true`, and `release_type=production`. The publish job requires both the
-protected-environment preflight and a successful public-only gate, then consumes
-the same verified artifact IDs/hashes without rebuilding or overwriting existing
-releases. Post-publication installation uses only `distribution==version` from
-public PyPI; no local sibling distribution is accepted. Configure a `pypi` GitHub
-environment requiring human reviewers and a custom deployment policy allowing only
-`main`, plus PyPI Trusted Publishing for this repository, workflow filename
-`build-and-release-package.yml`, and environment `pypi`.
-
-See the [shared release procedures](https://github.com/mountainash-io/mountainash-central/blob/main/05.devops/releases/shared/README.md)
-for the distinction between development rehearsal, public-only readiness, and
-actual publication.
-
-**These packages remain unready and unpublished.** A public-only rehearsal may
-correctly fail when a required MountainAsh dependency is absent from public PyPI;
-it does not claim that an end-to-end public-PyPI install has succeeded.
+Project metadata declares MIT; see [pyproject.toml](pyproject.toml).

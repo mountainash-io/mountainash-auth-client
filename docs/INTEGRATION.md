@@ -3,6 +3,10 @@
 **Audience:** developers integrating `mountainash-auth-client` into a transport,
 client, or service layer (the canonical consumer today is `mountainash-transport`).
 
+Start with the [runnable recipes](../examples/) for complete offline examples,
+or the [README quick start](../README.md#quick-start). See [typing](typing.md)
+for the public profile and credential contracts.
+
 `mountainash-auth-client` is the **single source of truth** for authentication in the
 mountainash stack. It owns:
 
@@ -76,12 +80,15 @@ def emit(self, target: TargetFamily, *, base: dict | None = None) -> dict
 SDK family. This is the *entire* integration surface for credential injection:
 
 ```python
+import httpx
+
 from mountainash_auth_client import TokenAuthProfile, TargetFamily
 
 base = {"timeout": 30}                                  # your SDK config
 kwargs = TokenAuthProfile(TOKEN="abc").emit(TargetFamily.HTTP, base=base)
 # → {"timeout": 30, "headers": {"Authorization": "Bearer abc"}}
-httpx.Client(**kwargs)
+with httpx.Client(**kwargs) as client:
+    request = client.build_request("GET", "https://files.example.com/sales.csv")
 ```
 
 Contract:
@@ -131,8 +138,14 @@ Then hand `build_kwargs(...)` to your SDK constructor (`httpx.Client(**kwargs)`,
 | `OAuth1AuthProfile` | `CONSUMER_KEY`, `CONSUMER_SECRET`, `ACCESS_TOKEN`, `ACCESS_TOKEN_SECRET` | HTTP | authlib `auth=` (OAuth1 signing) |
 | `OAuth2AuthProfile` | `CLIENT_ID`, `CLIENT_SECRET`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `SCOPE` | HTTP | `Authorization: Bearer …` (from `ACCESS_TOKEN`) |
 
-> Secret fields (`*_SECRET`, `PASSWORD`, …) are `SecretStr` — **pass them through as `SecretStr`**;
-> the plaintext is unwrapped only inside the adapter. Don't call `.get_secret_value()` at the call site.
+`WindowsAuthProfile`, `AzureADAuthProfile` and `ServiceAccountAuthProfile` also
+describe credentials, but currently provide no built-in target renderers.
+Consumer-specific shapes should be rendered by consumer-owned adapters.
+
+Secret fields (`*_SECRET`, `PASSWORD`, …) are `SecretStr`. Built-in renderers
+unwrap them when needed; consumers using `emit()` need not unwrap fields first.
+Custom consumer-owned adapters may unwrap at their own SDK boundary. Emitted
+kwargs and acquired `TokenCredential` values contain usable plaintext secrets.
 
 `CONST_AUTH_PROFILES` enumerates the modes for registry/config use:
 `NONE, PASSWORD, TOKEN, JWT, OAUTH1, OAUTH2, IAM, AZURE_AD, WINDOWS, KERBEROS, CERTIFICATE, SERVICE_ACCOUNT`.
@@ -210,14 +223,33 @@ There is no token-store registry, implicit backend, or provider-name lookup.
 Flows may omit the store for wire-only authorization/exchange operations; persistence
 operations require it and report missing capabilities as errors.
 
+Managers also require credential profiles with an application-defined
+`persist_key()`. For example:
+
+```python
+from mountainash_auth_client import OAuth2AuthProfile
+
+class ReportCredentials(OAuth2AuthProfile):
+    def persist_key(self) -> str:
+        return "reports_app.report_user"
+
+auth_profile = ReportCredentials(CLIENT_ID="reports-client", SCOPE="reports.read")
+```
+
+Choose keys that distinguish accounts sharing the store. Built-in auth profiles
+do not supply `persist_key()`. Interactive OAuth2 authorization requires a
+non-empty client ID even when `TOKEN_ENDPOINT_AUTH_METHOD="none"`. Cached flow
+resolvers can accept key-only objects; see the [typing contracts](typing.md).
+
 Pass the **raw store** to managers and flows, never a pre-namespaced wrapper.
 auth-client applies `oauth` exactly once, retaining `persist_key()`, token field names,
 clear markers, and on-disk addressing. A clear marker takes precedence over stale data.
 Store errors propagate rather than becoming a missing token or successful authentication.
 
 The application constructs and closes the store (for example, with
-`with FilesystemBackend(root) as store:` above). Managers and flows borrow it and never
-close it. Refresh read/decision/exchange/write is serialized per key; interactive
+`with FilesystemBackend(root) as store:` above). Provision the root directory before
+opening it. Managers and flows borrow it and never close it.
+Refresh read/decision/exchange/write is serialized per key; interactive
 authorization happens outside the transaction, followed by a short serialized write.
 
 Configured credential profiles remain data consumed by existing, consumer-selected
@@ -234,8 +266,22 @@ exchange via a **callback server**. auth-client provides:
 - `ManualCallbackServer` — out-of-band: prints the URL, reads the pasted redirect/code. (`extract_code_from_input`, `prompt_for_code` are the free functions behind it.)
 
 Pass a `CallbackServerFactory` (a `Callable[[], CallbackServerProtocol]`) as `callback_server=`
-to `resolve_access_token` / `resolve_token_pair` / `connect`, or rely on the default chosen by
-`redirect_mode` (`"local_server"` | `"manual"`).
+to a manager or flow constructor, or as a per-call override on a flow's resolver
+or `authorize()`. Flows select built-ins through `redirect_mode` (`"local_server"`
+or `"manual"`); managers use `authorize(mode=...)`.
+
+For example, with a configured provider, credential profile and open token store:
+
+```python
+manager = OAuth2TokenManager(provider, auth_profile, token_store=store)
+manager.authorize(mode="manual", manual_redirect_uri="https://reports.example.com/callback")
+credential = manager.acquire()
+```
+
+This is a live operation: register the redirect with the provider and paste the
+complete callback URL, including its state. OAuth2 rejects a bare code without
+matching state. `acquire()` remains non-interactive; `revoke()` removes local
+tokens and does not call a provider revocation endpoint.
 
 ---
 
@@ -261,11 +307,11 @@ does to preserve its public `AuthorizationRequired` contract.
 
 ## Integration checklist
 
-1. **Depend on** `mountainash-auth-client` (+ `[oauth1]`/`[sftp]` extras only if used). It pulls `mountainash_settings` and `mountainash_secrets`.
+1. **Depend on** `mountainash-auth-client` (+ `[oauth1]`/`[sftp]` extras only if used). The settings dependency supplies `mountainash_settings.secrets`; there is no separate secrets dependency.
 2. **Credential injection:** call `auth_profile.emit(family, base=sdk_config)` and feed the result to your SDK constructor. Treat `NoAuthProfile`/`None` as passthrough; layer onto nested `base_kwargs` when present.
 3. **Pick the family explicitly** — `emit()` is fail-closed; never call it untargeted.
 4. **OAuth:** select and own a raw `ClearableSecretStore`, pass `token_store=store` to `OAuth2TokenManager(provider, auth_profile, token_store=store).acquire()` (OAuth2) or `OAuth1TokenManager(provider, auth_profile, token_store=store).acquire_auth()` (OAuth1), then render the acquired credential for your endpoint config. Provide a `callback_server` factory if you support interactive authorize.
-5. **Secrets stay `SecretStr`** — pass profile secret fields through; never unwrap at the call site.
+5. **Render at the consumer boundary** — use `emit()` for built-in targets or a consumer-owned adapter for another shape; keep plaintext credentials out of logs.
 6. **Errors:** catch auth-client's error types; translate to your own at the boundary if you have a public contract.
 7. **Don't fork** the flow/callback/connection code into your layer — import it. auth-client is the single source of truth (transport's former fork was deleted; see its connections-dedup spec).
 

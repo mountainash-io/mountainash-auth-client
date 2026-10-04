@@ -5,6 +5,7 @@ on:
     paths:
       - src/mountainash_auth_client/**
       - tests/**
+      - examples/**
       - pyproject.toml
       - hatch.toml
       - .github/workflows/python-run-ruff.yml
@@ -33,4 +34,4 @@ jobs:
         run: hatch env create ruff
 
       - name: Run Ruff
-        run: hatch run ruff:check
+        run: hatch run ruff:ruff check src tests tools examples
