@@ -39,10 +39,19 @@ From a Git checkout with the sibling typed settings checkout available:
 
 ```sh
 hatch run mypy:check
+hatch run mypy:check-src
+hatch run mypy:check-tests
+hatch run mypy:check-src-untyped
+hatch run mypy:check-tests-untyped
 hatch run mypy:check src/mountainash_auth_client tests --warn-unused-ignores
 hatch run mypy:qualify --settings-source ../mountainash-settings --output /tmp/opencode/auth-client-typing-312
 hatch run ruff:ruff check src tests tools
 ```
+
+`check-src` and `check-tests` select source and test targets independently and
+accept extra mypy flags without replacing their targets. The `-untyped` variants
+include `--check-untyped-defs` to check bodies of unannotated functions. Test
+checks still follow source imports and can also report source errors.
 
 Use a **new**, outside-checkout output directory for every qualification run.
 The local Hatch environment is `.hatch/mypy` and inherits Python 3.12. For a
