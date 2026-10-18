@@ -16,7 +16,7 @@ class TokenState(str, enum.Enum):
     REFRESH_NEEDED = "refresh_needed"  # present, inside the buffer, not past expiry
     EXPIRED = "expired"                # present, at/past expiry
     MISSING = "missing"                # no record
-    CLEARED = "cleared"                # explicitly revoked (tombstone)
+    CLEARED = "cleared"                # native tombstone or lifecycle-only registration
     PRESENT = "present"                # OAuth1 only — non-expiring pair exists
 
 
@@ -50,6 +50,8 @@ def classify_oauth2(
     """
     if record is None:
         return TokenStatus(TokenState.MISSING)
+    if "lifecycle" in record and not {"access_token", "refresh_token"}.intersection(record):
+        return TokenStatus(TokenState.CLEARED)
     has_refresh = bool(record.get("refresh_token"))
     expires_at = record.get("token_expires_at")
     if expires_at is None:

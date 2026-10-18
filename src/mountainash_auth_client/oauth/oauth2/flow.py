@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 import httpx
 
 from mountainash_auth_client.errors import (
+    AuthorizationCancelled,
     AuthorizationDeniedError,
     AuthorizationRequired,
     MalformedCallbackError,
@@ -24,8 +25,8 @@ from mountainash_auth_client.oauth.persistence import token_store as oauth_token
 from mountainash_auth_client.oauth.records import read_oauth2_record, token_record
 
 if TYPE_CHECKING:
-    from mountainash_settings.secrets import ClearableSecretStore, JSONValue
-    from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
+    from mountainash_settings.secrets import ClearableSecretStore, JSONValue, SecretRecord
+    from mountainash_auth_client.oauth.lifecycle.credential import SignOutResult, TokenCredential
     from mountainash_auth_client.oauth.persistence import OAuth2CredentialProfile, PersistableAuthProfile
     from mountainash_auth_client.oauth.records import OAuth2Tokens
     from mountainash_auth_client.oauth.providers.protocols import OAuth2ProviderProfileProtocol
@@ -451,6 +452,10 @@ class OAuthFlow:
                         raise  # transient/server error: keep the record, surface retryably
                 else:
                     saved = token_record(new_tokens)
+                    saved.pop("lifecycle", None)
+                    epoch = self._epoch(record)
+                    if epoch is not None:
+                        saved["lifecycle"] = {"epoch": epoch}
                     credential = TokenCredential.from_record(saved)
                     backend.set(key, saved)
 
@@ -462,6 +467,12 @@ class OAuthFlow:
             raise AuthorizationRequired(provider=provider, user="default")
         self.validate_credential(credential)
         return credential
+
+    @staticmethod
+    def _epoch(record: SecretRecord | None) -> str | None:
+        lifecycle = record.get("lifecycle") if record else None
+        value = lifecycle.get("epoch") if isinstance(lifecycle, dict) else None
+        return value if isinstance(value, str) else None
 
     def _authorize_and_store(
         self, auth_profile: OAuth2CredentialProfile, *,
@@ -477,9 +488,15 @@ class OAuthFlow:
         with backend.transaction(key):
             record = None if backend.is_cleared(key) else backend.get(key)
             previous = read_oauth2_record(record) if record else None
-        client_id = (previous.get("client_id") if previous else None) or auth_profile.CLIENT_ID
-        if not isinstance(client_id, str) or not client_id:
-            raise ValueError("OAuth2 authorization requires a non-empty client_id")
+            client_id = (previous.get("client_id") if previous else None) or auth_profile.CLIENT_ID
+            if not isinstance(client_id, str) or not client_id:
+                raise ValueError("OAuth2 authorization requires a non-empty client_id")
+            epoch = self._epoch(record)
+            if epoch is None:
+                epoch = secrets.token_urlsafe(32)
+                initialized = dict(record or {})
+                initialized["lifecycle"] = {"epoch": epoch}
+                backend.set(key, initialized)
         method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
         client_secret = None
         if method != "none" and auth_profile.CLIENT_SECRET:
@@ -491,8 +508,43 @@ class OAuthFlow:
         saved = token_record(tokens)
         credential = TokenCredential.from_record(saved)
         with backend.transaction(key):
-            backend.set(key, saved)
+            current = None if backend.is_cleared(key) else backend.get(key)
+            permitted = self._epoch(current) == epoch
+            if permitted:
+                saved["lifecycle"] = {"epoch": epoch}
+                backend.set(key, saved)
+        if not permitted:
+            try:
+                confirmed = self.revoke_remote(read_oauth2_record(saved))
+            except Exception:
+                confirmed = False
+            raise AuthorizationCancelled(remote_confirmed=confirmed)
         return credential
+
+    def sign_out(self, auth_profile: PersistableAuthProfile) -> SignOutResult:
+        """Clear session credentials, retain registration and cancel older attempts."""
+        from mountainash_auth_client.oauth.lifecycle.credential import SignOutResult
+
+        if self._token_store is None:
+            raise RuntimeError("OAuth persistence requires token_store")
+        backend = oauth_token_store(self._token_store)
+        key = auth_profile.persist_key()
+        with backend.transaction(key):
+            record = None if backend.is_cleared(key) else backend.get(key)
+            previous = read_oauth2_record(record or {})
+            retained: SecretRecord = {
+                "registration": deepcopy(previous.get("registration", {})),
+                "lifecycle": {"epoch": secrets.token_urlsafe(32)},
+            }
+            if previous.get("client_id") is not None:
+                retained["client_id"] = previous["client_id"]
+            try:
+                confirmed = self.revoke_remote(previous)
+            except Exception:
+                confirmed = False
+            finally:
+                backend.set(key, retained)
+        return SignOutResult(remote_confirmed=confirmed)
 
     def force_refresh(self, auth_profile: PersistableAuthProfile) -> str:
         """Unconditionally exchange the stored refresh token at the token endpoint

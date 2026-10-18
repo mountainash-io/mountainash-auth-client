@@ -340,13 +340,46 @@ Store errors propagate rather than becoming a missing token or successful authen
 The application constructs and closes the store (for example, with
 `with FilesystemBackend(root) as store:` above). Provision the root directory before
 opening it. Managers and flows borrow it and never close it.
-Refresh read/decision/exchange/write is serialized per key; interactive
-authorization happens outside the transaction, followed by a short serialized write.
+Refresh read/decision/exchange/write is serialized per key. Managed authorization
+captures a package-owned epoch under that transaction, runs interactively outside
+the lock, then saves only if the epoch still matches.
 
 Configured credential profiles remain data consumed by existing, consumer-selected
 renderers. Acquired OAuth tokens live in the selected store; selecting that store
 does not mutate renderers or turn configured profiles into acquired-token records.
 Non-OAuth credential emission needs no token store.
+
+### Sign-out versus local revoke
+
+`manager.sign_out()` (or `flow.sign_out(auth_profile)`) attempts remote revocation
+once through `revoke_remote`, then clears the session locally. It retains only the
+canonical issued `client_id`, non-secret `registration` and a fresh cancellation
+epoch. Access/refresh tokens, scope, expiry and `session_metadata` are removed.
+The registration-only record reports `CLEARED`; a later sign-in reuses its issued
+client ID before the configured bootstrap ID.
+
+`SignOutResult.remote_confirmed` is separate from local clearing. Unsupported
+remote revocation or an ordinary remote exception yields `False`; a storage
+failure propagates instead of reporting success. Cleanup is attempted on
+process-control interruption, but that interruption is not swallowed.
+
+Sign-out serializes with refresh under the selected record's transaction, so
+the adapter sees the latest rotated credentials. Pending authorization with an
+older epoch cannot restore the session: its tokens are offered to remote cleanup
+outside the lock, then `AuthorizationCancelled(remote_confirmed=...)` is raised.
+A newer accepted session is not overwritten. Ordinary simultaneous authorizations
+are not made “latest attempt wins.”
+
+`manager.revoke()` remains **local-only** and deletes the entire record, including
+registration. Neither it nor `status()` constructs a flow or makes a network call.
+Invalid-grant/invalid-token refresh cleanup retains this local-delete behavior.
+
+Adapters must bound remote request timeouts and classify metadata correctly; ID
+tokens belong to session metadata, not registration. Remote revocation semantics
+are provider-owned and may affect more than one token family. Sign-out cannot
+recall already delivered credentials or guarantee cleanup after process death.
+Cross-process ordering is only as strong as the selected store's transaction
+contract; memory-store evidence establishes one-process behavior only.
 
 ### Callback servers (interactive authorize)
 
@@ -396,6 +429,7 @@ from mountainash_auth_client import (
     TokenRefreshError,         # refresh failed
     CallbackError,             # base for callback failures
     AuthorizationDeniedError,  # provider returned ?error= on the callback
+    AuthorizationCancelled,   # earlier attempt cancelled; remote_confirmed describes cleanup
     MalformedCallbackError,    # callback missing code/verifier
     CallbackTimeoutError,      # callback wait timed out (also a TimeoutError)
 )

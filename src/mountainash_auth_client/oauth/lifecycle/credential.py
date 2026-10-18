@@ -40,3 +40,10 @@ class TokenCredential:
             registration=tokens.get("registration", {}),
             session_metadata=tokens.get("session_metadata", {}),
         )
+
+
+@dataclasses.dataclass(frozen=True)
+class SignOutResult:
+    """Local clearing completed; remote confirmation is a separate outcome."""
+
+    remote_confirmed: bool

@@ -771,7 +771,12 @@ def test_explicit_authorization_replaces_marker_outside_lock(selected_flow):
     ) as refresh:
         assert getattr(flow, method)(auth, auto_authorize=True) == expected
         refresh.assert_not_called()
-    assert store.memory.get("oauth.rat.oauth2") == fresh
+    saved = store.memory.get("oauth.rat.oauth2")
+    if flow_type is OAuthFlow:
+        assert saved["access_token"] == "AT"
+        assert saved["refresh_token"] == "RT"
+    else:
+        assert saved == fresh
     assert not store.cleared
     assert all(held for _, _, held in store.operations)
 

@@ -5,7 +5,7 @@ import typing as t
 
 from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
-from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
+from mountainash_auth_client.oauth.lifecycle.credential import SignOutResult, TokenCredential
 from mountainash_auth_client.oauth.lifecycle.status import TokenState, TokenStatus, classify_oauth2
 from mountainash_auth_client.oauth.persistence import token_store
 
@@ -86,6 +86,10 @@ class OAuth2TokenManager:
 
     def access_token(self) -> str:
         return self.acquire().access_token
+
+    def sign_out(self) -> SignOutResult:
+        """Retain registration, cancel pending authorization and attempt remote revocation."""
+        return self._flow().sign_out(self._auth)
 
     def status(self) -> TokenStatus:
         backend = self._store()
