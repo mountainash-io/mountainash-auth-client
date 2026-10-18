@@ -275,20 +275,38 @@ retained automatically. An adapter must validate new identity material before
 retaining it under `session_metadata`. Keep non-secret registration information
 under `registration`; do not place ID tokens there.
 
-Select the consumer flow through the public manager factory:
+Select the consumer flow through the public manager factory. Here
+`validate_identity` is an application-supplied validator: it owns signature,
+issuer/audience, nonce/account and omission policy, and returns only approved
+session metadata (including an ID token only if explicitly retained).
 
 ```python
+from mountainash_settings.secrets import JSONValue
 from mountainash_auth_client import OAuth2Context, OAuthFlow, OAuth2TokenManager, TokenCredential
+from mountainash_auth_client.oauth.records import OAuth2Tokens
 
-class ReportFlow(OAuthFlow):
-    def token_parameters(self, context: OAuth2Context) -> dict[str, str]:
-        return {"resource": "https://reports.example.com"}
+def report_flow_factory(validate_identity):
+    class ReportFlow(OAuthFlow):
+        def token_parameters(self, context: OAuth2Context) -> dict[str, str]:
+            return {"resource": "https://reports.example.com"}
 
-    def validate_credential(self, credential: TokenCredential) -> None:
-        if "reports.read" not in (credential.scope or "").split():
-            raise PermissionError("Missing reports.read permission")
+        def validate_token_response(
+            self, response: dict[str, JSONValue], context: OAuth2Context,
+            previous: OAuth2Tokens | None, candidate: OAuth2Tokens,
+        ) -> OAuth2Tokens:
+            candidate["session_metadata"] = validate_identity(response, context, previous)
+            return candidate
 
-manager = OAuth2TokenManager(provider, auth_profile, token_store=store, flow_factory=ReportFlow)
+        def validate_credential(self, credential: TokenCredential) -> None:
+            if "reports.read" not in (credential.scope or "").split():
+                raise PermissionError("Missing reports.read permission")
+
+    return ReportFlow
+
+manager = OAuth2TokenManager(
+    provider, auth_profile, token_store=store,
+    flow_factory=report_flow_factory(validate_identity),
+)
 credential = manager.acquire()
 ```
 
