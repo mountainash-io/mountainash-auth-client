@@ -80,6 +80,9 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           org-name: mountainash-io
 
+      - name: Record settings revision
+        run: git -C temp/mountainash-settings rev-parse HEAD
+
       - name: Install Hatch
         run: python -m pip install --disable-pip-version-check --no-input hatch
 
