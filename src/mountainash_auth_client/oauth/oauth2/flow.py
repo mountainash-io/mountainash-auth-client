@@ -5,6 +5,8 @@ import base64
 import json
 import secrets
 import time
+from copy import deepcopy
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal, cast, overload
 from urllib.parse import urlencode
 
@@ -22,11 +24,26 @@ from mountainash_auth_client.oauth.persistence import token_store as oauth_token
 from mountainash_auth_client.oauth.records import read_oauth2_record, token_record
 
 if TYPE_CHECKING:
-    from mountainash_settings.secrets import ClearableSecretStore
+    from mountainash_settings.secrets import ClearableSecretStore, JSONValue
+    from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
     from mountainash_auth_client.oauth.persistence import OAuth2CredentialProfile, PersistableAuthProfile
     from mountainash_auth_client.oauth.records import OAuth2Tokens
     from mountainash_auth_client.oauth.providers.protocols import OAuth2ProviderProfileProtocol
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
+
+
+@dataclass(frozen=True)
+class OAuth2Context:
+    """One wire operation's identity and detached consumer-owned attempt data."""
+
+    grant_type: Literal["authorization_code", "refresh_token"]
+    client_id: str | None
+    redirect_uri: str | None
+    scope: str | None
+    state: str | None
+    registration: dict[str, JSONValue] = field(default_factory=dict, repr=False)
+    session_metadata: dict[str, JSONValue] = field(default_factory=dict, repr=False)
+    data: dict[str, object] = field(default_factory=dict, repr=False)
 
 
 class OAuthFlow:
@@ -42,6 +59,7 @@ class OAuthFlow:
         self._provider = provider
         self._token_store = token_store
         self._pending_verifiers: dict[str, str] = {}
+        self._pending_contexts: dict[str, OAuth2Context] = {}
         self._last_state: str | None = None
         self._callback_server = callback_server
 
@@ -61,17 +79,70 @@ class OAuthFlow:
     def default_scope(self) -> str | None:
         return self._provider.DEFAULT_SCOPE
 
+    def authorization_parameters(self, context: OAuth2Context) -> dict[str, str]:
+        """Return additional authorization query fields; generated fields are reserved."""
+        return {}
+
+    def token_parameters(self, context: OAuth2Context) -> dict[str, str]:
+        """Return additional exchange/refresh body fields."""
+        return {}
+
+    def process_callback(
+        self, params: dict[str, str], context: OAuth2Context,
+    ) -> tuple[str | None, dict[str, JSONValue]]:
+        """Select the issued client identity and approved non-secret registration."""
+        return context.client_id, context.registration
+
+    def validate_token_response(
+        self, response: dict[str, JSONValue], context: OAuth2Context,
+        previous: OAuth2Tokens | None, candidate: OAuth2Tokens,
+    ) -> OAuth2Tokens:
+        """Validate raw identity material and return only approved token fields."""
+        return candidate
+
+    def validate_credential(self, credential: TokenCredential) -> None:
+        """Apply consumer operation policy after trust validation and persistence."""
+
+    def revoke_remote(self, record: OAuth2Tokens) -> bool:
+        """Revoke remotely if supported by the consumer; use bounded request timeouts."""
+        return False
+
+    @staticmethod
+    def _context(
+        grant_type: Literal["authorization_code", "refresh_token"],
+        client_id: str | None, redirect_uri: str | None, scope: str | None,
+        state: str | None, previous: OAuth2Tokens | None,
+    ) -> OAuth2Context:
+        return OAuth2Context(
+            grant_type, client_id, redirect_uri, scope, state,
+            registration=deepcopy(previous.get("registration", {})) if previous else {},
+            session_metadata=deepcopy(previous.get("session_metadata", {})) if previous else {},
+        )
+
+    @staticmethod
+    def _extend_parameters(params: dict[str, str], extra: dict[str, str]) -> None:
+        reserved = {
+            "state", "code_challenge", "code_challenge_method", "code_verifier",
+            "code", "grant_type", "redirect_uri", "client_id", "client_secret",
+            "response_type", "refresh_token",
+        }
+        if reserved.intersection(extra):
+            raise ValueError("OAuth extension parameter collides with a generated field")
+        params.update(extra)
+
     def build_authorize_url(
         self,
         client_id: str,
         redirect_uri: str,
         scope: str | None = None,
+        *,
+        previous: OAuth2Tokens | None = None,
     ) -> tuple[str, str]:
         """Build the authorization URL and generate state token."""
         if not isinstance(client_id, str) or not client_id:
             raise ValueError("OAuth2 authorization requires a non-empty client_id")
         state = secrets.token_urlsafe(32)
-        self._last_state = state
+        prior = read_oauth2_record(token_record(previous)) if previous is not None else None
         params: dict[str, str] = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
@@ -79,18 +150,23 @@ class OAuthFlow:
             "state": state,
         }
         effective_scope = self.default_scope if scope is None else scope
-        if effective_scope:
+        if effective_scope is not None:
             params["scope"] = effective_scope
 
         if self.use_pkce:
             verifier = secrets.token_urlsafe(64)
-            self._pending_verifiers[state] = verifier
             challenge = base64.urlsafe_b64encode(
                 hashlib.sha256(verifier.encode()).digest()
             ).rstrip(b"=").decode()
             params["code_challenge"] = challenge
             params["code_challenge_method"] = "S256"
 
+        context = self._context("authorization_code", client_id, redirect_uri, effective_scope, state, prior)
+        self._extend_parameters(params, self.authorization_parameters(context))
+        self._pending_contexts[state] = replace(context, scope=params.get("scope"))
+        if self.use_pkce:
+            self._pending_verifiers[state] = verifier
+        self._last_state = state
         url = f"{self.authorize_url}?{urlencode(params)}"
         return url, state
 
@@ -141,8 +217,11 @@ class OAuthFlow:
         client_secret: str | None = None,
         scope: str | None = None,
         state: str | None = None,
+        *,
+        previous: OAuth2Tokens | None = None,
     ) -> OAuth2Tokens:
-        """Exchange authorization code for tokens. Returns flat token dict."""
+        """Exchange a code and validate the raw response before returning approved tokens."""
+        prior = read_oauth2_record(token_record(previous)) if previous is not None else None
         base_data: dict[str, str] = {
             "grant_type": "authorization_code",
             "code": code,
@@ -150,10 +229,19 @@ class OAuthFlow:
         }
 
         lookup_state = state or self._last_state
+        context = self._pending_contexts.pop(lookup_state, None) if lookup_state else None
+        if context is None:
+            context = self._context(
+                "authorization_code", client_id, redirect_uri,
+                self.default_scope if scope is None else scope, state, prior,
+            )
+        context = replace(context, client_id=client_id if client_id is not None else context.client_id,
+                          redirect_uri=redirect_uri)
         if self.use_pkce and lookup_state and lookup_state in self._pending_verifiers:
             base_data["code_verifier"] = self._pending_verifiers.pop(lookup_state)
 
-        post_kwargs = self._build_token_request(base_data, client_id, client_secret)
+        self._extend_parameters(base_data, self.token_parameters(context))
+        post_kwargs = self._build_token_request(base_data, context.client_id, client_secret)
         with httpx.Client() as client:
             try:
                 resp = client.post(self.token_url, **post_kwargs)
@@ -173,7 +261,7 @@ class OAuthFlow:
                     body=f"Invalid JSON in token response: {resp.text[:200]}",
                 ) from exc
 
-        if "access_token" not in token_data:
+        if not isinstance(token_data, dict) or "access_token" not in token_data:
             raise TokenExchangeError(
                 url=self.token_url,
                 status_code=resp.status_code,
@@ -187,13 +275,17 @@ class OAuthFlow:
             from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
             expires_at = jwt_exp(token_data["access_token"])
 
-        return {
+        candidate: OAuth2Tokens = {
             "access_token": token_data["access_token"],
             "refresh_token": token_data.get("refresh_token", ""),
             "token_expires_at": expires_at,
-            "scope": token_data.get("scope", self.default_scope if scope is None else scope),
-            "client_id": client_id,
+            "scope": token_data.get("scope", context.scope),
+            "client_id": context.client_id,
+            "registration": deepcopy(context.registration),
+            "session_metadata": {},
         }
+        approved = self.validate_token_response(token_data, context, prior, candidate)
+        return read_oauth2_record(token_record(approved))
 
     def refresh(
         self,
@@ -207,10 +299,10 @@ class OAuthFlow:
         prior = read_oauth2_record(token_record(previous)) if previous is not None else None
         if client_id is None and prior is not None:
             client_id = prior.get("client_id")
-        post_kwargs = self._build_token_request(
-            {"grant_type": "refresh_token", "refresh_token": refresh_token},
-            client_id, client_secret,
-        )
+        context = self._context("refresh_token", client_id, None, prior.get("scope") if prior else None, None, prior)
+        base_data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
+        self._extend_parameters(base_data, self.token_parameters(context))
+        post_kwargs = self._build_token_request(base_data, client_id, client_secret)
         with httpx.Client() as client:
             try:
                 resp = client.post(self.token_url, **post_kwargs)
@@ -230,7 +322,7 @@ class OAuthFlow:
                     body=f"Invalid JSON in refresh response: {resp.text[:200]}",
                 ) from exc
 
-        if "access_token" not in token_data:
+        if not isinstance(token_data, dict) or "access_token" not in token_data:
             raise TokenRefreshError(
                 url=self.token_url,
                 status_code=resp.status_code,
@@ -245,14 +337,15 @@ class OAuthFlow:
             expires_at = jwt_exp(token_data["access_token"])
 
         candidate: OAuth2Tokens = {
-            **(prior or {}),
+            **deepcopy(prior or {}),
             "access_token": token_data["access_token"],
             "refresh_token": token_data.get("refresh_token", refresh_token),
             "token_expires_at": expires_at,
             "scope": token_data.get("scope", prior.get("scope") if prior else None),
             "client_id": client_id,
         }
-        return candidate
+        approved = self.validate_token_response(token_data, context, prior, candidate)
+        return read_oauth2_record(token_record(approved))
 
     @staticmethod
     def is_expired(token_expires_at: int | None, buffer_seconds: int = 300) -> bool:
@@ -387,6 +480,8 @@ class OAuthFlow:
         redirect_mode: Literal["local_server", "manual"] = "local_server",
         scope: str | None = None,
         callback_server: CallbackServerFactory | None = None,
+        *,
+        previous: OAuth2Tokens | None = None,
     ) -> OAuth2Tokens:
         """Run the full authorization code flow end-to-end. Returns flat token dict."""
         if not isinstance(client_id, str) or not client_id:
@@ -402,21 +497,32 @@ class OAuthFlow:
             client_id=client_id,
             redirect_uri=server.redirect_uri,
             scope=scope,
+            previous=previous,
         )
-        params = server.obtain_callback(url)
-        self._validate_callback_state(params, state)
-        if "error" in params:
-            raise AuthorizationDeniedError(
-                error=params["error"],
-                description=params.get("error_description", ""),
+        try:
+            params = server.obtain_callback(url)
+            self._validate_callback_state(params, state)
+            if "error" in params:
+                raise AuthorizationDeniedError(
+                    error=params["error"],
+                    description=params.get("error_description", ""),
+                )
+            if not params.get("code"):
+                raise MalformedCallbackError("OAuth2 callback missing 'code'")
+            context = self._pending_contexts[state]
+            effective_id, registration = self.process_callback(params, context)
+            self._pending_contexts[state] = replace(
+                context, client_id=effective_id, registration=deepcopy(registration),
             )
-        if "code" not in params or params["code"] is None:
-            raise MalformedCallbackError("OAuth2 callback missing 'code'")
-        return self.exchange_code(
-            code=params["code"],
-            redirect_uri=server.redirect_uri,
-            client_id=client_id,
-            client_secret=client_secret,
-            scope=scope,
-            state=state,
-        )
+            return self.exchange_code(
+                code=params["code"],
+                redirect_uri=server.redirect_uri,
+                client_id=effective_id,
+                client_secret=client_secret,
+                scope=scope,
+                state=state,
+                previous=previous,
+            )
+        finally:
+            self._pending_contexts.pop(state, None)
+            self._pending_verifiers.pop(state, None)

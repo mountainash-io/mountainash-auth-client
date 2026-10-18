@@ -248,6 +248,33 @@ without a client secret, for both form and JSON requests. Managed refresh uses
 the saved issued ID before the configured bootstrap ID. Legacy public-client
 refresh without either identity remains supported.
 
+### Consumer-local OAuth2 flow methods
+
+Subclass `OAuthFlow` to supply provider-specific behavior without copying its HTTP
+or persistence code:
+
+| Method | Contract |
+|---|---|
+| `authorization_parameters(context)` | Additional authorization query fields |
+| `token_parameters(context)` | Additional exchange/refresh body fields |
+| `process_callback(params, context)` | Effective client ID and approved registration dictionary |
+| `validate_token_response(response, context, previous, candidate)` | Validate raw identity material; return the complete approved token result |
+| `validate_credential(credential)` | Enforce the consumer's operation permission policy |
+| `revoke_remote(record)` | One bounded remote revocation attempt; return confirmation |
+
+`OAuth2Context` contains grant type, client ID, exact redirect URI, scope, state,
+detached registration/session metadata, and an attempt-local mutable `data` map.
+Use `data` for a nonce rather than shared “last attempt” state on the flow.
+Wire operations accept keyword-only `previous=` for prior approved context.
+Generated state, PKCE, client-auth, code, grant and redirect fields are reserved:
+extension collisions raise `ValueError` before HTTP.
+
+Exact state and OAuth error/code checks precede `process_callback`. Raw token
+response validation precedes any persistence; unknown response fields are not
+retained automatically. An adapter must validate new identity material before
+retaining it under `session_metadata`. Keep non-secret registration information
+under `registration`; do not place ID tokens there.
+
 ### Selected token store and ownership
 
 Both lifecycle managers require an explicit `token_store=` implementing settings'
@@ -297,6 +324,17 @@ exchange via a **callback server**. auth-client provides:
 
 - `LocalCallbackServer` — binds a localhost port, opens the browser (with a print fallback), waits for the redirect, guarantees socket cleanup.
 - `ManualCallbackServer` — out-of-band: prints the URL, reads the pasted redirect/code. (`extract_code_from_input`, `prompt_for_code` are the free functions behind it.)
+
+Configure loopback collection through the existing factory, for example
+`callback_server=lambda: LocalCallbackServer(host="127.0.0.1", path="/auth/callback")`.
+The host must be `localhost` or a loopback IP; IPv6 addresses are supported.
+Only the configured path completes collection, against one total timeout.
+Manual URL parsing preserves all query fields, including registration and errors.
+
+Built-in manual presentation and browser-failure fallback print the full
+authorization URL. If an adapter adds sensitive parameters such as
+`id_token_hint`, use an injected collector with suitable presentation or omit
+the hint; do not send those URLs to captured logs.
 
 Pass a `CallbackServerFactory` (a `Callable[[], CallbackServerProtocol]`) as `callback_server=`
 to a manager or flow constructor, or as a per-call override on a flow's resolver
