@@ -1,6 +1,7 @@
 """Tests for OAuthFlow (OAuth2 authorization code flow)."""
 from __future__ import annotations
 
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -836,3 +837,69 @@ def test_two_flows_refresh_single_flight(rat_env, monkeypatch):
     assert len(exchanges) == 1
     assert exchanges[0]["refresh_token"] == "RT"
     assert rat_env.tokens.get("rat.oauth2")["refresh_token"] == "ROTATED"
+
+
+@pytest.mark.parametrize("encoding", ["application/json", "application/x-www-form-urlencoded"])
+@pytest.mark.parametrize("operation", ["exchange", "refresh"])
+def test_public_client_supplied_identity_reaches_token_endpoint(monkeypatch, encoding, operation):
+    requests = []
+    real_client = httpx.Client
+
+    def endpoint(request):
+        requests.append(request)
+        return httpx.Response(200, json={"access_token": "accepted", "scope": "openid"})
+
+    monkeypatch.setattr(httpx, "Client", lambda: real_client(transport=httpx.MockTransport(endpoint)))
+    flow = OAuthFlow(_provider(TOKEN_ENDPOINT_AUTH_METHOD="none", TOKEN_REQUEST_CONTENT_TYPE=encoding))
+    if operation == "exchange":
+        tokens = flow.exchange_code("code", "http://127.0.0.1/callback",
+                                    client_id="issued", client_secret="must-not-send", scope="openid invoke")
+    else:
+        tokens = flow.refresh("renewable", client_id="issued", client_secret="must-not-send")
+    body = json.loads(requests[0].content) if encoding == "application/json" else {
+        k: v[0] for k, v in parse_qs(requests[0].content.decode()).items()
+    }
+    assert body["client_id"] == "issued"
+    assert "client_secret" not in body
+    assert "authorization" not in requests[0].headers
+    assert tokens["client_id"] == "issued"
+    assert tokens["scope"] == "openid"
+
+
+@pytest.mark.parametrize("returned, expected", [({}, "read"), ({"scope": ""}, ""), ({"scope": "narrow"}, "narrow")])
+def test_managed_refresh_preserves_effective_grant_and_identity(monkeypatch, rat_env, returned, expected):
+    record = {
+        "access_token": "old", "refresh_token": "renewable", "token_expires_at": 1,
+        "client_id": "issued", "scope": "read",
+        "registration": {"subject": "account"}, "session_metadata": {"claims": {"nonce": "accepted"}},
+    }
+    rat_env.tokens.set("rat.oauth2", record)
+    requests = []
+    real_client = httpx.Client
+
+    def endpoint(request):
+        requests.append(parse_qs(request.content.decode()))
+        return httpx.Response(200, json={"access_token": "new", "refresh_token": "rotated", "expires_in": 3600, **returned})
+
+    monkeypatch.setattr(httpx, "Client", lambda: real_client(transport=httpx.MockTransport(endpoint)))
+    flow = OAuthFlow(_provider(TOKEN_ENDPOINT_AUTH_METHOD="none"), token_store=rat_env.store)
+    assert flow.resolve_access_token(_Auth()) == "new"
+    saved = rat_env.tokens.get("rat.oauth2")
+    assert requests[0]["client_id"] == ["issued"]
+    assert saved["scope"] == expected
+    assert saved["refresh_token"] == "rotated"
+    assert saved["registration"] == {"subject": "account"}
+    assert saved["session_metadata"] == {"claims": {"nonce": "accepted"}}
+
+
+@pytest.mark.parametrize("requested, response_scope, expected", [
+    ("read", {}, "read"), ("read", {"scope": ""}, ""), ("read", {"scope": "narrow"}, "narrow"),
+    (None, {}, None), ("", {}, ""),
+])
+def test_exchange_uses_response_scope_without_truthy_fallback(monkeypatch, requested, response_scope, expected):
+    real_client = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda: real_client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"access_token": "accepted", **response_scope}),
+    )))
+    tokens = OAuthFlow(_provider()).exchange_code("code", "http://localhost/callback", scope=requested)
+    assert tokens["scope"] == expected

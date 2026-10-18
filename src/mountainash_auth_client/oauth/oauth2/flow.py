@@ -78,7 +78,7 @@ class OAuthFlow:
             "response_type": "code",
             "state": state,
         }
-        effective_scope = scope or self.default_scope
+        effective_scope = self.default_scope if scope is None else scope
         if effective_scope:
             params["scope"] = effective_scope
 
@@ -120,7 +120,8 @@ class OAuthFlow:
             token = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
             headers["Authorization"] = f"Basic {token}"
         elif method == "none":
-            pass
+            if client_id is not None:
+                data["client_id"] = client_id
         else:
             raise ValueError(f"unknown TOKEN_ENDPOINT_AUTH_METHOD: {method}")
         kwargs: dict = {}
@@ -190,7 +191,8 @@ class OAuthFlow:
             "access_token": token_data["access_token"],
             "refresh_token": token_data.get("refresh_token", ""),
             "token_expires_at": expires_at,
-            "scope": scope or self.default_scope,
+            "scope": token_data.get("scope", self.default_scope if scope is None else scope),
+            "client_id": client_id,
         }
 
     def refresh(
@@ -198,8 +200,13 @@ class OAuthFlow:
         refresh_token: str,
         client_id: str | None = None,
         client_secret: str | None = None,
+        *,
+        previous: OAuth2Tokens | None = None,
     ) -> OAuth2Tokens:
-        """Refresh an expired access token. Returns flat token dict."""
+        """Refresh tokens, retaining the prior accepted grant when omitted."""
+        prior = read_oauth2_record(token_record(previous)) if previous is not None else None
+        if client_id is None and prior is not None:
+            client_id = prior.get("client_id")
         post_kwargs = self._build_token_request(
             {"grant_type": "refresh_token", "refresh_token": refresh_token},
             client_id, client_secret,
@@ -237,11 +244,15 @@ class OAuthFlow:
             from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
             expires_at = jwt_exp(token_data["access_token"])
 
-        return {
+        candidate: OAuth2Tokens = {
+            **(prior or {}),
             "access_token": token_data["access_token"],
             "refresh_token": token_data.get("refresh_token", refresh_token),
             "token_expires_at": expires_at,
+            "scope": token_data.get("scope", prior.get("scope") if prior else None),
+            "client_id": client_id,
         }
+        return candidate
 
     @staticmethod
     def is_expired(token_expires_at: int | None, buffer_seconds: int = 300) -> bool:
@@ -301,19 +312,20 @@ class OAuthFlow:
                 access_token = tokens["access_token"]
             elif tokens and refresh_token:
                 _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
+                # A saved issued identity takes precedence over bootstrap configuration.
+                # Key-only public clients retain their historical identity-free refresh.
+                _cid = tokens.get("client_id") or getattr(auth_profile, "CLIENT_ID", None)
                 if _method == "none":
-                    _cid = _csec = None
+                    _csec = None
                 else:
-                    # Preserve key-only cache hits; authenticated refresh needs credentials
-                    # only once the stored token is actually stale (or refresh is forced).
                     credentials = cast("OAuth2CredentialProfile", auth_profile)
-                    _cid = credentials.CLIENT_ID
                     _csec = credentials.CLIENT_SECRET.get_secret_value() if credentials.CLIENT_SECRET else None
                 try:
                     new_tokens = self.refresh(
                         refresh_token=refresh_token,
                         client_id=_cid,
                         client_secret=_csec,
+                        previous=tokens,
                     )
                 except TokenRefreshError as exc:
                     if exc.error_code in {"invalid_grant", "invalid_token"}:

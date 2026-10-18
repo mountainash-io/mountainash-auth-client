@@ -28,6 +28,10 @@ mypy **1.10.1** on Python **3.12 and 3.13**. Source checking includes all of
   already-validated token records: consumed token members must be strings and
   expiry must be an integer or `None`, never `bool`. Malformed values raise
   value-free errors without rewriting the record.
+  OAuth2 outputs also carry optional `client_id` and effective `scope`, plus
+  `registration` and `session_metadata` dictionaries of settings `JSONValue`.
+  Credential metadata is detached from stored records and omitted from its
+  representation; callers must still treat credential values as secrets.
 - Dynamic profile constructors, driver dictionaries from `emit()`, arbitrary
   `ServiceAccountAuthProfile.INFO` members, and OAuth1's Authlib signer remain
   dynamic boundaries. These checks do not promise fully strict typing of every

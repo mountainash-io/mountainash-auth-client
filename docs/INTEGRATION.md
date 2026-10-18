@@ -236,6 +236,18 @@ interactive authorize is disabled) or `TokenRefreshError` (refresh call failed).
 through http-client's request path these arrive as `SourceAuthenticationError`; the consumer
 maps `__cause__` to detect which domain error triggered reauth (Phase 3 §6 / Phase 4).
 
+`TokenCredential` exposes the effective `scope` and canonical `client_id` as well
+as owned `registration` and `session_metadata` JSON dictionaries. Response scope
+takes precedence over requested scope, including an explicit empty scope.
+Exchange falls back to the requested scope when omitted; refresh falls back to
+the previous effective grant, never a new provider default. Unknown scope remains
+`None`. Standalone `refresh(..., previous=tokens)` supplies this prior context.
+
+Public clients (`TOKEN_ENDPOINT_AUTH_METHOD="none"`) send a supplied client ID
+without a client secret, for both form and JSON requests. Managed refresh uses
+the saved issued ID before the configured bootstrap ID. Legacy public-client
+refresh without either identity remains supported.
+
 ### Selected token store and ownership
 
 Both lifecycle managers require an explicit `token_store=` implementing settings'
