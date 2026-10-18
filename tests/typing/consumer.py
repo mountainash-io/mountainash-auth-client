@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, assert_type
 
 from pydantic import SecretStr
+from mountainash_settings.secrets import JSONValue
 
 from mountainash_auth_client import (
     AzureADAuthProfile,
@@ -21,11 +22,14 @@ from mountainash_auth_client import (
     OAuth1ProviderProfile,
     OAuth1TokenManager,
     OAuth2AuthProfile,
+    OAuth2Context,
     OAuth2ProviderProfile,
     OAuth2TokenManager,
     OAuthFlow,
+    OAuthFlowFactory,
     PasswordAuthProfile,
     ServiceAccountAuthProfile,
+    SignOutResult,
     TokenAuthProfile,
     TokenCredential,
     TokenState,
@@ -34,6 +38,7 @@ from mountainash_auth_client import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from mountainash_settings.secrets import ClearableSecretStore
 
     from mountainash_auth_client import (
@@ -43,6 +48,7 @@ if TYPE_CHECKING:
         ProviderProfileProtocol,
     )
     from mountainash_auth_client.oauth.persistence import OAuth1CredentialProfile, OAuth2CredentialProfile
+    from mountainash_auth_client.oauth.records import OAuth2Tokens
 
 
 def profiles(
@@ -148,5 +154,60 @@ def operations(
     assert_type(credential.access_token, str)
     assert_type(credential.expires_at, int | None)
     assert_type(credential.refresh_token, str | None)
+    assert_type(credential.scope, str | None)
+    assert_type(credential.client_id, str | None)
+    assert_type(credential.registration, dict[str, JSONValue])
+    assert_type(credential.session_metadata, dict[str, JSONValue])
     assert_type(server.obtain_callback("https://example/authorize"), dict[str, str])
     flow.build_authorize_url(123, "https://app/callback")  # type: ignore[arg-type]
+
+
+def consumer_extension(
+    provider: OAuth2ProviderProfileProtocol, credentials: OAuth2CredentialProfile,
+    store: ClearableSecretStore, resource: str,
+    verify_identity: Callable[[str, OAuth2Context], dict[str, JSONValue]],
+) -> None:
+    class ConsumerFlow(OAuthFlow):
+        def authorization_parameters(self, context: OAuth2Context) -> dict[str, str]:
+            context.data["nonce"] = "consumer-owned-nonce"
+            return {"resource": resource}
+
+        def token_parameters(self, context: OAuth2Context) -> dict[str, str]:
+            return {"resource": resource}
+
+        def process_callback(
+            self, params: dict[str, str], context: OAuth2Context,
+        ) -> tuple[str | None, dict[str, JSONValue]]:
+            return params.get("client_id", context.client_id), context.registration
+
+        def validate_token_response(
+            self, response: dict[str, JSONValue], context: OAuth2Context,
+            previous: OAuth2Tokens | None, candidate: OAuth2Tokens,
+        ) -> OAuth2Tokens:
+            identity = response.get("id_token")
+            if not isinstance(identity, str):
+                raise ValueError("Missing identity")
+            claims = verify_identity(identity, context)
+            candidate["session_metadata"] = {"id_token": identity, "claims": claims}
+            return candidate
+
+        def validate_credential(self, credential: TokenCredential) -> None:
+            if "invoke" not in (credential.scope or "").split():
+                raise PermissionError("Missing invoke permission")
+
+        def revoke_remote(self, record: OAuth2Tokens) -> bool:
+            return False
+
+    def factory(
+        provider: OAuth2ProviderProfileProtocol, *,
+        token_store: ClearableSecretStore | None = None,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> OAuthFlow:
+        return ConsumerFlow(provider, token_store=token_store, callback_server=callback_server)
+
+    selected: OAuthFlowFactory = factory
+    manager = OAuth2TokenManager(provider, credentials, token_store=store, flow_factory=selected)
+    assert_type(manager.sign_out(), SignOutResult)
+    assert_type(manager.sign_out().remote_confirmed, bool)
+    assert_type(selected(provider).sign_out(credentials), SignOutResult)
+    OAuth2TokenManager(provider, credentials, token_store=store, flow_factory=wrong_callback)  # type: ignore[arg-type]

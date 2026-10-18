@@ -5,12 +5,12 @@ import typing as t
 
 from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
-from mountainash_auth_client.oauth.lifecycle.credential import SignOutResult, TokenCredential
 from mountainash_auth_client.oauth.lifecycle.status import TokenState, TokenStatus, classify_oauth2
 from mountainash_auth_client.oauth.persistence import token_store
 
 if t.TYPE_CHECKING:
     from mountainash_settings.secrets import ClearableSecretStore, NamespacedSecretStore
+    from mountainash_auth_client.oauth.lifecycle.credential import SignOutResult, TokenCredential
     from mountainash_auth_client.oauth.providers.protocols import OAuth2ProviderProfileProtocol
     from mountainash_auth_client.oauth.persistence import OAuth2CredentialProfile
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory

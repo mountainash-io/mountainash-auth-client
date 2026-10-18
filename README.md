@@ -18,7 +18,7 @@ the client and chooses how to use the credentials.
 | Configuration sources | File-backed profiles, deployment overrides and selected secret readers | [Configuration-to-client recipes](examples/#from-configuration-to-client-options) |
 | Consumer adapters | Nested client options and custom credential objects, composed at the consumer boundary | [Nested adapters](examples/nested_client_adapter/) · [SDK credentials](examples/consumer_credentials/) |
 | Provider profiles | OAuth endpoint configuration kept separate from user credentials | [Provider profiles](examples/provider_profiles/) |
-| OAuth2 lifecycle | Cached acquisition, refresh, explicit authorization, status and local token removal | [Cached acquisition](examples/oauth2_cached_acquisition/) |
+| OAuth2 lifecycle | Cached acquisition, refresh, explicit authorization, consumer flow injection, local revoke and registration-preserving sign-out | [Cached acquisition](examples/oauth2_cached_acquisition/) |
 | Token persistence | Application-selected stores, `oauth` namespacing and profile-defined record keys | [Store ownership](examples/token_store_ownership/) |
 | Authorization | OAuth2 authorization URLs, state and optional PKCE; local, manual or injected callbacks | [Authorization URLs](examples/authorization_urls/) |
 | OAuth1 | Authorization flow, cached token pairs and request signing through optional Authlib | [OAuth1 signing](examples/oauth1_signing/) |
@@ -124,6 +124,12 @@ explicitly when interaction is appropriate. Authorization needs a non-empty
 client ID, including when token-endpoint authentication is `none`. Local and
 manual callbacks and custom factories are covered in the
 [integration guide](docs/INTEGRATION.md).
+
+Use `flow_factory=` to select consumer-owned OAuth2 request, identity-validation
+and permission policy without copying the lifecycle. Acquired credentials expose
+effective scope, issued client identity and approved metadata.
+`sign_out()` retains registration and cancels older pending authorization;
+`revoke()` remains local-only and deletes registration too.
 
 ## Learn more
 

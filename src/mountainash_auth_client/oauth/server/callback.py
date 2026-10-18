@@ -5,6 +5,7 @@ import socket
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from threading import Timer
 from urllib.parse import parse_qs, urlparse
 
 from mountainash_auth_client.errors import CallbackTimeoutError
@@ -13,11 +14,30 @@ from mountainash_auth_client.errors import CallbackTimeoutError
 class _CallbackHTTPServer(HTTPServer):
     _callback_params: dict[str, str] | None = None
     callback_path: str = "/callback"
+    deadline: float = 0
+    _request_timer: Timer | None = None
+
+    @staticmethod
+    def _expire_request(connection: socket.socket) -> None:
+        try:
+            connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass  # The handler may have closed the socket as the deadline elapsed.
 
     def get_request(self):
         connection, address = super().get_request()
         connection.settimeout(self.timeout)
+        remaining = max(0, self.deadline - time.monotonic())
+        # A socket timeout is idle-time only; interrupt slow-drip HTTP parsing too.
+        self._request_timer = Timer(remaining, self._expire_request, args=(connection,))
+        self._request_timer.daemon = True
+        self._request_timer.start()
         return connection, address
+
+    def close_request(self, request: socket.socket | tuple[bytes, socket.socket]) -> None:
+        if self._request_timer is not None:
+            self._request_timer.cancel()
+        super().close_request(request)
 
 
 class _IPv6CallbackHTTPServer(_CallbackHTTPServer):
@@ -28,6 +48,8 @@ class _CallbackHandler(BaseHTTPRequestHandler):
     server: _CallbackHTTPServer
 
     def do_GET(self) -> None:
+        if time.monotonic() >= self.server.deadline:
+            return
         parsed = urlparse(self.path)
         if parsed.path != self.server.callback_path:
             self.send_error(404)
@@ -75,17 +97,17 @@ class LocalCallbackServer:
 
     def wait_for_callback(self) -> dict[str, str]:
         """Wait against one total deadline, including unrelated HTTP requests."""
-        deadline = time.monotonic() + self._timeout
+        self._server.deadline = time.monotonic() + self._timeout
         try:
             while self._server._callback_params is None:
-                remaining = deadline - time.monotonic()
+                remaining = self._server.deadline - time.monotonic()
                 if remaining <= 0:
                     raise CallbackTimeoutError("No callback received within timeout")
                 self._server.timeout = remaining
                 self._server.handle_request()
             return self._server._callback_params
         finally:
-            self._server.server_close()
+            self.close()
 
     def obtain_callback(self, authorize_url: str) -> dict[str, str]:
         """Present the authorization URL and release the socket on every exit."""
@@ -94,4 +116,8 @@ class LocalCallbackServer:
                 print(f"Open this URL to authorize:\n\n  {authorize_url}\n")
             return self.wait_for_callback()
         finally:
-            self._server.server_close()
+            self.close()
+
+    def close(self) -> None:
+        """Release the listener, including when authorization preparation fails."""
+        self._server.server_close()

@@ -337,14 +337,14 @@ class OAuthFlow:
             from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
             expires_at = jwt_exp(token_data["access_token"])
 
-        candidate: OAuth2Tokens = {
-            **deepcopy(prior or {}),
+        candidate: OAuth2Tokens = deepcopy(prior) if prior is not None else {"access_token": token_data["access_token"]}
+        candidate.update({
             "access_token": token_data["access_token"],
             "refresh_token": token_data.get("refresh_token", refresh_token),
             "token_expires_at": expires_at,
             "scope": token_data.get("scope", prior.get("scope") if prior else None),
             "client_id": client_id,
-        }
+        })
         approved = self.validate_token_response(token_data, context, prior, candidate)
         return read_oauth2_record(token_record(approved))
 
@@ -566,6 +566,8 @@ class OAuthFlow:
         previous: OAuth2Tokens | None = None,
     ) -> OAuth2Tokens:
         """Run the full authorization code flow end-to-end. Returns flat token dict."""
+        from mountainash_auth_client.oauth.server.callback import LocalCallbackServer
+
         if not isinstance(client_id, str) or not client_id:
             raise ValueError("OAuth2 authorization requires a non-empty client_id")
         factory = resolve_callback_factory(
@@ -575,13 +577,14 @@ class OAuthFlow:
             callback_port=self._provider.CALLBACK_PORT,
         )
         server = factory()
-        url, state = self.build_authorize_url(
-            client_id=client_id,
-            redirect_uri=server.redirect_uri,
-            scope=scope,
-            previous=previous,
-        )
+        state: str | None = None
         try:
+            url, state = self.build_authorize_url(
+                client_id=client_id,
+                redirect_uri=server.redirect_uri,
+                scope=scope,
+                previous=previous,
+            )
             params = server.obtain_callback(url)
             self._validate_callback_state(params, state)
             if "error" in params:
@@ -606,5 +609,8 @@ class OAuthFlow:
                 previous=previous,
             )
         finally:
-            self._pending_contexts.pop(state, None)
-            self._pending_verifiers.pop(state, None)
+            if state is not None:
+                self._pending_contexts.pop(state, None)
+                self._pending_verifiers.pop(state, None)
+            if isinstance(server, LocalCallbackServer):
+                server.close()

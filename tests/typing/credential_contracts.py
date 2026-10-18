@@ -4,14 +4,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, assert_type
 
 from pydantic import SecretStr
+from mountainash_settings.secrets import JSONValue
 
-from mountainash_auth_client import OAuth1AuthProfile, OAuth2AuthProfile, OAuth1TokenManager, OAuth2TokenManager
+from mountainash_auth_client import OAuth1AuthProfile, OAuth2AuthProfile, OAuth1TokenManager, OAuth2TokenManager, TokenCredential
 from mountainash_auth_client.oauth.records import OAuth1Tokens, OAuth2Tokens
 
 if TYPE_CHECKING:
-    from mountainash_settings.secrets import ClearableSecretStore, JSONValue
+    from mountainash_settings.secrets import ClearableSecretStore
 
-    from mountainash_auth_client import OAuth1Flow, OAuthFlow, OAuth1ProviderProfile, OAuth2ProviderProfile, TokenCredential
+    from mountainash_auth_client import OAuth1Flow, OAuthFlow, OAuth1ProviderProfile, OAuth2ProviderProfile
     from mountainash_auth_client.oauth.persistence import (
         OAuth1CredentialProfile,
         OAuth2CredentialProfile,

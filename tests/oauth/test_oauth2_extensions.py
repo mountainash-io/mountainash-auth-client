@@ -1,6 +1,7 @@
 """Consumer-owned OAuth2 adaptation at public wire and acquisition boundaries."""
 from __future__ import annotations
 
+import socket
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -12,6 +13,7 @@ from mountainash_auth_client.oauth.lifecycle.oauth2 import OAuth2TokenManager
 from mountainash_auth_client.oauth.lifecycle.status import TokenState
 from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
 from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
+from mountainash_auth_client.oauth.server import LocalCallbackServer
 
 
 def provider(**overrides):
@@ -196,7 +198,8 @@ def test_acquisition_policy_cannot_be_bypassed_and_rotation_survives_rejection(m
         operation = getattr(owner, api)
     else:
         owner = RequiresInvoke(provider(), token_store=store)
-        operation = lambda: getattr(owner, api)(Auth())
+        def operation():
+            return getattr(owner, api)(Auth())
     with pytest.raises(PermissionError, match="Missing invoke"):
         operation()
     saved = records.get(Auth().persist_key())
@@ -261,3 +264,19 @@ def test_manager_returns_the_snapshot_accepted_by_consumer_policy():
     assert credential.access_token == "checked"
     assert credential.scope == "invoke"
     assert store.get("oauth.extension.account")["access_token"] == "not-checked"
+
+
+def test_authorization_parameter_failure_releases_bound_listener():
+    class ConflictingFlow(OAuthFlow):
+        def authorization_parameters(self, context):
+            return {"state": "replacement"}
+
+    server = LocalCallbackServer(host="127.0.0.1")
+    port = server.port
+    try:
+        with pytest.raises(ValueError, match="parameter"):
+            ConflictingFlow(provider(), callback_server=lambda: server).authorize("client", None)
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", port))
+    finally:
+        server._server.server_close()

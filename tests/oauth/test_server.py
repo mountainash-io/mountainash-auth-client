@@ -1,6 +1,7 @@
 """Tests for OAuth callback server and manual auth utilities."""
 from __future__ import annotations
 
+import socket
 import threading
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -129,8 +130,15 @@ def test_configured_callback_route_ignores_unrelated_requests(monkeypatch, host)
 def test_unrelated_callback_request_does_not_restart_deadline(monkeypatch):
     import mountainash_auth_client.oauth.server.callback as callback
 
-    times = iter([0, 0, 4])
-    monkeypatch.setattr(callback, "time", SimpleNamespace(monotonic=lambda: next(times)))
+    clock = {"now": 0}
+    monkeypatch.setattr(callback, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
+    handle = callback._CallbackHandler.do_GET
+
+    def unrelated_request_exhausts_deadline(handler):
+        handle(handler)
+        clock["now"] = 4
+
+    monkeypatch.setattr(callback._CallbackHandler, "do_GET", unrelated_request_exhausts_deadline)
     server = LocalCallbackServer(timeout=3, host="127.0.0.1")
     with ThreadPoolExecutor(max_workers=1) as executor:
         pending = executor.submit(server.wait_for_callback)
@@ -139,3 +147,27 @@ def test_unrelated_callback_request_does_not_restart_deadline(monkeypatch):
             assert response.status_code == 404
         with pytest.raises(CallbackTimeoutError):
             pending.result(timeout=4)
+
+
+def test_incomplete_http_request_cannot_extend_callback_deadline():
+    stop = threading.Event()
+    server = LocalCallbackServer(timeout=1, host="127.0.0.1")
+
+    def drip():
+        with socket.create_connection(("127.0.0.1", server.port), timeout=2) as client:
+            client.sendall(b"GET /callback?code=late HTTP/1.1\r\nX-Slow: ")
+            while not stop.wait(0.05):
+                try:
+                    client.sendall(b"x")
+                except OSError:
+                    return
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = executor.submit(server.wait_for_callback)
+        sending = executor.submit(drip)
+        try:
+            with pytest.raises(CallbackTimeoutError):
+                pending.result(timeout=3)
+        finally:
+            stop.set()
+            sending.result(timeout=3)

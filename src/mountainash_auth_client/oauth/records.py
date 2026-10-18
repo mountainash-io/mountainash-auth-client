@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-from mountainash_settings.secrets import JSONValue, SecretRecord
+    from mountainash_settings.secrets import JSONValue, SecretRecord
 
 
 class OAuth1Tokens(TypedDict):

@@ -27,10 +27,9 @@ def test_is_frozen():
 
 
 def test_credential_preserves_grant_and_owns_nested_metadata():
-    from mountainash_settings.secrets import SecretRecord
     from mountainash_auth_client.oauth.records import read_oauth2_record, token_record
 
-    record: SecretRecord = {
+    record = {
         "access_token": "accepted", "client_id": "issued", "scope": "",
         "registration": {"subject": "account"},
         "session_metadata": {"claims": {"nonce": "private-nonce"}},
