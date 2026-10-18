@@ -23,10 +23,17 @@ def main() -> None:
     assert provider.emit(auth.TargetFamily.HTTP) == {"base_url": "https://example.invalid/api"}
     assert_type(provider.USE_PKCE, bool)
     assert provider.USE_PKCE is False
-    credential = auth.TokenCredential.from_record({"access_token": "example", "token_expires_at": 123})
+    credential = auth.TokenCredential.from_record({
+        "access_token": "example", "token_expires_at": 123, "client_id": "issued", "scope": "openid",
+        "registration": {"subject": "account"}, "session_metadata": {"claims": {"nonce": "accepted"}},
+    })
     assert credential.access_token == "example"
     assert credential.expires_at == 123
     assert credential.refresh_token is None
+    assert credential.client_id == "issued"
+    assert credential.scope == "openid"
+    assert credential.registration == {"subject": "account"}
+    assert credential.session_metadata == {"claims": {"nonce": "accepted"}}
     print("Installed exports, profile construction/emission and token record smoke passed")
 
 

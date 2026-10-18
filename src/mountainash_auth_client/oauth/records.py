@@ -1,11 +1,12 @@
 """Normalized token results and explicit persisted-JSON boundaries."""
 from __future__ import annotations
-
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from copy import deepcopy
+from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from mountainash_settings.secrets import SecretRecord
+
+    from mountainash_settings.secrets import JSONValue, SecretRecord
 
 
 class OAuth1Tokens(TypedDict):
@@ -18,6 +19,9 @@ class OAuth2Tokens(TypedDict):
     refresh_token: NotRequired[str | None]
     token_expires_at: NotRequired[int | None]
     scope: NotRequired[str | None]
+    client_id: NotRequired[str | None]
+    registration: NotRequired[dict[str, JSONValue]]
+    session_metadata: NotRequired[dict[str, JSONValue]]
 
 
 def token_string(value: object, *, field: str) -> str:
@@ -34,26 +38,39 @@ def token_expiry(value: object) -> int | None:
     return value
 
 
-def read_oauth2_record(record: SecretRecord) -> OAuth2Tokens:
-    """Narrow consumed members without changing the stored record.
+def _optional_string(record: SecretRecord, field: str) -> str | None:
+    value = record.get(field)
+    return None if value is None else token_string(value, field=field)
 
-    An absent access token stays empty for the caller's acquisition guard.
-    Absent/null refresh credentials are valid for access-only records.
-    """
-    access = token_string(record.get("access_token", ""), field="access_token")
-    refresh = record.get("refresh_token")
+
+def _metadata(record: SecretRecord, field: str) -> dict[str, JSONValue]:
+    value = record.get(field, {})
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ValueError(f"Invalid OAuth token record field: {field}")
+    return deepcopy(value)
+
+
+def read_oauth2_record(record: SecretRecord) -> OAuth2Tokens:
+    """Narrow consumed members without changing the stored record."""
     return {
-        "access_token": access,
-        "refresh_token": None if refresh is None else token_string(refresh, field="refresh_token"),
+        "access_token": token_string(record.get("access_token", ""), field="access_token"),
+        "refresh_token": _optional_string(record, "refresh_token"),
         "token_expires_at": token_expiry(record.get("token_expires_at")),
+        "scope": _optional_string(record, "scope"),
+        "client_id": _optional_string(record, "client_id"),
+        "registration": _metadata(record, "registration"),
+        "session_metadata": _metadata(record, "session_metadata"),
     }
 
 
 def token_record(tokens: Mapping[str, object]) -> SecretRecord:
-    """Copy flat normalized token results into the store's JSON dictionary."""
+    """Copy normalized token results into the store's JSON dictionary."""
     record: SecretRecord = {}
     for field, value in tokens.items():
-        if value is not None and not isinstance(value, (str, int)):
+        if value is not None and not isinstance(value, (str, int, float, bool, list, dict)):
             raise ValueError(f"Invalid OAuth token record field: {field}")
-        record[field] = value
+        # The selected settings store validates nested JSON at its write boundary.
+        record[field] = deepcopy(cast("JSONValue", value))
     return record
+
+

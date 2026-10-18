@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from mountainash_auth_client.constants import CONST_AUTH_PROFILES
 from mountainash_auth_client.targets import TargetFamily
 from mountainash_auth_client.errors import (
+    AuthorizationCancelled,
     AuthorizationDeniedError,
     AuthorizationRequired,
     CallbackError,
@@ -38,7 +39,12 @@ if TYPE_CHECKING:
         TokenState as TokenState,
         TokenStatus as TokenStatus,
     )
-    from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential as TokenCredential
+    from mountainash_auth_client.oauth.lifecycle.credential import (
+        SignOutResult as SignOutResult,
+        TokenCredential as TokenCredential,
+    )
+    from mountainash_auth_client.oauth.lifecycle.oauth2 import OAuthFlowFactory as OAuthFlowFactory
+    from mountainash_auth_client.oauth.oauth2.flow import OAuth2Context as OAuth2Context
     from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow as OAuth1Flow
     from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow as OAuthFlow
     from mountainash_auth_client.oauth.persistence import PersistableAuthProfile as PersistableAuthProfile
@@ -61,8 +67,11 @@ if TYPE_CHECKING:
 # pulls in httpx/authlib/paramiko/oauth. Keep this map and __all__ in sync.
 _LAZY = {
     "OAuthFlow": "mountainash_auth_client.oauth.oauth2.flow",
+    "OAuth2Context": "mountainash_auth_client.oauth.oauth2.flow",
+    "OAuthFlowFactory": "mountainash_auth_client.oauth.lifecycle.oauth2",
     "OAuth1Flow": "mountainash_auth_client.oauth.oauth1.flow",
     "TokenCredential": "mountainash_auth_client.oauth.lifecycle.credential",
+    "SignOutResult": "mountainash_auth_client.oauth.lifecycle.credential",
     "LocalCallbackServer": "mountainash_auth_client.oauth.server.callback",
     "ManualCallbackServer": "mountainash_auth_client.oauth.server.manual",
     "CallbackServerFactory": "mountainash_auth_client.oauth.protocols",
@@ -102,6 +111,7 @@ AuthProfile = (
 __all__ = [
     "AUTH_REGISTRY",
     "AuthProfile",
+    "AuthorizationCancelled",
     "AuthorizationDeniedError",
     "AuthorizationRequired",
     "AzureADAuthProfile",
@@ -124,14 +134,17 @@ __all__ = [
     "OAuth1ProviderProfileProtocol",
     "OAuth1TokenManager",
     "OAuth2AuthProfile",
+    "OAuth2Context",
     "OAuth2ProviderProfile",
     "OAuth2ProviderProfileProtocol",
     "OAuth2TokenManager",
     "OAuthFlow",
+    "OAuthFlowFactory",
     "PasswordAuthProfile",
     "PersistableAuthProfile",
     "ProviderProfileProtocol",
     "ServiceAccountAuthProfile",
+    "SignOutResult",
     "TargetFamily",
     "TokenAuthProfile",
     "TokenCredential",

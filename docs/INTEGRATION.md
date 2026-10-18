@@ -236,6 +236,94 @@ interactive authorize is disabled) or `TokenRefreshError` (refresh call failed).
 through http-client's request path these arrive as `SourceAuthenticationError`; the consumer
 maps `__cause__` to detect which domain error triggered reauth (Phase 3 §6 / Phase 4).
 
+`TokenCredential` exposes the effective `scope` and canonical `client_id` as well
+as owned `registration` and `session_metadata` JSON dictionaries. Response scope
+takes precedence over requested scope, including an explicit empty scope.
+Exchange falls back to the requested scope when omitted; refresh falls back to
+the previous effective grant, never a new provider default. Unknown scope remains
+`None`. Standalone `refresh(..., previous=tokens)` supplies this prior context.
+
+Public clients (`TOKEN_ENDPOINT_AUTH_METHOD="none"`) send a supplied client ID
+without a client secret, for both form and JSON requests. Managed refresh uses
+the saved issued ID before the configured bootstrap ID. Legacy public-client
+refresh without either identity remains supported.
+
+### Consumer-local OAuth2 flow methods
+
+Subclass `OAuthFlow` to supply provider-specific behavior without copying its HTTP
+or persistence code:
+
+| Method | Contract |
+|---|---|
+| `authorization_parameters(context)` | Additional authorization query fields |
+| `token_parameters(context)` | Additional exchange/refresh body fields |
+| `process_callback(params, context)` | Effective client ID and approved registration dictionary |
+| `validate_token_response(response, context, previous, candidate)` | Validate raw identity material; return the complete approved token result |
+| `validate_credential(credential)` | Enforce the consumer's operation permission policy |
+| `revoke_remote(record)` | One bounded remote revocation attempt; return confirmation |
+
+`OAuth2Context` contains grant type, client ID, exact redirect URI, scope, state,
+detached registration/session metadata, and an attempt-local mutable `data` map.
+Use `data` for a nonce rather than shared “last attempt” state on the flow.
+Wire operations accept keyword-only `previous=` for prior approved context.
+Generated state, PKCE, client-auth, code, grant and redirect fields are reserved:
+extension collisions raise `ValueError` before HTTP.
+
+Exact state and OAuth error/code checks precede `process_callback`. Raw token
+response validation precedes any persistence; unknown response fields are not
+retained automatically. An adapter must validate new identity material before
+retaining it under `session_metadata`. Keep non-secret registration information
+under `registration`; do not place ID tokens there.
+
+Select the consumer flow through the public manager factory. Here
+`validate_identity` is an application-supplied validator: it owns signature,
+issuer/audience, nonce/account and omission policy, and returns only approved
+session metadata (including an ID token only if explicitly retained).
+
+```python
+from mountainash_settings.secrets import JSONValue
+from mountainash_auth_client import OAuth2Context, OAuthFlow, OAuth2TokenManager, TokenCredential
+from mountainash_auth_client.oauth.records import OAuth2Tokens
+
+def report_flow_factory(validate_identity):
+    class ReportFlow(OAuthFlow):
+        def token_parameters(self, context: OAuth2Context) -> dict[str, str]:
+            return {"resource": "https://reports.example.com"}
+
+        def validate_token_response(
+            self, response: dict[str, JSONValue], context: OAuth2Context,
+            previous: OAuth2Tokens | None, candidate: OAuth2Tokens,
+        ) -> OAuth2Tokens:
+            candidate["session_metadata"] = validate_identity(response, context, previous)
+            return candidate
+
+        def validate_credential(self, credential: TokenCredential) -> None:
+            if "reports.read" not in (credential.scope or "").split():
+                raise PermissionError("Missing reports.read permission")
+
+    return ReportFlow
+
+manager = OAuth2TokenManager(
+    provider, auth_profile, token_store=store,
+    flow_factory=report_flow_factory(validate_identity),
+)
+credential = manager.acquire()
+```
+
+`OAuthFlowFactory` also accepts a closure with the flow constructor's keyword
+arguments (`token_store`, `callback_server`), so application dependencies need no
+registry. `status()` and local `revoke()` never construct a flow.
+
+`resolve_credential()` owns acquisition; manager `acquire()`/`refresh()` and
+string-returning convenience methods return projections of the same accepted
+snapshot without rereading the store. Every acquisition path applies
+`validate_credential`, including explicitly auto-authorizing resolution.
+Explicit `manager.authorize()` instead saves a trusted grant without requiring
+permission for a particular operation. A valid narrowed refresh and rotated
+refresh token are saved **before** an operation-permission error is raised.
+Consumers should override `validate_token_response` for trust policy, not use
+operation acceptance as a substitute for identity validation.
+
 ### Selected token store and ownership
 
 Both lifecycle managers require an explicit `token_store=` implementing settings'
@@ -270,13 +358,46 @@ Store errors propagate rather than becoming a missing token or successful authen
 The application constructs and closes the store (for example, with
 `with FilesystemBackend(root) as store:` above). Provision the root directory before
 opening it. Managers and flows borrow it and never close it.
-Refresh read/decision/exchange/write is serialized per key; interactive
-authorization happens outside the transaction, followed by a short serialized write.
+Refresh read/decision/exchange/write is serialized per key. Managed authorization
+captures a package-owned epoch under that transaction, runs interactively outside
+the lock, then saves only if the epoch still matches.
 
 Configured credential profiles remain data consumed by existing, consumer-selected
 renderers. Acquired OAuth tokens live in the selected store; selecting that store
 does not mutate renderers or turn configured profiles into acquired-token records.
 Non-OAuth credential emission needs no token store.
+
+### Sign-out versus local revoke
+
+`manager.sign_out()` (or `flow.sign_out(auth_profile)`) attempts remote revocation
+once through `revoke_remote`, then clears the session locally. It retains only the
+canonical issued `client_id`, non-secret `registration` and a fresh cancellation
+epoch. Access/refresh tokens, scope, expiry and `session_metadata` are removed.
+The registration-only record reports `CLEARED`; a later sign-in reuses its issued
+client ID before the configured bootstrap ID.
+
+`SignOutResult.remote_confirmed` is separate from local clearing. Unsupported
+remote revocation or an ordinary remote exception yields `False`; a storage
+failure propagates instead of reporting success. Cleanup is attempted on
+process-control interruption, but that interruption is not swallowed.
+
+Sign-out serializes with refresh under the selected record's transaction, so
+the adapter sees the latest rotated credentials. Pending authorization with an
+older epoch cannot restore the session: its tokens are offered to remote cleanup
+outside the lock, then `AuthorizationCancelled(remote_confirmed=...)` is raised.
+A newer accepted session is not overwritten. Ordinary simultaneous authorizations
+are not made “latest attempt wins.”
+
+`manager.revoke()` remains **local-only** and deletes the entire record, including
+registration. Neither it nor `status()` constructs a flow or makes a network call.
+Invalid-grant/invalid-token refresh cleanup retains this local-delete behavior.
+
+Adapters must bound remote request timeouts and classify metadata correctly; ID
+tokens belong to session metadata, not registration. Remote revocation semantics
+are provider-owned and may affect more than one token family. Sign-out cannot
+recall already delivered credentials or guarantee cleanup after process death.
+Cross-process ordering is only as strong as the selected store's transaction
+contract; memory-store evidence establishes one-process behavior only.
 
 ### Callback servers (interactive authorize)
 
@@ -285,6 +406,17 @@ exchange via a **callback server**. auth-client provides:
 
 - `LocalCallbackServer` — binds a localhost port, opens the browser (with a print fallback), waits for the redirect, guarantees socket cleanup.
 - `ManualCallbackServer` — out-of-band: prints the URL, reads the pasted redirect/code. (`extract_code_from_input`, `prompt_for_code` are the free functions behind it.)
+
+Configure loopback collection through the existing factory, for example
+`callback_server=lambda: LocalCallbackServer(host="127.0.0.1", path="/auth/callback")`.
+The host must be `localhost` or a loopback IP; IPv6 addresses are supported.
+Only the configured path completes collection, against one total timeout.
+Manual URL parsing preserves all query fields, including registration and errors.
+
+Built-in manual presentation and browser-failure fallback print the full
+authorization URL. If an adapter adds sensitive parameters such as
+`id_token_hint`, use an injected collector with suitable presentation or omit
+the hint; do not send those URLs to captured logs.
 
 Pass a `CallbackServerFactory` (a `Callable[[], CallbackServerProtocol]`) as `callback_server=`
 to a manager or flow constructor, or as a per-call override on a flow's resolver
@@ -315,6 +447,7 @@ from mountainash_auth_client import (
     TokenRefreshError,         # refresh failed
     CallbackError,             # base for callback failures
     AuthorizationDeniedError,  # provider returned ?error= on the callback
+    AuthorizationCancelled,   # earlier attempt cancelled; remote_confirmed describes cleanup
     MalformedCallbackError,    # callback missing code/verifier
     CallbackTimeoutError,      # callback wait timed out (also a TimeoutError)
 )

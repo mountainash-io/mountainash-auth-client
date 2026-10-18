@@ -47,6 +47,14 @@ class CallbackError(Exception):
     """Base for failures while obtaining or validating an OAuth callback."""
 
 
+class AuthorizationCancelled(CallbackError):
+    """A pending authorization was superseded by local session clearing."""
+
+    def __init__(self, *, remote_confirmed: bool) -> None:
+        self.remote_confirmed = remote_confirmed
+        super().__init__("Authorization cancelled by session clearing")
+
+
 class AuthorizationDeniedError(CallbackError):
     """The provider returned an OAuth2 ``error`` instead of an authorization code."""
 

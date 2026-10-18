@@ -24,3 +24,24 @@ def test_is_frozen():
     cred = TokenCredential.from_record({"access_token": "at"})
     with pytest.raises(dataclasses.FrozenInstanceError):
         cred.access_token = "x"
+
+
+def test_credential_preserves_grant_and_owns_nested_metadata():
+    from mountainash_auth_client.oauth.records import read_oauth2_record, token_record
+
+    record = {
+        "access_token": "accepted", "client_id": "issued", "scope": "",
+        "registration": {"subject": "account"},
+        "session_metadata": {"claims": {"nonce": "private-nonce"}},
+    }
+    tokens = read_oauth2_record(record)
+    stored = token_record(tokens)
+    cred = TokenCredential.from_record(stored)
+    assert cred.client_id == "issued"
+    assert cred.scope == ""
+    assert cred.registration == {"subject": "account"}
+    assert cred.session_metadata == {"claims": {"nonce": "private-nonce"}}
+    cred.session_metadata["claims"] = {"nonce": "changed"}
+    assert stored["session_metadata"] == {"claims": {"nonce": "private-nonce"}}
+    assert record["session_metadata"] == {"claims": {"nonce": "private-nonce"}}
+    assert "private-nonce" not in repr(cred)

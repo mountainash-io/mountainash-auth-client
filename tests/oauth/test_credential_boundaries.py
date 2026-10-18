@@ -107,7 +107,8 @@ def test_authorization_token_endpoint_auth_contract(monkeypatch, method):
     result = OAuthFlow(provider(method), callback_server=Callback).authorize(
         "actual-client-id", None if method == "none" else "secret",
     )
-    assert result == {"access_token": "issued", "refresh_token": "", "token_expires_at": None, "scope": None}
+    assert result["access_token"] == "issued"
+    assert result["client_id"] == "actual-client-id"
     assert len(requests) == 1
     request = requests[0]
     body = parse_qs(request.content.decode(), keep_blank_values=True)
@@ -116,8 +117,8 @@ def test_authorization_token_endpoint_auth_contract(monkeypatch, method):
     assert body == {
         "grant_type": ["authorization_code"], "code": ["code"],
         "redirect_uri": ["https://app.example/callback"],
-        **({"client_id": ["actual-client-id"], "client_secret": ["secret"]}
-           if method == "client_secret_post" else {}),
+        **({"client_id": ["actual-client-id"]} if method != "client_secret_basic" else {}),
+        **({"client_secret": ["secret"]} if method == "client_secret_post" else {}),
     }
     if method == "client_secret_basic":
         assert request.headers["authorization"] == "Basic YWN0dWFsLWNsaWVudC1pZDpzZWNyZXQ="
