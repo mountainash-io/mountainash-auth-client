@@ -275,6 +275,37 @@ retained automatically. An adapter must validate new identity material before
 retaining it under `session_metadata`. Keep non-secret registration information
 under `registration`; do not place ID tokens there.
 
+Select the consumer flow through the public manager factory:
+
+```python
+from mountainash_auth_client import OAuth2Context, OAuthFlow, OAuth2TokenManager, TokenCredential
+
+class ReportFlow(OAuthFlow):
+    def token_parameters(self, context: OAuth2Context) -> dict[str, str]:
+        return {"resource": "https://reports.example.com"}
+
+    def validate_credential(self, credential: TokenCredential) -> None:
+        if "reports.read" not in (credential.scope or "").split():
+            raise PermissionError("Missing reports.read permission")
+
+manager = OAuth2TokenManager(provider, auth_profile, token_store=store, flow_factory=ReportFlow)
+credential = manager.acquire()
+```
+
+`OAuthFlowFactory` also accepts a closure with the flow constructor's keyword
+arguments (`token_store`, `callback_server`), so application dependencies need no
+registry. `status()` and local `revoke()` never construct a flow.
+
+`resolve_credential()` owns acquisition; manager `acquire()`/`refresh()` and
+string-returning convenience methods return projections of the same accepted
+snapshot without rereading the store. Every acquisition path applies
+`validate_credential`, including explicitly auto-authorizing resolution.
+Explicit `manager.authorize()` instead saves a trusted grant without requiring
+permission for a particular operation. A valid narrowed refresh and rotated
+refresh token are saved **before** an operation-permission error is raised.
+Consumers should override `validate_token_response` for trust policy, not use
+operation acceptance as a substitute for identity validation.
+
 ### Selected token store and ownership
 
 Both lifecycle managers require an explicit `token_store=` implementing settings'

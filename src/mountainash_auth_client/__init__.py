@@ -39,6 +39,8 @@ if TYPE_CHECKING:
         TokenStatus as TokenStatus,
     )
     from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential as TokenCredential
+    from mountainash_auth_client.oauth.lifecycle.oauth2 import OAuthFlowFactory as OAuthFlowFactory
+    from mountainash_auth_client.oauth.oauth2.flow import OAuth2Context as OAuth2Context
     from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow as OAuth1Flow
     from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow as OAuthFlow
     from mountainash_auth_client.oauth.persistence import PersistableAuthProfile as PersistableAuthProfile
@@ -61,6 +63,8 @@ if TYPE_CHECKING:
 # pulls in httpx/authlib/paramiko/oauth. Keep this map and __all__ in sync.
 _LAZY = {
     "OAuthFlow": "mountainash_auth_client.oauth.oauth2.flow",
+    "OAuth2Context": "mountainash_auth_client.oauth.oauth2.flow",
+    "OAuthFlowFactory": "mountainash_auth_client.oauth.lifecycle.oauth2",
     "OAuth1Flow": "mountainash_auth_client.oauth.oauth1.flow",
     "TokenCredential": "mountainash_auth_client.oauth.lifecycle.credential",
     "LocalCallbackServer": "mountainash_auth_client.oauth.server.callback",
@@ -124,10 +128,12 @@ __all__ = [
     "OAuth1ProviderProfileProtocol",
     "OAuth1TokenManager",
     "OAuth2AuthProfile",
+    "OAuth2Context",
     "OAuth2ProviderProfile",
     "OAuth2ProviderProfileProtocol",
     "OAuth2TokenManager",
     "OAuthFlow",
+    "OAuthFlowFactory",
     "PasswordAuthProfile",
     "PersistableAuthProfile",
     "ProviderProfileProtocol",

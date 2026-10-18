@@ -380,29 +380,51 @@ class OAuthFlow:
         callback_server: CallbackServerFactory | None = None,
         force: bool = False,
     ) -> str:
-        """Resolve a valid access token: cached → refresh → authorize → persist.
+        """Project the accepted credential without a second store read."""
+        return self.resolve_credential(
+            cast("OAuth2CredentialProfile", auth_profile), auto_authorize=auto_authorize,
+            callback_server=callback_server, force=force,
+        ).access_token
 
-        Client construction is the caller's responsibility. Raises
-        ``AuthorizationRequired`` when no usable token exists and
-        ``auto_authorize`` is False. Uses the fail-closed ``if not
-        access_token`` guard — an empty cached token is never returned.
-        Pass ``force=True`` to skip the is_expired check and unconditionally
-        hit the token endpoint (used by force_refresh).
-        """
+    @overload
+    def resolve_credential(
+        self, auth_profile: PersistableAuthProfile, *, auto_authorize: Literal[False] = False,
+        callback_server: CallbackServerFactory | None = None, force: bool = False,
+    ) -> TokenCredential: ...
+
+    @overload
+    def resolve_credential(
+        self, auth_profile: OAuth2CredentialProfile, *, auto_authorize: Literal[True],
+        callback_server: CallbackServerFactory | None = None, force: bool = False,
+    ) -> TokenCredential: ...
+
+    @overload
+    def resolve_credential(
+        self, auth_profile: OAuth2CredentialProfile, *, auto_authorize: bool,
+        callback_server: CallbackServerFactory | None = None, force: bool = False,
+    ) -> TokenCredential: ...
+
+    def resolve_credential(
+        self, auth_profile: PersistableAuthProfile, *, auto_authorize: bool = False,
+        callback_server: CallbackServerFactory | None = None, force: bool = False,
+    ) -> TokenCredential:
+        """Resolve, persist and accept one snapshot; interaction is explicitly opt-in."""
+        from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
+
         provider = self._provider.NAME
         if self._token_store is None:
             raise RuntimeError("OAuth persistence requires token_store")
         backend = oauth_token_store(self._token_store)
         key = auth_profile.persist_key()
-        access_token: str | None = None
+        credential: TokenCredential | None = None
 
         with backend.transaction(key):
             cleared = backend.is_cleared(key)
             record = None if cleared else backend.get(key)
             tokens = read_oauth2_record(record) if record else None
             refresh_token = tokens.get("refresh_token") if tokens else None
-            if tokens and not force and not self.is_expired(tokens.get("token_expires_at")):
-                access_token = tokens["access_token"]
+            if tokens and tokens["access_token"] and not force and not self.is_expired(tokens.get("token_expires_at")):
+                credential = TokenCredential.from_record(token_record(tokens))
             elif tokens and refresh_token:
                 _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
                 # A saved issued identity takes precedence over bootstrap configuration.
@@ -425,44 +447,52 @@ class OAuthFlow:
                         backend.delete(key)
                         if not auto_authorize:
                             raise AuthorizationRequired(provider=provider, user="default")
-                        # auto_authorize: record cleared, no raise — access_token stays
-                        # None so control falls through to the re-authorize tail below.
                     else:
                         raise  # transient/server error: keep the record, surface retryably
-                except Exception:
-                    raise  # network/parse error: never destroy a valid refresh token
                 else:
-                    backend.set(key, token_record(new_tokens))
-                    access_token = new_tokens["access_token"]
+                    saved = token_record(new_tokens)
+                    credential = TokenCredential.from_record(saved)
+                    backend.set(key, saved)
 
-        if not access_token and auto_authorize:
-            # The interactive overload guarantees this refinement, without inspecting
-            # unrelated credential attributes on the cached-token path.
-            credentials = cast("OAuth2CredentialProfile", auth_profile)
-            client_id = credentials.CLIENT_ID
-            if not isinstance(client_id, str) or not client_id:
-                raise ValueError("OAuth2 authorization requires a non-empty client_id")
-            _method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
-            if _method == "none":
-                _csec = None
-            else:
-                _csec = credentials.CLIENT_SECRET.get_secret_value() if credentials.CLIENT_SECRET else None
-            new_tokens = self.authorize(
-                client_id=client_id,
-                client_secret=_csec,
-                scope=credentials.SCOPE,
-                callback_server=callback_server,
+        if (credential is None or not credential.access_token) and auto_authorize:
+            credential = self._authorize_and_store(
+                cast("OAuth2CredentialProfile", auth_profile), callback_server=callback_server,
             )
-            with backend.transaction(key):
-                backend.set(key, token_record(new_tokens))
-            access_token = new_tokens["access_token"]
-
-        # Fail closed: no usable token — nothing cached/refreshed, authorize
-        # disabled, OR authorize itself returned an empty token → raise.
-        if not access_token:
+        if credential is None or not credential.access_token:
             raise AuthorizationRequired(provider=provider, user="default")
+        self.validate_credential(credential)
+        return credential
 
-        return access_token
+    def _authorize_and_store(
+        self, auth_profile: OAuth2CredentialProfile, *,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> TokenCredential:
+        """Shared interactive persistence; operation acceptance belongs to resolution."""
+        from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
+
+        if self._token_store is None:
+            raise RuntimeError("OAuth persistence requires token_store")
+        backend = oauth_token_store(self._token_store)
+        key = auth_profile.persist_key()
+        with backend.transaction(key):
+            record = None if backend.is_cleared(key) else backend.get(key)
+            previous = read_oauth2_record(record) if record else None
+        client_id = (previous.get("client_id") if previous else None) or auth_profile.CLIENT_ID
+        if not isinstance(client_id, str) or not client_id:
+            raise ValueError("OAuth2 authorization requires a non-empty client_id")
+        method = getattr(self._provider, "TOKEN_ENDPOINT_AUTH_METHOD", "client_secret_post")
+        client_secret = None
+        if method != "none" and auth_profile.CLIENT_SECRET:
+            client_secret = auth_profile.CLIENT_SECRET.get_secret_value()
+        tokens = self.authorize(
+            client_id=client_id, client_secret=client_secret, scope=auth_profile.SCOPE,
+            callback_server=callback_server, previous=previous,
+        )
+        saved = token_record(tokens)
+        credential = TokenCredential.from_record(saved)
+        with backend.transaction(key):
+            backend.set(key, saved)
+        return credential
 
     def force_refresh(self, auth_profile: PersistableAuthProfile) -> str:
         """Unconditionally exchange the stored refresh token at the token endpoint
@@ -471,7 +501,7 @@ class OAuthFlow:
         resolve_access_token. Raises AuthorizationRequired when no refresh token is
         available to force with.
         """
-        return self.resolve_access_token(auth_profile, auto_authorize=False, force=True)
+        return self.resolve_credential(auth_profile, force=True).access_token
 
     def authorize(
         self,

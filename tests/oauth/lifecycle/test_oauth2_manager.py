@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from tempfile import TemporaryDirectory
 from threading import Event
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -14,7 +15,7 @@ from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
 from mountainash_auth_client.oauth.lifecycle.oauth2 import OAuth2TokenManager
 from mountainash_auth_client.oauth.lifecycle.status import TokenState
 from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
-from mountainash_auth_client.oauth.server.manual import ManualCallbackServer
+from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
 from mountainash_settings.secrets import FilesystemBackend, MemorySecretStore, NamespacedSecretStore
 
 
@@ -38,10 +39,29 @@ class _Auth:
         return "testprovider.default"
 
 
+class _Callback:
+    redirect_uri = "http://localhost/callback"
+
+    def obtain_callback(self, url):
+        return {"code": "accepted", "state": parse_qs(urlsplit(url).query)["state"][0]}
+
+
+def _authorization_endpoint(monkeypatch):
+    requests = []
+    client = httpx.Client
+
+    def endpoint(request):
+        requests.append(parse_qs(request.content.decode()))
+        return httpx.Response(200, json={"access_token": "new", "refresh_token": "r", "expires_in": 3600})
+
+    monkeypatch.setattr(httpx, "Client", lambda: client(transport=httpx.MockTransport(endpoint)))
+    return requests
+
+
 def _env():
     store = MemorySecretStore()
     return (
-        OAuth2TokenManager(_provider(), _Auth(), token_store=store),
+        OAuth2TokenManager(_provider(), _Auth(), token_store=store, callback_server=_Callback),
         NamespacedSecretStore(store, "oauth"),  # the "oauth"-namespaced view to seed/read
     )
 
@@ -82,62 +102,39 @@ def test_refresh_raises_when_nothing_to_refresh():
         mgr.refresh()
 
 
-def test_authorize_persists_and_returns_valid():
+@pytest.mark.parametrize("revoked", [False, True])
+def test_authorize_persists_and_returns_valid(monkeypatch, revoked):
     mgr, tokens = _env()
-    with patch.object(
-        type(mgr)._flow_cls(), "authorize",
-        return_value={"access_token": "new", "refresh_token": "r", "token_expires_at": int(time.time()) + 3600},
-    ):
-        status = mgr.authorize()
-    assert status.state is TokenState.VALID
+    if revoked:
+        tokens.set("testprovider.default", {"access_token": "old"})
+        mgr.revoke()
+    _authorization_endpoint(monkeypatch)
+    assert mgr.authorize().state is TokenState.VALID
     assert tokens.get("testprovider.default")["access_token"] == "new"
+    assert not tokens.is_cleared("testprovider.default")
 
 
-def test_revoke_then_authorize_returns_valid():
-    mgr, tokens = _env()
-    tokens.set("testprovider.default", {"access_token": "old"})
-    mgr.revoke()
-    with patch.object(
-        type(mgr)._flow_cls(), "authorize",
-        return_value={"access_token": "fresh", "token_expires_at": int(time.time()) + 3600},
-    ):
-        status = mgr.authorize()
-    assert status.state is TokenState.VALID  # set() cleared the tombstone
+def test_authorize_manual_mode_uses_manual_callback_server(monkeypatch):
+    mgr = OAuth2TokenManager(_provider(), _Auth(), token_store=MemorySecretStore())
+    requests = _authorization_endpoint(monkeypatch)
+    monkeypatch.setattr(
+        "mountainash_auth_client.oauth.server.manual.prompt_for_code", _Callback().obtain_callback,
+    )
+    assert mgr.authorize(mode="manual", manual_redirect_uri="https://app.example/callback").state is TokenState.VALID
+    assert requests[0]["redirect_uri"] == ["https://app.example/callback"]
 
 
-def test_authorize_manual_mode_uses_manual_callback_server():
-    mgr, _ = _env()
-    captured = {}
-
-    def fake_authorize(self, **kwargs):
-        captured["callback_server"] = kwargs["callback_server"]
-        return {"access_token": "a", "token_expires_at": int(time.time()) + 3600}
-
-    with patch.object(type(mgr)._flow_cls(), "authorize", new=fake_authorize):
-        mgr.authorize(mode="manual")
-    assert isinstance(captured["callback_server"](), ManualCallbackServer)
-
-
-def test_authorize_tolerates_missing_client_secret():
-    # After the OAuth2 class collapse CLIENT_SECRET is optional; the manager must
-    # not dereference a None secret (it did unconditionally pre-collapse, because
-    # the old authcode schema required it).
+def test_authorize_tolerates_missing_client_secret(monkeypatch):
     class _NoSecretAuth(_Auth):
         CLIENT_SECRET = None
 
     mgr = OAuth2TokenManager(
-        _provider(), _NoSecretAuth(),
-        token_store=MemorySecretStore(),
+        _provider(), _NoSecretAuth(), token_store=MemorySecretStore(), callback_server=_Callback,
     )
-    captured = {}
-
-    def fake_authorize(self, **kwargs):
-        captured.update(kwargs)
-        return {"access_token": "a", "token_expires_at": int(time.time()) + 3600}
-
-    with patch.object(type(mgr)._flow_cls(), "authorize", new=fake_authorize):
-        mgr.authorize()
-    assert captured["client_secret"] is None
+    requests = _authorization_endpoint(monkeypatch)
+    assert mgr.authorize().state is TokenState.VALID
+    assert requests[0]["client_id"] == ["cid"]
+    assert "client_secret" not in requests[0]
 
 
 def test_acquire_returns_token_credential():
@@ -219,7 +216,7 @@ def test_interrupted_clear_blocks_credential_and_refresh(monkeypatch):
 
     monkeypatch.setattr(OAuthFlow, "refresh", forbidden)
     assert manager.status().state is TokenState.CLEARED
-    for operation in (manager.acquire, manager.access_token, manager.refresh, manager._credential):
+    for operation in (manager.acquire, manager.access_token, manager.refresh):
         with pytest.raises(AuthorizationRequired):
             operation()
 
@@ -233,33 +230,6 @@ def test_selected_stores_are_isolated():
     assert second.acquire().access_token == "two"
     first.revoke()
     assert second.acquire().access_token == "two"
-
-
-def test_revoke_at_flow_return_blocks_acquire(monkeypatch):
-    from mountainash_auth_client.errors import AuthorizationRequired
-    from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
-
-    class InterruptedClear(MemorySecretStore):
-        def delete(self, key):
-            retained = self.get(key)
-            super().delete(key)
-            self._data[key] = retained
-
-    store = InterruptedClear()
-    store.set("oauth.testprovider.default", {"access_token": "retained", "token_expires_at": 4102444800})
-    manager = OAuth2TokenManager(_provider(), _Auth(), token_store=store)
-    resolve = OAuthFlow.resolve_access_token
-
-    def revoke_after_resolution(flow, *args, **kwargs):
-        result = resolve(flow, *args, **kwargs)
-        manager.revoke()
-        return result
-
-    monkeypatch.setattr(OAuthFlow, "resolve_access_token", revoke_after_resolution)
-    with pytest.raises(AuthorizationRequired):
-        manager.acquire()
-    assert store.is_cleared("oauth.testprovider.default")
-    assert store.get("oauth.testprovider.default")["access_token"] == "retained"
 
 
 def test_two_managers_acquire_single_flight(monkeypatch):

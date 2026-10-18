@@ -8,6 +8,8 @@ import pytest
 from mountainash_settings.secrets import MemorySecretStore, NamespacedSecretStore
 
 from mountainash_auth_client.errors import AuthorizationDeniedError
+from mountainash_auth_client.oauth.lifecycle.oauth2 import OAuth2TokenManager
+from mountainash_auth_client.oauth.lifecycle.status import TokenState
 from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
 from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
 
@@ -161,3 +163,101 @@ def test_overlapping_wire_attempts_keep_their_own_nonce(monkeypatch):
     for state in (first, second):
         assert flow.exchange_code("code", "http://localhost/callback", "client", state=state)["access_token"] == "accepted"
     assert nonces[0] != nonces[1]
+
+
+class RequiresInvoke(OAuthFlow):
+    def validate_credential(self, credential):
+        if "invoke" not in (credential.scope or "").split():
+            raise PermissionError("Missing invoke permission")
+
+
+@pytest.mark.parametrize("api, forced", [
+    ("acquire", False), ("access_token", False), ("refresh", True),
+    ("resolve_credential", False), ("resolve_access_token", False), ("force_refresh", True),
+])
+def test_acquisition_policy_cannot_be_bypassed_and_rotation_survives_rejection(monkeypatch, api, forced):
+    store = MemorySecretStore()
+    records = NamespacedSecretStore(store, "oauth")
+    records.set(Auth().persist_key(), {
+        "access_token": "cached", "refresh_token": "renewable", "token_expires_at": 4102444800,
+        "scope": "openid invoke" if forced else "openid", "client_id": "issued",
+    })
+    requests = []
+
+    def endpoint(request):
+        requests.append(request)
+        return httpx.Response(200, json={
+            "access_token": "narrowed", "refresh_token": "rotated", "expires_in": 3600, "scope": "openid",
+        })
+
+    install_endpoint(monkeypatch, endpoint)
+    if api in {"acquire", "access_token", "refresh"}:
+        owner = OAuth2TokenManager(provider(), Auth(), token_store=store, flow_factory=RequiresInvoke)
+        operation = getattr(owner, api)
+    else:
+        owner = RequiresInvoke(provider(), token_store=store)
+        operation = lambda: getattr(owner, api)(Auth())
+    with pytest.raises(PermissionError, match="Missing invoke"):
+        operation()
+    saved = records.get(Auth().persist_key())
+    assert saved["scope"] == "openid"
+    assert saved["refresh_token"] == ("rotated" if forced else "renewable")
+    assert len(requests) == int(forced)
+
+
+@pytest.mark.parametrize("api", ["authorize", "resolve_credential", "resolve_access_token"])
+def test_new_limited_authorization_persists_before_operation_policy(monkeypatch, api):
+    store = MemorySecretStore()
+    records = NamespacedSecretStore(store, "oauth")
+
+    class Callback:
+        redirect_uri = "http://localhost/callback"
+
+        def obtain_callback(self, url):
+            return {"code": "accepted", "state": parse_qs(urlsplit(url).query)["state"][0]}
+
+    install_endpoint(monkeypatch, lambda request: httpx.Response(200, json={
+        "access_token": "limited", "refresh_token": "renewable", "scope": "openid",
+    }))
+    manager = OAuth2TokenManager(provider(), Auth(), token_store=store, callback_server=Callback, flow_factory=RequiresInvoke)
+    if api == "authorize":
+        assert manager.authorize().state is TokenState.VALID
+        with pytest.raises(PermissionError):
+            manager.acquire()
+    else:
+        flow = RequiresInvoke(provider(), token_store=store, callback_server=Callback)
+        with pytest.raises(PermissionError):
+            getattr(flow, api)(Auth(), auto_authorize=True)
+    saved = records.get(Auth().persist_key())
+    assert saved["access_token"] == "limited"
+    assert saved["refresh_token"] == "renewable"
+    assert saved["scope"] == "openid"
+
+
+def test_local_status_and_revoke_do_not_construct_consumer_flow():
+    store = MemorySecretStore()
+    store.set("oauth.extension.account", {"access_token": "accepted"})
+
+    def unavailable_factory(*args, **kwargs):
+        raise AssertionError("Local operation constructed a network adapter")
+
+    manager = OAuth2TokenManager(provider(), Auth(), token_store=store, flow_factory=unavailable_factory)
+    assert manager.status().state is TokenState.VALID
+    manager.revoke()
+    assert manager.status().state is TokenState.CLEARED
+
+
+def test_manager_returns_the_snapshot_accepted_by_consumer_policy():
+    store = MemorySecretStore()
+    store.set("oauth.extension.account", {"access_token": "checked", "scope": "invoke"})
+
+    class ChangingFlow(RequiresInvoke):
+        def validate_credential(self, credential):
+            super().validate_credential(credential)
+            store.set("oauth.extension.account", {"access_token": "not-checked", "scope": "openid"})
+
+    manager = OAuth2TokenManager(provider(), Auth(), token_store=store, flow_factory=ChangingFlow)
+    credential = manager.acquire()
+    assert credential.access_token == "checked"
+    assert credential.scope == "invoke"
+    assert store.get("oauth.extension.account")["access_token"] == "not-checked"

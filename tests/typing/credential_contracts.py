@@ -9,9 +9,9 @@ from mountainash_auth_client import OAuth1AuthProfile, OAuth2AuthProfile, OAuth1
 from mountainash_auth_client.oauth.records import OAuth1Tokens, OAuth2Tokens
 
 if TYPE_CHECKING:
-    from mountainash_settings.secrets import ClearableSecretStore
+    from mountainash_settings.secrets import ClearableSecretStore, JSONValue
 
-    from mountainash_auth_client import OAuth1Flow, OAuthFlow, OAuth1ProviderProfile, OAuth2ProviderProfile
+    from mountainash_auth_client import OAuth1Flow, OAuthFlow, OAuth1ProviderProfile, OAuth2ProviderProfile, TokenCredential
     from mountainash_auth_client.oauth.persistence import (
         OAuth1CredentialProfile,
         OAuth2CredentialProfile,
@@ -63,6 +63,9 @@ def resolvers(
     assert_type(oauth2.resolve_access_token(credentials2, auto_authorize=True), str)
     assert_type(oauth1.resolve_token_pair(credentials1, auto_authorize=interactive), tuple[str, str])
     assert_type(oauth2.resolve_access_token(credentials2, auto_authorize=interactive), str)
+    assert_type(oauth2.resolve_credential(key), TokenCredential)
+    assert_type(oauth2.resolve_credential(credentials2, auto_authorize=interactive), TokenCredential)
+    oauth2.resolve_credential(key, auto_authorize=True)  # type: ignore[call-overload]
     oauth1.resolve_token_pair(key, auto_authorize=True)  # type: ignore[call-overload]
     oauth2.resolve_access_token(key, auto_authorize=interactive)  # type: ignore[call-overload]
 
@@ -76,6 +79,9 @@ def results(oauth1: OAuth1Flow, oauth2: OAuthFlow) -> None:
     assert_type(token["access_token"], str)
     assert_type(token.get("token_expires_at"), int | None)
     assert_type(token.get("refresh_token"), str | None)
+    assert_type(token.get("client_id"), str | None)
+    assert_type(token.get("scope"), str | None)
+    assert_type(token.get("registration"), dict[str, JSONValue] | None)
     assert_type(oauth2.authorize("client-id", None), OAuth2Tokens)
     assert_type(oauth2.refresh("refresh"), OAuth2Tokens)
     token["access_token"] = False  # type: ignore[typeddict-item]
