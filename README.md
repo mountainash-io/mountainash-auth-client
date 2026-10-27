@@ -1,6 +1,7 @@
 # mountainash-auth-client
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 Authentication profiles and OAuth token lifecycles for Python applications.
 Describe credentials once, render them for HTTP, Boto or Paramiko, and acquire
@@ -159,4 +160,4 @@ file operations and storage connections.
 
 ## License
 
-Project metadata declares MIT; see [pyproject.toml](pyproject.toml).
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE).
