@@ -8,7 +8,7 @@ path = "src/mountainash_auth_client/__version__.py"
 packages = ["src/mountainash_auth_client"]
 
 [build.targets.sdist]
-include = ["/src", "/pyproject.toml", "/hatch.toml", "/requirements-hatch.txt", "/README.md", "/LICENSE", "/tools", "/tests/typing", "/docs/typing.md"]
+include = ["/src", "/pyproject.toml", "/hatch.toml", "/requirements-hatch.txt", "/README.md", "/LICENSE", "/NOTICE", "/tools", "/tests/typing", "/docs/typing.md"]
 
 
 #================
