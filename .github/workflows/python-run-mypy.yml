@@ -107,7 +107,7 @@ jobs:
           "$runner" -m build --wheel --outdir "$RUNNER_TEMP/typing-source-evidence/settings" temp/mountainash-settings 2>&1 | tee "$RUNNER_TEMP/typing-source-evidence/settings-build.log"
           wheels=("$RUNNER_TEMP/typing-source-evidence/settings/"*.whl)
           [[ ${#wheels[@]} -eq 1 && -f "${wheels[0]}" ]]
-          "$runner" -m pip install "${wheels[0]}" 'mypy==1.10.1' 'pytest==8.3.5' 'types-PyYAML==6.0.12.20260906' 'packaging>=24.0' 'authlib>=1.3.0' 'paramiko>=5.0.0' -e . 2>&1 | tee "$RUNNER_TEMP/typing-source-evidence/install.log"
+          "$runner" -m pip install "${wheels[0]}" 'mypy==1.10.1' 'pytest==8.3.5' 'types-PyYAML==6.0.12.20260906' 'packaging>=24.0' 'authlib>=1.9.1' 'paramiko>=5.0.0' -e . 2>&1 | tee "$RUNNER_TEMP/typing-source-evidence/install.log"
           "$runner" -m pip freeze > "$RUNNER_TEMP/typing-source-evidence/dependencies.log"
 
       - name: Check all source and tests
