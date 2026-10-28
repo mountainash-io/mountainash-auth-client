@@ -10,7 +10,7 @@
   "confidence": "high",
   "public_api": ["TokenExchangeError", "TokenRefreshError", "AuthorizationRequired"],
   "key_classes": [
-    {"name": "TokenExchangeError", "summary": "Raised when OAuth token exchange POST fails. Attributes: url, status_code, body. Body truncated to 200 chars in str."},
+    {"name": "TokenExchangeError", "summary": "Raised when OAuth token exchange POST fails. Attributes: url, status_code, body. Body keeps only the provider's error/error_description fields (never raw response text); str() excludes it."},
     {"name": "TokenRefreshError", "summary": "Raised when OAuth token refresh POST fails. Same attributes as TokenExchangeError."},
     {"name": "AuthorizationRequired", "summary": "Raised when no valid token exists and auto_authorize is False. Attributes: provider, user."}
   ],

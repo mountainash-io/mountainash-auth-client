@@ -203,7 +203,7 @@ def exchange_code(
 
 The `grant_type` parameter is always `"authorization_code"` for this flow. The `redirect_uri` must exactly match the one used in the authorization URL -- providers reject mismatches as a security measure.
 
-The method uses `httpx.Client` to make the POST request. If the provider returns an HTTP error status, the method raises a `TokenExchangeError` (covered in Chapter 7) with the URL, status code, and truncated response body for diagnostics.
+The method uses `httpx.Client` to make the POST request. If the provider returns an HTTP error status, the method raises a `TokenExchangeError` (covered in Chapter 7) with the URL, status code, and the provider's sanitized `error`/`error_description` fields for diagnostics.
 
 ### Token Exchange Response Processing
 
