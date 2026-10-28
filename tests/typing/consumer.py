@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, assert_type
+from typing import TYPE_CHECKING, assert_type
 
 from pydantic import SecretStr
 from mountainash_settings.secrets import JSONValue
