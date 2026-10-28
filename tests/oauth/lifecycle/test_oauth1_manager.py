@@ -129,3 +129,51 @@ def test_revoke_then_authorize_returns_present():
     }):
         assert manager.authorize().state is TokenState.PRESENT
     assert manager.token_pair() == ("fresh", "secret")
+
+
+def _authorize_env(mutate):
+    """Manager whose OAuth1 callback runs `mutate(mgr)` mid-authorize."""
+    from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
+
+    mgr, tokens = _env()
+
+    class Callback:
+        redirect_uri = "http://127.0.0.1/cb"
+
+        def obtain_callback(self, url):
+            mutate(mgr)
+            return {"oauth_token": "RT", "oauth_verifier": "v"}
+
+    class Flow(OAuth1Flow):
+        def request_token(self, *a, **k):
+            return {"oauth_token": "RT", "oauth_token_secret": "RTS"}
+
+        def exchange_verifier(self, **k):
+            return {"oauth_token": "AT", "oauth_token_secret": "ATS"}
+
+    mgr._flow_cls = lambda: Flow
+    mgr._callback_server = Callback
+    return mgr, tokens
+
+
+def test_authorize_persists_tokens_when_not_revoked():
+    mgr, tokens = _authorize_env(lambda m: None)
+    assert mgr.authorize().state is TokenState.PRESENT
+    assert mgr.token_pair() == ("AT", "ATS")
+
+
+@pytest.mark.parametrize("recreate", [False, True])
+def test_revoke_during_authorize_does_not_resurrect_tokens(recreate):
+    from mountainash_auth_client.errors import AuthorizationCancelled
+
+    def revoke(m):
+        m.revoke()
+        if recreate:
+            m._store().set("garmin.default", {"lifecycle": {"epoch": "other"}})
+
+    mgr, tokens = _authorize_env(revoke)
+    with pytest.raises(AuthorizationCancelled):
+        mgr.authorize()
+    record = tokens.get("garmin.default") if not tokens.is_cleared("garmin.default") else None
+    assert not record or "oauth_token" not in record
+    assert mgr.status().state is not TokenState.PRESENT

@@ -33,7 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 oauth1 = ["authlib>=1.3.0"]
-sftp = ["paramiko>=3.0.0"]
+sftp = ["paramiko>=5.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/mountainash-io/mountainash-auth-client"

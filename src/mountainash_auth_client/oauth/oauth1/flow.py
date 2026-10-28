@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import secrets
 from functools import partial
 from typing import TYPE_CHECKING, Literal, cast, overload
 from urllib.parse import urlencode
 
 from mountainash_auth_client.errors import (
+    AuthorizationCancelled,
     AuthorizationRequired,
     MalformedCallbackError,
+    safe_error_body,
     TokenExchangeError,
 )
 from mountainash_auth_client._optional import require_authlib
@@ -32,7 +35,7 @@ def _raise_token_endpoint_error(response: Response, *, url: str) -> None:
         raise TokenExchangeError(
             url=url,
             status_code=response.status_code,
-            body=response.text[:2000],
+            body=safe_error_body(response.text),
         )
 
 
@@ -154,16 +157,50 @@ class OAuth1Flow:
         if auto_authorize:
             # The interactive overload requires credentials; cached callers need only a key.
             credentials = cast("OAuth1CredentialProfile", auth_profile)
-            new_tokens = self.authorize(
-                consumer_key=credentials.CONSUMER_KEY,
-                consumer_secret=credentials.CONSUMER_SECRET.get_secret_value(),
-                callback_server=callback_server,
-            )
-            with backend.transaction(key):
-                backend.set(key, token_record(new_tokens))
+            new_tokens = self._authorize_and_store(credentials, callback_server=callback_server)
             return new_tokens["oauth_token"], new_tokens["oauth_token_secret"]
 
         raise AuthorizationRequired(provider=provider, user="default")
+
+    def _authorize_and_store(
+        self, auth_profile: OAuth1CredentialProfile, *,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> OAuth1Tokens:
+        """Authorize and persist, unless the session was revoked while authorizing.
+
+        Mirrors OAuth2: an epoch is stamped on the record before the interactive
+        step and re-checked under the transaction before saving, so a revoke
+        (which deletes the record and tombstones the key) cannot be resurrected.
+        """
+        if self._token_store is None:
+            raise RuntimeError("OAuth persistence requires token_store")
+        backend = oauth_token_store(self._token_store)
+        key = auth_profile.persist_key()
+        with backend.transaction(key):
+            record = None if backend.is_cleared(key) else backend.get(key)
+            lifecycle = record.get("lifecycle") if record else None
+            epoch = lifecycle.get("epoch") if isinstance(lifecycle, dict) else None
+            if not isinstance(epoch, str):
+                epoch = secrets.token_urlsafe(32)
+                initialized = dict(record or {})
+                initialized["lifecycle"] = {"epoch": epoch}
+                backend.set(key, initialized)
+        tokens = self.authorize(
+            consumer_key=auth_profile.CONSUMER_KEY,
+            consumer_secret=auth_profile.CONSUMER_SECRET.get_secret_value(),
+            callback_server=callback_server,
+        )
+        saved = token_record(tokens)
+        with backend.transaction(key):
+            current = None if backend.is_cleared(key) else backend.get(key)
+            lifecycle = current.get("lifecycle") if current else None
+            permitted = isinstance(lifecycle, dict) and lifecycle.get("epoch") == epoch
+            if permitted:
+                saved["lifecycle"] = {"epoch": epoch}
+                backend.set(key, saved)
+        if not permitted:
+            raise AuthorizationCancelled(remote_confirmed=False)
+        return tokens
 
     def authorize(
         self,
@@ -186,7 +223,9 @@ class OAuth1Flow:
         params = server.obtain_callback(url)
 
         returned_token = params.get("oauth_token")
-        if returned_token is not None and returned_token != request_token["oauth_token"]:
+        if returned_token is not None and not secrets.compare_digest(
+            returned_token.encode(), request_token["oauth_token"].encode()
+        ):
             raise ValueError("OAuth1 token mismatch — possible CSRF")
 
         # Bare manual paste lands the verifier in "code"; accept it as a fallback.

@@ -11,7 +11,6 @@ from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
 from mountainash_auth_client.oauth.lifecycle.status import TokenState, TokenStatus
 from mountainash_auth_client.oauth.persistence import token_store
-from mountainash_auth_client.oauth.records import token_record
 from mountainash_auth_client.schemas.oauth1 import OAuth1AuthProfile
 from mountainash_auth_client.targets import TargetFamily
 
@@ -53,15 +52,9 @@ class OAuth1TokenManager:
             callback_port=self._provider.CALLBACK_PORT,
             manual_redirect_uri=manual_redirect_uri or "oob",
         )
-        tokens = self._flow_cls()(self._provider, token_store=self._token_store).authorize(
-            consumer_key=self._auth.CONSUMER_KEY,
-            consumer_secret=self._auth.CONSUMER_SECRET.get_secret_value(),
-            callback_server=factory,
+        self._flow_cls()(self._provider, token_store=self._token_store)._authorize_and_store(
+            self._auth, callback_server=factory,
         )
-        backend = self._store()
-        key = self._auth.persist_key()
-        with backend.transaction(key):
-            backend.set(key, token_record(tokens))
         return self.status()
 
     def token_pair(self) -> tuple[str, str]:
@@ -74,7 +67,7 @@ class OAuth1TokenManager:
             if backend.is_cleared(key):
                 return TokenStatus(TokenState.CLEARED)
             record = backend.get(key)
-        if record is None:
+        if record is None or not record.get("oauth_token"):
             return TokenStatus(TokenState.MISSING)
         return TokenStatus(TokenState.PRESENT)
 

@@ -18,6 +18,7 @@ from mountainash_auth_client.errors import (
     AuthorizationRequired,
     MalformedCallbackError,
     TokenExchangeError,
+    safe_error_body,
     TokenRefreshError,
 )
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
@@ -175,7 +176,10 @@ class OAuthFlow:
         self, params: dict[str, str], expected_state: str
     ) -> None:
         """Reject the callback unless its state exactly matches the expected one."""
-        if params.get("state") != expected_state:
+        received = params.get("state")
+        if not isinstance(received, str) or not secrets.compare_digest(
+            received.encode(), expected_state.encode()
+        ):
             raise ValueError("OAuth state mismatch — possible CSRF attack")
 
     def _build_token_request(self, base_data: dict, client_id, client_secret) -> dict:
@@ -251,7 +255,7 @@ class OAuthFlow:
                 raise TokenExchangeError(
                     url=self.token_url,
                     status_code=exc.response.status_code,
-                    body=exc.response.text[:2000],
+                    body=safe_error_body(exc.response.text),
                 ) from exc
             try:
                 token_data = resp.json()
@@ -259,14 +263,14 @@ class OAuthFlow:
                 raise TokenExchangeError(
                     url=self.token_url,
                     status_code=resp.status_code,
-                    body=f"Invalid JSON in token response: {resp.text[:200]}",
+                    body="",
                 ) from exc
 
         if not isinstance(token_data, dict) or "access_token" not in token_data:
             raise TokenExchangeError(
                 url=self.token_url,
                 status_code=resp.status_code,
-                body=f"Missing access_token in response: {str(token_data)[:200]}",
+                body=safe_error_body(token_data),
             )
 
         expires_at: int | None = None
@@ -312,7 +316,7 @@ class OAuthFlow:
                 raise TokenRefreshError(
                     url=self.token_url,
                     status_code=exc.response.status_code,
-                    body=exc.response.text[:2000],
+                    body=safe_error_body(exc.response.text),
                 ) from exc
             try:
                 token_data = resp.json()
@@ -320,14 +324,14 @@ class OAuthFlow:
                 raise TokenRefreshError(
                     url=self.token_url,
                     status_code=resp.status_code,
-                    body=f"Invalid JSON in refresh response: {resp.text[:200]}",
+                    body="",
                 ) from exc
 
         if not isinstance(token_data, dict) or "access_token" not in token_data:
             raise TokenRefreshError(
                 url=self.token_url,
                 status_code=resp.status_code,
-                body=f"Missing access_token in refresh response: {str(token_data)[:200]}",
+                body=safe_error_body(token_data),
             )
 
         expires_at: int | None = None

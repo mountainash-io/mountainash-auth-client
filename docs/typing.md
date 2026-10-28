@@ -38,8 +38,7 @@ mypy **1.10.1** on Python **3.12 and 3.13**. Source checking includes all of
   `resolve_credential` has the same key-only/noninteractive overload boundary as
   `resolve_access_token`. `SignOutResult` and `AuthorizationCancelled` expose
   `remote_confirmed: bool`; neither carries session secrets.
-- Dynamic profile constructors, driver dictionaries from `emit()`, arbitrary
-  `ServiceAccountAuthProfile.INFO` members, and OAuth1's Authlib signer remain
+- Dynamic profile constructors, driver dictionaries from `emit()`, and OAuth1's Authlib signer remain
   dynamic boundaries. These checks do not promise fully strict typing of every
   integration. Constructor keyword validation is performed by the runtime schema.
 

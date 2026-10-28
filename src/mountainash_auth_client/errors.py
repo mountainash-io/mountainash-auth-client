@@ -4,6 +4,22 @@ from __future__ import annotations
 import json as _json
 
 
+def safe_error_body(raw: object) -> str:
+    """Reduce a token-endpoint error payload to its RFC 6749 ``error`` fields as JSON.
+
+    Raw response text can echo credentials (tokens, codes, secrets); only the
+    ``error`` and ``error_description`` strings are kept. Anything else yields ``""``.
+    """
+    if isinstance(raw, (str, bytes)):
+        try:
+            raw = _json.loads(raw)
+        except ValueError:
+            return ""
+    if not isinstance(raw, dict):
+        return ""
+    return _json.dumps({k: raw[k] for k in ("error", "error_description") if isinstance(raw.get(k), str)})
+
+
 class TokenExchangeError(Exception):
     """OAuth token endpoint returned an error during code exchange."""
 
