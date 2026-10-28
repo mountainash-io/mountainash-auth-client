@@ -17,7 +17,7 @@ runs:
   steps:
     - name: Install YAML parser
       shell: bash
-      run: python -m pip install --disable-pip-version-check --no-input PyYAML
+      run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.3
 
     - name: Parse dependency manifest
       id: parse
