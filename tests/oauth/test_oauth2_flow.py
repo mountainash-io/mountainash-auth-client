@@ -151,7 +151,7 @@ class TestExchangeCode:
                     client_id="cid",
                     client_secret="csec",
                 )
-            assert "Invalid JSON" in exc_info.value.body
+            assert exc_info.value.body == ""  # response text is never echoed
 
     def test_raises_when_access_token_missing(self):
         flow = OAuthFlow(_provider())
@@ -171,7 +171,7 @@ class TestExchangeCode:
                     client_id="cid",
                     client_secret="csec",
                 )
-            assert "access_token" in exc_info.value.body
+            assert exc_info.value.body == '{"error": "invalid_grant"}'
 
     def test_pkce_verifier_keyed_by_state_survives_second_authorize(self):
         flow = OAuthFlow(_provider(USE_PKCE=True))
@@ -776,7 +776,7 @@ def test_explicit_authorization_replaces_marker_outside_lock(selected_flow):
         assert saved["access_token"] == "AT"
         assert saved["refresh_token"] == "RT"
     else:
-        assert saved == fresh
+        assert {k: v for k, v in saved.items() if k != "lifecycle"} == fresh
     assert not store.cleared
     assert all(held for _, _, held in store.operations)
 
@@ -908,3 +908,14 @@ def test_exchange_uses_response_scope_without_truthy_fallback(monkeypatch, reque
     )))
     tokens = OAuthFlow(_provider()).exchange_code("code", "http://localhost/callback", scope=requested)
     assert tokens["scope"] == expected
+
+
+def test_callback_state_compared_in_constant_time():
+    flow = OAuthFlow(_provider())
+    with patch("mountainash_auth_client.oauth.oauth2.flow.secrets.compare_digest", wraps=__import__("secrets").compare_digest) as cmp:
+        flow._validate_callback_state({"state": "abc"}, "abc")
+        with pytest.raises(ValueError, match="state mismatch"):
+            flow._validate_callback_state({"state": "abd"}, "abc")
+    assert cmp.call_count == 2
+    with pytest.raises(ValueError):
+        flow._validate_callback_state({"state": "é"}, "abc")

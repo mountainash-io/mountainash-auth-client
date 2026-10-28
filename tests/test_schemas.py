@@ -225,5 +225,6 @@ class TestServiceAccountAuth:
 
     def test_construction_with_info(self):
         cls = AUTH_REGISTRY.get_settings_class("service_account")
-        instance = cls(INFO={"type": "service_account", "project_id": "test"})
-        assert instance.INFO["project_id"] == "test"
+        instance = cls(INFO='{"type": "service_account", "project_id": "test"}')
+        assert "test" in instance.INFO.get_secret_value()
+        assert "project_id" not in repr(instance.INFO)

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, assert_type
+from typing import TYPE_CHECKING, assert_type
 
 from pydantic import SecretStr
 from mountainash_settings.secrets import JSONValue
@@ -91,7 +91,7 @@ def profile_families(
     assert_type(certificate.PRIVATE_KEY, SecretStr | None)
     assert_type(certificate.PRIVATE_KEY_PATH, Path | None)
     assert_type(certificate.PASSPHRASE, SecretStr | None)
-    assert_type(service.INFO, dict[str, Any] | None)
+    assert_type(service.INFO, SecretStr | None)
     assert_type(service.FILE, Path | None)
     assert_type(oauth1.CONSUMER_KEY, str)
     assert_type(oauth1.CONSUMER_SECRET, SecretStr)

@@ -224,7 +224,8 @@ def test_http_rejection_is_redacted(oauth_http, stage, status, kind):
     endpoint = env.flow.request_token_url if stage == "request" else env.flow.access_token_url
     assert error.url == endpoint
     assert error.status_code == status
-    assert error.body == body[:2000]
+    assert error.body == ""  # non-JSON bodies are dropped entirely
+    assert marker not in error.body
     assert marker not in str(error)
     assert marker not in repr(error)
     assert marker not in "".join(traceback.format_exception(error))

@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 
 @dataclasses.dataclass(frozen=True)
 class TokenCredential:
-    access_token: str
+    access_token: str = field(repr=False)
     token_type: str = "Bearer"
     expires_at: int | None = None
-    refresh_token: str | None = None
+    refresh_token: str | None = field(default=None, repr=False)
     client_id: str | None = None
     scope: str | None = None
     registration: dict[str, JSONValue] = field(default_factory=dict, repr=False)

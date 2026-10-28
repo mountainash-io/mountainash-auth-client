@@ -270,7 +270,7 @@ def exchange_verifier(
 
 The returned dictionary contains the permanent `oauth_token` and `oauth_token_secret`. These are stored by the `SecretStore` (Chapter 6) and used for all subsequent API requests. Unlike OAuth 2.0 tokens, OAuth 1.0a access tokens typically do not expire -- they remain valid until the user explicitly revokes them.
 
-If the exchange fails (invalid verifier, expired request token, or provider error), the method raises a `TokenExchangeError` with the URL, HTTP status code, and response body for diagnostics.
+If the exchange fails (invalid verifier, expired request token, or provider error), the method raises a `TokenExchangeError` with the URL, HTTP status code, and the provider's sanitized `error`/`error_description` fields for diagnostics.
 
 <!-- concept:49 -->
 ### Authlib Dependency
@@ -281,7 +281,7 @@ The package declares this optional dependency in `pyproject.toml`:
 
 ```toml
 [project.optional-dependencies]
-oauth1 = ["authlib>=1.0"]
+oauth1 = ["authlib>=1.9.1"]
 ```
 
 Users install it explicitly when needed:
