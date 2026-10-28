@@ -281,7 +281,7 @@ The package declares this optional dependency in `pyproject.toml`:
 
 ```toml
 [project.optional-dependencies]
-oauth1 = ["authlib>=1.0"]
+oauth1 = ["authlib>=1.9.1"]
 ```
 
 Users install it explicitly when needed:
