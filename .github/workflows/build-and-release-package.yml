@@ -2,17 +2,12 @@ name: Build, Verify, and Publish Package
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
     branches: [main, develop, 'release/**', 'feature/**', 'bugfix/**', 'hotfix/**']
   workflow_dispatch:
     inputs:
       publish:
         description: Publish the verified candidate to PyPI (main only)
-        required: true
-        default: false
-        type: boolean
-      release:
-        description: Publish verified artifacts to GitHub and mountainash-wheels
         required: true
         default: false
         type: boolean
@@ -40,7 +35,6 @@ permissions:
 jobs:
   build-and-verify:
     name: Build and verify candidate (development rehearsal)
-    if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-24.04
     outputs:
       dist-artifact-id: ${{ steps.upload-dist.outputs.artifact-id }}
@@ -92,10 +86,8 @@ jobs:
       - name: Set release version
         env:
           EVENT_NAME: ${{ github.event_name }}
-          MERGED: ${{ github.event.pull_request.merged }}
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
           RELEASE_TYPE: ${{ inputs.release_type }}
-          RELEASE: ${{ inputs.release }}
           PUBLISH: ${{ inputs.publish }}
           RUN_NUMBER: ${{ github.run_number }}
         run: |
@@ -115,7 +107,7 @@ jobs:
               os.environ['TARGET_BRANCH'] != 'main' or release_type != 'production'
           ):
               raise SystemExit('PyPI publication requires a production release on main')
-          releasing = any(os.environ[key] == 'true' for key in ('MERGED', 'RELEASE', 'PUBLISH'))
+          releasing = os.environ['PUBLISH'] == 'true'
           if releasing and release_type != 'production':
               suffix = 'rc' if release_type == 'rc' else 'b'
               version = f'{Version(base).base_version}{suffix}{os.environ["RUN_NUMBER"]}'
@@ -660,17 +652,6 @@ jobs:
           path: ${{ runner.temp }}/mountainash-public-verification/evidence
           if-no-files-found: warn
           retention-days: 30
-
-  publish-mountainash:
-    if: github.event.pull_request.merged == true || (github.event_name == 'workflow_dispatch' && inputs.release)
-    needs: build-and-verify
-    permissions:
-      contents: write
-    uses: ./.github/workflows/publish-mountainash.yml
-    with:
-      dist-artifact-id: ${{ fromJSON(needs.build-and-verify.outputs.dist-artifact-id) }}
-      evidence-artifact-id: ${{ fromJSON(needs.build-and-verify.outputs.evidence-artifact-id) }}
-    secrets: inherit
 
   preflight-pypi-environment:
     name: Require protected PyPI environment
