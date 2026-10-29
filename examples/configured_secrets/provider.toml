@@ -1,0 +1,5 @@
+NAME = "reports"
+AUTHORIZE_URL = "https://identity.example.com/authorize"
+TOKEN_URL = "https://identity.example.com/token"
+BASE_URL = "https://files.example.com"
+DEFAULT_SCOPE = "reports.read"

@@ -1,0 +1,105 @@
+name: Pytest
+
+on:
+  pull_request:
+    paths:
+      - src/mountainash_auth_client/**
+      - tests/**
+      - examples/**
+      - README.md
+      - pyproject.toml
+      - hatch.toml
+      - requirements-hatch.txt
+      - .github/**
+  workflow_dispatch:
+    inputs:
+      fallback_branch:
+        description: Dependency fallback branch.
+        required: true
+        default: develop
+        type: choice
+        options:
+          - develop
+          - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Set dependency branch variables
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_FALLBACK_BRANCH: ${{ inputs.fallback_branch }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            echo "FALLBACK_BRANCH=$INPUT_FALLBACK_BRANCH" >> "$GITHUB_ENV"
+            echo "TARGET_BRANCH=$REF_NAME" >> "$GITHUB_ENV"
+          else
+            echo "FALLBACK_BRANCH=$BASE_REF" >> "$GITHUB_ENV"
+            echo "TARGET_BRANCH=$HEAD_REF" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+          check-latest: true
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: mountainash-io
+
+      - name: Load dependencies
+        id: dependencies
+        uses: ./.github/actions/load-dependencies
+        with:
+          config-path: .github/config/mountainash_dependencies.yml
+
+      - name: Check out dependencies
+        uses: ./.github/actions/checkout-dependencies
+        with:
+          dependencies: ${{ steps.dependencies.outputs.dependencies }}
+          target-branch: ${{ env.TARGET_BRANCH }}
+          default-branch: ${{ env.FALLBACK_BRANCH }}
+          token: ${{ steps.app-token.outputs.token }}
+          org-name: mountainash-io
+
+      - name: Record settings revision
+        run: git -C temp/mountainash-settings rev-parse HEAD
+
+      - name: Install Hatch
+        run: python -m pip install --disable-pip-version-check --no-input hatch==1.18.2
+
+      - name: Create test environment
+        run: hatch env create test_github
+
+      - name: Run coverage tests
+        run: hatch run test_github:test
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

@@ -1,6 +1,24 @@
 """Auth-specific exceptions for mountainash-auth-client."""
 from __future__ import annotations
 
+import json as _json
+
+
+def safe_error_body(raw: object) -> str:
+    """Reduce a token-endpoint error payload to its RFC 6749 ``error`` fields as JSON.
+
+    Raw response text can echo credentials (tokens, codes, secrets); only the
+    ``error`` and ``error_description`` strings are kept. Anything else yields ``""``.
+    """
+    if isinstance(raw, (str, bytes)):
+        try:
+            raw = _json.loads(raw)
+        except ValueError:
+            return ""
+    if not isinstance(raw, dict):
+        return ""
+    return _json.dumps({k: raw[k] for k in ("error", "error_description") if isinstance(raw.get(k), str)})
+
 
 class TokenExchangeError(Exception):
     """OAuth token endpoint returned an error during code exchange."""
@@ -9,7 +27,12 @@ class TokenExchangeError(Exception):
         self.url = url
         self.status_code = status_code
         self.body = body
-        super().__init__(f"Token exchange failed: HTTP {status_code} POST {url} — {body[:200]}")
+        try:
+            parsed = _json.loads(body)
+            self.error_code = parsed.get("error") if isinstance(parsed, dict) else None
+        except (ValueError, TypeError):
+            self.error_code = None
+        super().__init__(f"Token exchange failed: HTTP {status_code} POST {url}")
 
 
 class TokenRefreshError(Exception):
@@ -19,7 +42,12 @@ class TokenRefreshError(Exception):
         self.url = url
         self.status_code = status_code
         self.body = body
-        super().__init__(f"Token refresh failed: HTTP {status_code} POST {url} — {body[:200]}")
+        try:
+            parsed = _json.loads(body)
+            self.error_code = parsed.get("error") if isinstance(parsed, dict) else None
+        except (ValueError, TypeError):
+            self.error_code = None
+        super().__init__(f"Token refresh failed: HTTP {status_code} POST {url}")
 
 
 class AuthorizationRequired(Exception):
@@ -29,3 +57,47 @@ class AuthorizationRequired(Exception):
         self.provider = provider
         self.user = user
         super().__init__(f"Authorization required for {provider}/{user}")
+
+
+class CallbackError(Exception):
+    """Base for failures while obtaining or validating an OAuth callback."""
+
+
+class AuthorizationCancelled(CallbackError):
+    """A pending authorization was superseded by local session clearing."""
+
+    def __init__(self, *, remote_confirmed: bool) -> None:
+        self.remote_confirmed = remote_confirmed
+        super().__init__("Authorization cancelled by session clearing")
+
+
+class AuthorizationDeniedError(CallbackError):
+    """The provider returned an OAuth2 ``error`` instead of an authorization code."""
+
+    def __init__(self, *, error: str, description: str = "") -> None:
+        self.error = error
+        self.description = description
+        message = f"Authorization denied: {error}"
+        if description:
+            message += f" — {description}"
+        super().__init__(message)
+
+
+class MalformedCallbackError(CallbackError):
+    """Callback passed CSRF/state validation but is missing a required parameter."""
+
+
+class CallbackTimeoutError(CallbackError, TimeoutError):
+    """No OAuth callback was received before the deadline.
+
+    Subclasses the builtin ``TimeoutError`` so existing ``except TimeoutError``
+    handlers keep working while callers can also catch ``CallbackError``.
+    """
+
+
+class MalformedJWTError(Exception):
+    """A token expected to be a compact JWS was not three base64url segments / did not decode."""
+
+    def __init__(self, *, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"Malformed JWT: {reason}")

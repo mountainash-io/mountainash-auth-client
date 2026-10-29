@@ -1,0 +1,4 @@
+BASE_URL: https://files.example.com
+TIMEOUT: 15
+ATTEMPTS: 3
+APPLICATION: reports_app

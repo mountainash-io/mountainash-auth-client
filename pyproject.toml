@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,32 +7,33 @@ name = "mountainash-auth-client"
 dynamic = ["version"]
 description = "Client-side authentication for the mountainash ecosystem"
 readme = "README.md"
-requires-python = ">=3.11"
-license = {text = "MIT"}
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [
     { name = "Nathaniel Ramm", email = "nathaniel.ramm@discretedatascience.com" },
 ]
 keywords = ["authentication", "oauth", "oauth2", "oauth1", "credentials"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Security",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
 dependencies = [
+    "mountainash-settings>=0.1.0,<0.2",
     "pydantic>=2.9.0",
     "httpx>=0.27.0",
-    "pyaml",
-    # "mountainash-settings",
+    "StrEnum>=0.4.15,<1",
 ]
 
 [project.optional-dependencies]
-oauth1 = ["authlib>=1.3.0"]
+oauth1 = ["authlib>=1.9.1"]
+sftp = ["paramiko>=5.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/mountainash-io/mountainash-auth-client"
@@ -63,7 +64,7 @@ exclude_lines = ["no cov", "if __name__ == .__main__:", "if TYPE_CHECKING:"]
 # ============================================================================
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 120
 
 [tool.ruff.lint]
@@ -80,6 +81,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # __init__.py files re-export symbols intentionally
 "__init__.py" = ["F401"]
+# PEP 562 lazy exports remain type-only; __getattr__ resolves runtime access.
+"src/mountainash_auth_client/__init__.py" = ["F401", "TCH004"]
 # Pydantic schema files need type imports at runtime for field definitions
 "src/mountainash_auth_client/schemas/**" = ["TCH001", "TCH002", "TCH003"]
 

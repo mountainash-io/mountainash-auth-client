@@ -1,0 +1,242 @@
+"""OAuth1 3-legged flow for providers like Garmin Health API."""
+
+from __future__ import annotations
+
+import secrets
+from functools import partial
+from typing import TYPE_CHECKING, Literal, cast, overload
+from urllib.parse import urlencode
+
+from mountainash_auth_client.errors import (
+    AuthorizationCancelled,
+    AuthorizationRequired,
+    MalformedCallbackError,
+    safe_error_body,
+    TokenExchangeError,
+)
+from mountainash_auth_client._optional import require_authlib
+from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
+from mountainash_auth_client.oauth.persistence import token_store as oauth_token_store
+from mountainash_auth_client.oauth.records import token_record, token_string
+
+if TYPE_CHECKING:
+    from httpx import Response
+    from mountainash_settings.secrets import ClearableSecretStore
+    from mountainash_auth_client.oauth.persistence import OAuth1CredentialProfile, PersistableAuthProfile
+    from mountainash_auth_client.oauth.records import OAuth1Tokens
+    from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
+    from mountainash_auth_client.oauth.protocols import CallbackServerFactory
+
+
+def _raise_token_endpoint_error(response: Response, *, url: str) -> None:
+    """Reject HTTP token failures before Authlib creates a body-bearing error."""
+    if response.status_code >= 400:
+        response.read()
+        raise TokenExchangeError(
+            url=url,
+            status_code=response.status_code,
+            body=safe_error_body(response.text),
+        )
+
+
+class OAuth1Flow:
+    """Runs OAuth 1.0a 3-legged authorization flow."""
+
+    def __init__(
+        self,
+        provider: OAuth1ProviderProfileProtocol,
+        *,
+        token_store: ClearableSecretStore | None = None,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> None:
+        self._provider = provider
+        self._token_store = token_store
+        self._callback_server = callback_server
+
+    @property
+    def request_token_url(self) -> str:
+        return self._provider.REQUEST_TOKEN_URL
+
+    @property
+    def authorize_url(self) -> str:
+        return self._provider.AUTHORIZE_URL
+
+    @property
+    def access_token_url(self) -> str:
+        return self._provider.ACCESS_TOKEN_URL
+
+    def build_authorize_url(self, oauth_token: str) -> str:
+        return f"{self.authorize_url}?{urlencode({'oauth_token': oauth_token})}"
+
+    def request_token(
+        self,
+        consumer_key: str,
+        consumer_secret: str,
+        callback_url: str = "oob",
+    ) -> OAuth1Tokens:
+        OAuth1Client = require_authlib("OAuth1Client")
+        hook = partial(_raise_token_endpoint_error, url=self.request_token_url)
+        with OAuth1Client(
+            client_id=consumer_key,
+            client_secret=consumer_secret,
+            redirect_uri=callback_url,
+            event_hooks={"response": [hook]},
+        ) as client:
+            return client.fetch_request_token(self.request_token_url)
+
+    def exchange_verifier(
+        self,
+        consumer_key: str,
+        consumer_secret: str,
+        oauth_token: str,
+        oauth_token_secret: str,
+        verifier: str,
+    ) -> OAuth1Tokens:
+        OAuth1Client = require_authlib("OAuth1Client")
+
+        hook = partial(_raise_token_endpoint_error, url=self.access_token_url)
+        with OAuth1Client(
+            client_id=consumer_key,
+            client_secret=consumer_secret,
+            token=oauth_token,
+            token_secret=oauth_token_secret,
+            event_hooks={"response": [hook]},
+        ) as client:
+            token = client.fetch_access_token(self.access_token_url, verifier=verifier)
+        return {
+            "oauth_token": token["oauth_token"],
+            "oauth_token_secret": token["oauth_token_secret"],
+        }
+
+    @overload
+    def resolve_token_pair(
+        self, auth_profile: PersistableAuthProfile, *, auto_authorize: Literal[False] = False,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> tuple[str, str]: ...
+
+    @overload
+    def resolve_token_pair(
+        self, auth_profile: OAuth1CredentialProfile, *, auto_authorize: Literal[True],
+        callback_server: CallbackServerFactory | None = None,
+    ) -> tuple[str, str]: ...
+
+    @overload
+    def resolve_token_pair(
+        self, auth_profile: OAuth1CredentialProfile, *, auto_authorize: bool,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> tuple[str, str]: ...
+
+    def resolve_token_pair(
+        self,
+        auth_profile: PersistableAuthProfile,
+        *,
+        auto_authorize: bool = False,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> tuple[str, str]:
+        """Resolve an OAuth1 access token pair: cached → authorize → persist.
+
+        Returns ``(oauth_token, oauth_token_secret)``. Raises
+        ``AuthorizationRequired`` when no cached pair exists and
+        ``auto_authorize`` is False.
+        """
+        provider = self._provider.NAME
+        if self._token_store is None:
+            raise RuntimeError("OAuth persistence requires token_store")
+        backend = oauth_token_store(self._token_store)
+        key = auth_profile.persist_key()
+        with backend.transaction(key):
+            cleared = backend.is_cleared(key)
+            tokens = None if cleared else backend.get(key)
+            if tokens:
+                token = token_string(tokens.get("oauth_token", ""), field="oauth_token")
+                if "oauth_token_secret" in tokens:
+                    token_string(tokens["oauth_token_secret"], field="oauth_token_secret")
+                if token:
+                    return token, token_string(tokens.get("oauth_token_secret"), field="oauth_token_secret")
+
+        if auto_authorize:
+            # The interactive overload requires credentials; cached callers need only a key.
+            credentials = cast("OAuth1CredentialProfile", auth_profile)
+            new_tokens = self._authorize_and_store(credentials, callback_server=callback_server)
+            return new_tokens["oauth_token"], new_tokens["oauth_token_secret"]
+
+        raise AuthorizationRequired(provider=provider, user="default")
+
+    def _authorize_and_store(
+        self, auth_profile: OAuth1CredentialProfile, *,
+        callback_server: CallbackServerFactory | None = None,
+    ) -> OAuth1Tokens:
+        """Authorize and persist, unless the session was revoked while authorizing.
+
+        Mirrors OAuth2: an epoch is stamped on the record before the interactive
+        step and re-checked under the transaction before saving, so a revoke
+        (which deletes the record and tombstones the key) cannot be resurrected.
+        """
+        if self._token_store is None:
+            raise RuntimeError("OAuth persistence requires token_store")
+        backend = oauth_token_store(self._token_store)
+        key = auth_profile.persist_key()
+        with backend.transaction(key):
+            record = None if backend.is_cleared(key) else backend.get(key)
+            lifecycle = record.get("lifecycle") if record else None
+            epoch = lifecycle.get("epoch") if isinstance(lifecycle, dict) else None
+            if not isinstance(epoch, str):
+                epoch = secrets.token_urlsafe(32)
+                initialized = dict(record or {})
+                initialized["lifecycle"] = {"epoch": epoch}
+                backend.set(key, initialized)
+        tokens = self.authorize(
+            consumer_key=auth_profile.CONSUMER_KEY,
+            consumer_secret=auth_profile.CONSUMER_SECRET.get_secret_value(),
+            callback_server=callback_server,
+        )
+        saved = token_record(tokens)
+        with backend.transaction(key):
+            current = None if backend.is_cleared(key) else backend.get(key)
+            lifecycle = current.get("lifecycle") if current else None
+            permitted = isinstance(lifecycle, dict) and lifecycle.get("epoch") == epoch
+            if permitted:
+                saved["lifecycle"] = {"epoch": epoch}
+                backend.set(key, saved)
+        if not permitted:
+            raise AuthorizationCancelled(remote_confirmed=False)
+        return tokens
+
+    def authorize(
+        self,
+        consumer_key: str,
+        consumer_secret: str,
+        redirect_mode: Literal["local_server", "manual"] = "local_server",
+        callback_server: CallbackServerFactory | None = None,
+    ) -> OAuth1Tokens:
+        factory = resolve_callback_factory(
+            redirect_mode=redirect_mode,
+            callback_server=callback_server,
+            instance_default=self._callback_server,
+            callback_port=self._provider.CALLBACK_PORT,
+            manual_redirect_uri="oob",
+        )
+        server = factory()
+
+        request_token = self.request_token(consumer_key, consumer_secret, server.redirect_uri)
+        url = self.build_authorize_url(request_token["oauth_token"])
+        params = server.obtain_callback(url)
+
+        returned_token = params.get("oauth_token")
+        if returned_token is not None and not secrets.compare_digest(
+            returned_token.encode(), request_token["oauth_token"].encode()
+        ):
+            raise ValueError("OAuth1 token mismatch — possible CSRF")
+
+        # Bare manual paste lands the verifier in "code"; accept it as a fallback.
+        verifier = params.get("oauth_verifier") or params.get("code")
+        if not verifier:
+            raise MalformedCallbackError("OAuth1 callback missing 'oauth_verifier'")
+
+        return self.exchange_verifier(
+            consumer_key=consumer_key,
+            consumer_secret=consumer_secret,
+            oauth_token=request_token["oauth_token"],
+            oauth_token_secret=request_token["oauth_token_secret"],
+            verifier=verifier,
+        )

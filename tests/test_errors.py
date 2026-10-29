@@ -1,7 +1,6 @@
 """Tests for auth error types."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from mountainash_auth_client.errors import (
     AuthorizationRequired,
@@ -25,24 +24,9 @@ class TestTokenExchangeError:
         err = TokenExchangeError(url="https://example.com/token", status_code=400, body="bad")
         assert "https://example.com/token" in str(err)
 
-    def test_str_contains_body_excerpt(self):
-        err = TokenExchangeError(url="https://example.com/token", status_code=400, body="invalid_grant")
-        assert "invalid_grant" in str(err)
-
-    def test_body_truncated_in_str(self):
-        long_body = "Z" * 500
-        err = TokenExchangeError(url="https://auth.test/token", status_code=400, body=long_body)
-        # str should not include the full 500 chars (body[:200])
-        assert str(err).count("Z") <= 200
-
     def test_is_exception(self):
         err = TokenExchangeError(url="https://example.com/token", status_code=400, body="err")
         assert isinstance(err, Exception)
-
-    def test_can_be_raised_and_caught(self):
-        with pytest.raises(TokenExchangeError) as exc_info:
-            raise TokenExchangeError(url="https://example.com/token", status_code=500, body="server error")
-        assert exc_info.value.status_code == 500
 
 
 class TestTokenRefreshError:
@@ -60,18 +44,15 @@ class TestTokenRefreshError:
         err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="expired")
         assert "https://example.com/refresh" in str(err)
 
-    def test_str_contains_body_excerpt(self):
+    def test_str_excludes_body_but_attr_keeps_it(self):
         err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="token_expired")
-        assert "token_expired" in str(err)
+        assert "token_expired" not in str(err)
+        assert err.body == "token_expired"
+        assert err.error_code is None  # non-JSON body
 
     def test_is_exception(self):
         err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="err")
         assert isinstance(err, Exception)
-
-    def test_can_be_raised_and_caught(self):
-        with pytest.raises(TokenRefreshError) as exc_info:
-            raise TokenRefreshError(url="https://example.com/refresh", status_code=401, body="expired")
-        assert exc_info.value.url == "https://example.com/refresh"
 
 
 class TestAuthorizationRequired:
@@ -91,9 +72,3 @@ class TestAuthorizationRequired:
     def test_is_exception(self):
         err = AuthorizationRequired(provider="strava", user="dave")
         assert isinstance(err, Exception)
-
-    def test_can_be_raised_and_caught(self):
-        with pytest.raises(AuthorizationRequired) as exc_info:
-            raise AuthorizationRequired(provider="oura", user="eve")
-        assert exc_info.value.provider == "oura"
-        assert exc_info.value.user == "eve"

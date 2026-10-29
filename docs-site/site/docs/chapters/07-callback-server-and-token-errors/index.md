@@ -174,21 +174,21 @@ class TokenExchangeError(Exception):
         self.url = url
         self.status_code = status_code
         self.body = body
-        super().__init__(f"Token exchange failed: HTTP {status_code} POST {url} -- {body[:200]}")
+        super().__init__(f"Token exchange failed: HTTP {status_code} POST {url}")
 ```
 
 The exception carries three structured attributes:
 
 - **`url`** -- the token endpoint URL that was called (the Token Exchange URL)
 - **`status_code`** -- the HTTP response status code (e.g., 400 for invalid grant, 401 for bad credentials)
-- **`body`** -- the first 2000 characters of the response body, which typically contains a JSON error description from the provider
+- **`body`** -- a sanitized JSON string holding only the provider's `error` and `error_description` fields (empty when the response had neither). Raw response text is never retained
 
 <!-- concept:81 -->
 ### Token Exchange URL
 
 The `url` attribute on `TokenExchangeError` serves a specific diagnostic purpose. When a token exchange fails, knowing which URL was called helps determine whether the issue is a misconfigured endpoint (wrong URL), a network problem (connection refused), or a provider-side error. The same URL is used for both initial exchange and refresh, so the error message includes the HTTP method (`POST`) for clarity.
 
-The error message is constructed to be immediately useful in logs: `"Token exchange failed: HTTP 400 POST https://oauth.provider.com/token -- {"error":"invalid_grant","error_description":"Code expired"}"`. This includes the status code, the URL, and enough of the body to identify the provider's error message without overwhelming log aggregators with multi-kilobyte responses.
+The error message is constructed to be safe in logs: `"Token exchange failed: HTTP 400 POST https://oauth.provider.com/token"`. It carries the status code and URL only; the provider's error fields are available on `exc.body` and `exc.error_code`.
 
 <!-- concept:82 -->
 ### TokenRefreshError
@@ -201,7 +201,7 @@ class TokenRefreshError(Exception):
         self.url = url
         self.status_code = status_code
         self.body = body
-        super().__init__(f"Token refresh failed: HTTP {status_code} POST {url} -- {body[:200]}")
+        super().__init__(f"Token refresh failed: HTTP {status_code} POST {url}")
 ```
 
 <!-- concept:83 -->
@@ -247,7 +247,7 @@ The token error types in mountainash-auth-client follow several design principle
 
 **Keyword-only constructors.** Both error classes use `*` in their `__init__` signatures, forcing callers to use named arguments: `TokenExchangeError(url=..., status_code=..., body=...)`. This prevents a common bug where positional arguments are accidentally swapped (passing the body as the URL, for example).
 
-**Truncated body for safety.** The response body is truncated to 2000 characters at the point of capture (`exc.response.text[:2000]`). This prevents memory issues when providers return large HTML error pages, and keeps log output manageable. The truncation happens at the raise site, not in the exception constructor, so the stored `body` attribute is already safe to log or display.
+**Sanitized body for safety.** Raw token-endpoint response text can echo credentials (tokens, codes, secrets), so it is never stored. At the raise site only the RFC 6749 `error` and `error_description` strings are kept, as JSON (`safe_error_body`); non-JSON or malformed responses yield an empty body. The stored `body` attribute is therefore safe to log or display.
 
 **Separation of exchange and refresh errors.** Despite having identical structures, `TokenExchangeError` and `TokenRefreshError` are separate classes. This allows `except` clauses to catch them independently, enabling different recovery strategies. An exchange failure during initial authorization has different implications than a refresh failure during background token renewal.
 
@@ -291,7 +291,7 @@ For high-security environments where even local-host callbacks are unacceptable,
 - **Callback capture** blocks until a request arrives or the timeout (default 120 seconds) expires. The server is closed in a `finally` block to guarantee cleanup.
 - **`prompt_for_code`** is the fallback for environments without local port access. It accepts both full redirect URLs and bare authorization codes as user input.
 - **Manual redirect mode** uses the `urn:ietf:wg:oauth:2.0:oob` URI to signal that the provider should display the code on-screen rather than performing an HTTP redirect.
-- **`TokenExchangeError`** carries the token endpoint URL, HTTP status code, and response body (truncated to 2000 chars) for diagnostics when authorization code exchange fails.
+- **`TokenExchangeError`** carries the token endpoint URL, HTTP status code, and sanitized provider error fields (`error`/`error_description`) for diagnostics when authorization code exchange fails.
 - **`TokenRefreshError`** has the same structure and is raised when refresh token exchange fails, typically indicating an expired or revoked refresh token.
 - **The status code** on both error types enables structured recovery logic: 400 means clear and re-authorize, 401 means check configuration, 429/5xx means retry.
 - Both errors use **keyword-only constructors** (`*, url, status_code, body`) for clarity at the call site, preventing argument ordering mistakes.

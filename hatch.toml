@@ -7,6 +7,26 @@ path = "src/mountainash_auth_client/__version__.py"
 [build.targets.wheel]
 packages = ["src/mountainash_auth_client"]
 
+[build.targets.sdist]
+include = ["/src", "/pyproject.toml", "/hatch.toml", "/requirements-hatch.txt", "/README.md", "/LICENSE", "/NOTICE", "/tools", "/tests/typing", "/docs/typing.md"]
+
+
+#================
+# Env: build_github
+#================
+[envs.build_github]
+installer = "uv"
+# Hatch installs the project before syncing environment dependencies.
+dependencies = [
+    "cyclonedx-bom==4.5.0",
+    "mountainash-settings @ {root:uri}/temp/mountainash-settings",
+]
+
+[envs.build_github.scripts]
+sbom-all = "cyclonedx-py environment > ./sbom-full.json"
+export-requirements = "hatch dep show requirements > ./requirements.txt"
+sbom-direct = "cyclonedx-py requirements > ./sbom-direct.json"
+
 
 #================
 # Env: dev
@@ -22,6 +42,7 @@ dependencies = []
 # Env: default
 #================
 [envs.default]
+python = "3.12"
 installer = "uv"
 dependencies = []
 
@@ -39,7 +60,10 @@ dependencies = [
     "pytest>=8.0",
     "pytest-cov>=4.1.0",
     "pytest-timeout>=2.1.0",
+    "packaging",
     "mountainash-settings @ {root:uri}/../mountainash-settings",
+    "authlib>=1.9.1",
+    "paramiko>=5.0.0",
 ]
 
 [envs.test.scripts]
@@ -72,12 +96,102 @@ test-target = [
 test-target-quick = "pytest {args}"
 
 #================
+# Env: test_github
+#================
+[[envs.test_github.matrix]]
+python = ["3.12"]
+
+[envs.test_github]
+type = "virtual"
+installer = "uv"
+dependencies = [
+    "coverage[toml]>=6.5",
+    "pytest>=8.0",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.1.0",
+    "mountainash-settings @ {root:uri}/temp/mountainash-settings",
+    "authlib>=1.9.1",
+    "paramiko>=5.0.0",
+]
+
+[envs.test_github.scripts]
+test = [
+    "pytest --cov --junitxml=junit.xml {args}",
+    "coverage json --pretty-print",
+    "coverage xml",
+    "coverage html",
+    "coverage report --show-missing",
+]
+test-quick = "pytest {args}"
+test-target = [
+    "coverage run --source=src -m pytest {args}",
+    "coverage xml",
+    "coverage json --pretty-print",
+    "coverage report --show-missing",
+]
+test-target-quick = "pytest {args}"
+
+
+#================
 # Env: ruff
 #================
 [envs.ruff]
 installer = "uv"
+detached = true
 dependencies = ["ruff==0.3.7"]
 
 [envs.ruff.scripts]
 check = "ruff check ./src"
 fix = "ruff check ./src --fix"
+
+#================
+# Env: mypy
+#================
+[envs.mypy]
+installer = "uv"
+path = ".hatch/mypy"
+# Install typing dependencies during provisioning, not as a side effect of checking.
+dependencies = [
+    "build==1.2.2.post1",
+    "hatchling==1.27.0",
+    "mypy==1.10.1",
+    "pytest==8.3.5",
+    "packaging>=24.0",
+    "types-PyYAML==6.0.12.20260906",
+    "mountainash-settings @ {root:uri}/../mountainash-settings",
+    "authlib>=1.9.1",
+    "paramiko>=5.0.0",
+]
+
+[envs.mypy.scripts]
+check = "mypy {args:src/mountainash_auth_client tests}"
+check-src = "mypy src/mountainash_auth_client {args}"
+check-tests = "mypy tests {args}"
+check-src-untyped = "mypy --check-untyped-defs src/mountainash_auth_client {args}"
+check-tests-untyped = "mypy --check-untyped-defs tests {args}"
+qualify = "python tools/qualify_typing.py {args}"
+
+#================
+# Env: radon
+#================
+[envs.radon]
+installer = "uv"
+detached = true
+dependencies = ["radon==6.0.1"]
+
+[envs.radon.scripts]
+radon-cc = "radon cc ./src -nd"
+radon-mi = "radon mi ./src -nd"
+
+# Constraints are active before Hatch installs the project, not just at env sync.
+[envs.default.env-vars]
+UV_CONSTRAINT = "{root}/requirements-hatch.txt"
+HATCH_SIBLINGS = "{root:uri}/.."
+
+[envs.test_github.env-vars]
+UV_CONSTRAINT = "{root}/requirements-hatch.txt"
+HATCH_SIBLINGS = "{root:uri}/temp"
+
+[envs.build_github.env-vars]
+UV_CONSTRAINT = "{root}/requirements-hatch.txt"
+HATCH_SIBLINGS = "{root:uri}/temp"

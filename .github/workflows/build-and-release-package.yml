@@ -1,0 +1,828 @@
+name: Build, Verify, and Publish Package
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop, 'release/**', 'feature/**', 'bugfix/**', 'hotfix/**']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified candidate to PyPI (main only)
+        required: true
+        default: false
+        type: boolean
+      verify_public:
+        description: Verify public-PyPI-only install readiness without publishing
+        required: true
+        default: false
+        type: boolean
+      release_type:
+        description: MountainAsh release type (PyPI requires production)
+        required: true
+        default: production
+        type: choice
+        options: [production, rc, beta]
+      fallback_branch:
+        description: Fallback branch for sibling dependencies
+        required: true
+        default: develop
+        type: choice
+        options: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-verify:
+    name: Build and verify candidate (development rehearsal)
+    runs-on: ubuntu-24.04
+    outputs:
+      dist-artifact-id: ${{ steps.upload-dist.outputs.artifact-id }}
+      evidence-artifact-id: ${{ steps.upload-evidence.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: mountainash-io
+          repositories: |
+            mountainash-settings
+
+      - name: Load Dependencies
+        id: deps
+        uses: ./.github/actions/load-dependencies
+        with:
+          config-path: .github/config/mountainash_dependencies.yml
+
+      - name: Checkout Dependencies
+        uses: ./.github/actions/checkout-dependencies
+        with:
+          dependencies: ${{ steps.deps.outputs.dependencies }}
+          target-branch: ${{ github.head_ref || github.ref_name }}
+          default-branch: ${{ github.base_ref || inputs.fallback_branch }}
+          token: ${{ steps.app-token.outputs.token }}
+          org-name: mountainash-io
+
+
+      - name: Install public build tools
+        env:
+          RELEASE_ROOT: ${{ runner.temp }}/mountainash-release
+        run: |
+          mkdir -p "$RELEASE_ROOT/home"
+          env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            python -I -m pip install --isolated --no-input --index-url https://pypi.org/simple build==1.6.1 twine==7.0.0 hatch==1.18.2
+
+      - name: Set release version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          PUBLISH: ${{ inputs.publish }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          python -I - <<'PY'
+          import ast
+          import os
+          from pathlib import Path
+          from packaging.version import Version
+
+          path = Path('src/mountainash_auth_client/__version__.py')
+          base = ast.literal_eval(ast.parse(path.read_text()).body[0].value)
+          release_type = os.environ['RELEASE_TYPE']
+          if os.environ['EVENT_NAME'] == 'pull_request':
+              target = os.environ['TARGET_BRANCH']
+              release_type = 'production' if target == 'main' else 'rc' if target == 'develop' else 'beta'
+          if os.environ['PUBLISH'] == 'true' and (
+              os.environ['TARGET_BRANCH'] != 'main' or release_type != 'production'
+          ):
+              raise SystemExit('PyPI publication requires a production release on main')
+          releasing = os.environ['PUBLISH'] == 'true'
+          if releasing and release_type != 'production':
+              suffix = 'rc' if release_type == 'rc' else 'b'
+              version = f'{Version(base).base_version}{suffix}{os.environ["RUN_NUMBER"]}'
+              path.write_text(f'__version__ = "{version}"\n')
+          PY
+
+      - name: Build exactly one wheel and sdist
+        env:
+          RELEASE_ROOT: ${{ runner.temp }}/mountainash-release
+        run: |
+          rm -rf "$RELEASE_ROOT"
+          mkdir -p "$RELEASE_ROOT/dist" "$RELEASE_ROOT/evidence" "$RELEASE_ROOT/home"
+          env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            python -I -m build --wheel --sdist --outdir "$RELEASE_ROOT/dist"
+          test "$(find "$RELEASE_ROOT/dist" -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+          test "$(find "$RELEASE_ROOT/dist" -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1
+          env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+            python -I -m twine check "$RELEASE_ROOT/dist"/*
+
+      - name: Verify Apache-2.0 licence metadata and files in built artifacts
+        env:
+          DIST_DIR: ${{ runner.temp }}/mountainash-release/dist
+        run: |
+          python -I - "$DIST_DIR" <<'PY'
+          import sys, tarfile, zipfile
+          from email.parser import BytesParser
+          from pathlib import Path
+
+          dist = Path(sys.argv[1])
+          wheels, sdists = sorted(dist.glob('*.whl')), sorted(dist.glob('*.tar.gz'))
+          if len(wheels) != 1 or len(sdists) != 1 or len(list(dist.iterdir())) != 2:
+              raise SystemExit(f'{dist} must contain exactly one wheel and one sdist')
+          with zipfile.ZipFile(wheels[0]) as archive:
+              names = archive.namelist()
+              info, = {name.split('/')[0] for name in names if name.split('/')[0].endswith('.dist-info')}
+              wheel = {n: archive.read(f'{info}/{p}') for n, p in (('METADATA', 'METADATA'), ('LICENSE', 'licenses/LICENSE'), ('NOTICE', 'licenses/NOTICE'))}
+          with tarfile.open(sdists[0]) as archive:
+              root, = {name.split('/')[0] for name in archive.getnames()}
+              sdist = {n: archive.extractfile(f'{root}/{p}').read() for n, p in (('METADATA', 'PKG-INFO'), ('LICENSE', 'LICENSE'), ('NOTICE', 'NOTICE'))}
+          for kind, files in (('wheel', wheel), ('sdist', sdist)):
+              metadata = BytesParser().parsebytes(files['METADATA'])
+              if metadata.get_all('License-Expression') != ['Apache-2.0']:
+                  raise SystemExit(f'{kind} License-Expression is not exactly Apache-2.0')
+              if not {'LICENSE', 'NOTICE'} <= set(metadata.get_all('License-File', [])):
+                  raise SystemExit(f'{kind} License-File must include LICENSE and NOTICE')
+              for name in ('LICENSE', 'NOTICE'):
+                  if files[name] != Path(name).read_bytes():
+                      raise SystemExit(f'{kind} {name} differs from the checked-out {name}')
+          print('Apache-2.0 metadata, LICENSE, and NOTICE verified in wheel and sdist')
+          PY
+
+      - name: Build checked-out sibling wheels
+        env:
+          RELEASE_ROOT: ${{ runner.temp }}/mountainash-release
+        run: |
+          mkdir -p "$RELEASE_ROOT/evidence/dependency-wheels"
+          for dependency in mountainash-settings; do
+            env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple \
+              python -I -m build --wheel --outdir "$RELEASE_ROOT/evidence/dependency-wheels" "temp/$dependency"
+            git -C "temp/$dependency" rev-parse HEAD > "$RELEASE_ROOT/evidence/$dependency-revision.txt"
+          done
+
+      - name: Record approved artifact identity
+        env:
+          RELEASE_ROOT: ${{ runner.temp }}/mountainash-release
+          PACKAGE_DISTRIBUTION: mountainash-auth-client
+        run: |
+          env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+            python -I - "$RELEASE_ROOT/dist" "$RELEASE_ROOT/evidence" "$PACKAGE_DISTRIBUTION" <<'PY'
+          import hashlib
+          import json
+          import re
+          import sys
+          import zipfile
+          from email.parser import Parser
+          from pathlib import Path
+          from packaging.version import Version
+
+          dist, evidence, expected_distribution = map(Path, sys.argv[1:])
+          wheel, = dist.glob('*.whl')
+          sdist, = dist.glob('*.tar.gz')
+          with zipfile.ZipFile(wheel) as archive:
+              metadata_name = next(name for name in archive.namelist() if name.endswith('.dist-info/METADATA'))
+              metadata = Parser().parsestr(archive.read(metadata_name).decode())
+          canonical_name = re.sub(r'[-_.]+', '-', metadata['Name']).lower()
+          if canonical_name != str(expected_distribution):
+              raise SystemExit(f'wheel canonical name is {canonical_name}, not {expected_distribution}')
+          if metadata['Requires-Python'] != '>=3.12':
+              raise SystemExit('Requires-Python must declare the approved >=3.12 support policy')
+          requires_dist = sorted(metadata.get_all('Requires-Dist', []))
+          if any('@' in requirement for requirement in requires_dist):
+              raise SystemExit('wheel metadata contains a direct-reference dependency')
+          files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in (wheel, sdist)}
+          release = {
+              'distribution': canonical_name,
+              'version': metadata['Version'],
+              'source_sha': '${{ github.sha }}',
+              'repository': '${{ github.repository }}',
+              'run_id': '${{ github.run_id }}',
+              'run_attempt': '${{ github.run_attempt }}',
+              'files': files,
+              'prerelease': Version(metadata['Version']).is_prerelease,
+              'dependency_files': {
+                  path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                  for path in (evidence / 'dependency-wheels').glob('*.whl')
+              },
+          }
+          (evidence / 'release.json').write_text(json.dumps(release, indent=2, sort_keys=True) + '\n')
+          (evidence / 'SHA256SUMS').write_text(''.join(f'{digest}  {name}\n' for name, digest in sorted(files.items())))
+          PY
+
+      - name: Verify candidate wheel outside the checkout (development rehearsal)
+        env:
+          RELEASE_ROOT: ${{ runner.temp }}/mountainash-release
+          PACKAGE_IMPORT: mountainash_auth_client
+        run: |
+          wheel=$(find "$RELEASE_ROOT/dist" -maxdepth 1 -name '*.whl' -print -quit)
+          python -m venv "$RELEASE_ROOT/candidate-venv"
+          (
+            cd "$RELEASE_ROOT"
+            env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+              "$RELEASE_ROOT/candidate-venv/bin/python" -I -m pip install --isolated --no-input --index-url https://pypi.org/simple --report "$RELEASE_ROOT/evidence/candidate-install-report.json" "$wheel" "$RELEASE_ROOT/evidence/dependency-wheels"/*.whl
+            env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+              "$RELEASE_ROOT/candidate-venv/bin/python" -I -m pip check
+            env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+              "$RELEASE_ROOT/candidate-venv/bin/python" -I - "$RELEASE_ROOT/evidence/candidate-install-report.json" "$wheel" "$RELEASE_ROOT/evidence/candidate-module-origin.txt" "$PACKAGE_IMPORT" <<'PY'
+          import importlib
+          import json
+          import sys
+          from pathlib import Path
+
+          report, candidate, output, module_name = sys.argv[1:]
+          allowed = {Path(candidate).resolve().as_uri()}
+          allowed.update(path.resolve().as_uri() for path in (Path(report).parent / 'dependency-wheels').glob('*.whl'))
+          for item in json.loads(Path(report).read_text()).get('install', []):
+              url = item.get('download_info', {}).get('url', '')
+              if not (url in allowed or url.startswith(('https://pypi.org/', 'https://files.pythonhosted.org/'))):
+                  raise SystemExit(f'candidate install used an unapproved source: {url}')
+          module = importlib.import_module(module_name)
+          origin = Path(module.__file__).resolve()
+          prefix = Path(sys.prefix).resolve()
+          if prefix not in origin.parents:
+              raise SystemExit(f'{module_name} did not load from this virtual environment: {origin}')
+          Path(output).write_text(f'{module_name}={origin}\n')
+          PY
+          )
+
+      - name: Rebuild and verify from the sdist (development rehearsal)
+        env:
+          RELEASE_ROOT: ${{ runner.temp }}/mountainash-release
+          PACKAGE_IMPORT: mountainash_auth_client
+        run: |
+          sdist=$(find "$RELEASE_ROOT/dist" -maxdepth 1 -name '*.tar.gz' -print -quit)
+          mkdir "$RELEASE_ROOT/rebuilt"
+          env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            python -I -m pip wheel --no-deps --index-url https://pypi.org/simple --wheel-dir "$RELEASE_ROOT/rebuilt" "$sdist"
+          test "$(find "$RELEASE_ROOT/rebuilt" -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+          env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+            python -I - "$RELEASE_ROOT/dist" "$RELEASE_ROOT/rebuilt" "$RELEASE_ROOT/evidence/sdist-metadata-comparison.json" <<'PY'
+          import json
+          import sys
+          import zipfile
+          from email.parser import Parser
+          from pathlib import Path
+
+          def metadata(directory):
+              wheel, = Path(directory).glob('*.whl')
+              with zipfile.ZipFile(wheel) as archive:
+                  name = next(item for item in archive.namelist() if item.endswith('.dist-info/METADATA'))
+                  parsed = Parser().parsestr(archive.read(name).decode())
+              result = {
+                  'filename': wheel.name,
+                  'name': parsed['Name'],
+                  'version': parsed['Version'],
+                  'requires_python': parsed['Requires-Python'],
+                  'requires_dist': sorted(parsed.get_all('Requires-Dist', [])),
+                  'provides_extra': sorted(parsed.get_all('Provides-Extra', [])),
+              }
+              if any('@' in requirement for requirement in result['requires_dist']):
+                  raise SystemExit(f'{wheel.name} contains a direct-reference dependency')
+              return result
+
+          original = metadata(sys.argv[1])
+          rebuilt = metadata(sys.argv[2])
+          keys = ('name', 'version', 'requires_python', 'requires_dist', 'provides_extra')
+          if {key: original[key] for key in keys} != {key: rebuilt[key] for key in keys}:
+              raise SystemExit(f'sdist wheel metadata differs: {original} != {rebuilt}')
+          Path(sys.argv[3]).write_text(json.dumps({'original': original, 'rebuilt': rebuilt}, indent=2, sort_keys=True) + '\n')
+          PY
+          rebuilt=$(find "$RELEASE_ROOT/rebuilt" -maxdepth 1 -name '*.whl' -print -quit)
+          python -m venv "$RELEASE_ROOT/sdist-venv"
+          (
+            cd "$RELEASE_ROOT"
+            env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+              "$RELEASE_ROOT/sdist-venv/bin/python" -I -m pip install --isolated --no-input --index-url https://pypi.org/simple --report "$RELEASE_ROOT/evidence/sdist-install-report.json" "$rebuilt" "$RELEASE_ROOT/evidence/dependency-wheels"/*.whl
+            env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+              "$RELEASE_ROOT/sdist-venv/bin/python" -I -m pip check
+            env -i PATH="$PATH" HOME="$RELEASE_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+              "$RELEASE_ROOT/sdist-venv/bin/python" -I - "$RELEASE_ROOT/evidence/sdist-install-report.json" "$rebuilt" "$RELEASE_ROOT/evidence/sdist-module-origin.txt" "$PACKAGE_IMPORT" <<'PY'
+          import importlib
+          import json
+          import sys
+          from pathlib import Path
+
+          report, candidate, output, module_name = sys.argv[1:]
+          allowed = {Path(candidate).resolve().as_uri()}
+          allowed.update(path.resolve().as_uri() for path in (Path(report).parent / 'dependency-wheels').glob('*.whl'))
+          for item in json.loads(Path(report).read_text()).get('install', []):
+              url = item.get('download_info', {}).get('url', '')
+              if not (url in allowed or url.startswith(('https://pypi.org/', 'https://files.pythonhosted.org/'))):
+                  raise SystemExit(f'sdist install used an unapproved source: {url}')
+          module = importlib.import_module(module_name)
+          origin = Path(module.__file__).resolve()
+          prefix = Path(sys.prefix).resolve()
+          if prefix not in origin.parents:
+              raise SystemExit(f'{module_name} did not load from this virtual environment: {origin}')
+          Path(output).write_text(f'{module_name}={origin}\n')
+          PY
+          )
+
+      - name: Generate MountainAsh SBOMs
+        env:
+          RELEASE_ROOT: ${{ runner.temp }}/mountainash-release
+        run: |
+          hatch run build_github:sbom-all
+          hatch run build_github:export-requirements
+          hatch run build_github:sbom-direct
+          cp sbom-full.json sbom-direct.json "$RELEASE_ROOT/evidence/"
+
+      - name: Upload approved distributions
+        id: upload-dist
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dist-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mountainash-release/dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload development rehearsal evidence
+        id: upload-evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mountainash-release/evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  verify-public:
+    name: Verify public PyPI readiness
+    if: github.event_name == 'workflow_dispatch' && (inputs.verify_public || inputs.publish)
+    needs: build-and-verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Prepare public-only verification workspace
+        env:
+          PUBLIC_ROOT: ${{ runner.temp }}/mountainash-public-verification
+        run: |
+          rm -rf "$PUBLIC_ROOT"
+          mkdir -p "$PUBLIC_ROOT/candidate-dist" "$PUBLIC_ROOT/approved-evidence" "$PUBLIC_ROOT/evidence" "$PUBLIC_ROOT/home"
+
+      - name: Download the exact development rehearsal distribution artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.build-and-verify.outputs.dist-artifact-id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/mountainash-public-verification/candidate-dist
+
+      - name: Download the exact development rehearsal evidence artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.build-and-verify.outputs.evidence-artifact-id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/mountainash-public-verification/approved-evidence
+
+      - name: Revalidate exact wheel and sdist identity
+        env:
+          PUBLIC_ROOT: ${{ runner.temp }}/mountainash-public-verification
+        run: |
+          env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+            python -I - "$PUBLIC_ROOT/candidate-dist" "$PUBLIC_ROOT/approved-evidence" "$PUBLIC_ROOT/evidence/public-artifact-validation.json" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          candidate, approved_evidence, output = map(Path, sys.argv[1:])
+          release = json.loads((approved_evidence / 'release.json').read_text())
+          expected = release['files']
+          actual = {path.name: path for path in candidate.iterdir() if path.is_file()}
+          wheels = [name for name in actual if name.endswith('.whl')]
+          sdists = [name for name in actual if name.endswith('.tar.gz')]
+          if set(actual) != set(expected) or len(actual) != 2 or len(wheels) != 1 or len(sdists) != 1:
+              raise SystemExit(f'approved artifact set mismatch: expected {sorted(expected)}, got {sorted(actual)}')
+          for name, expected_hash in expected.items():
+              actual_hash = hashlib.sha256(actual[name].read_bytes()).hexdigest()
+              if actual_hash != expected_hash:
+                  raise SystemExit(f'hash mismatch for {name}')
+          output.write_text(json.dumps({'files': expected}, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Install public build tools
+        env:
+          PUBLIC_ROOT: ${{ runner.temp }}/mountainash-public-verification
+        run: |
+          python -m venv "$PUBLIC_ROOT/build-tools-venv"
+          env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            "$PUBLIC_ROOT/build-tools-venv/bin/python" -I -m pip install --isolated --no-input --only-binary=:all: --index-url https://pypi.org/simple build==1.6.1
+
+      - name: Verify original wheel with public PyPI dependencies only
+        env:
+          PUBLIC_ROOT: ${{ runner.temp }}/mountainash-public-verification
+          PACKAGE_IMPORT: mountainash_auth_client
+        run: |
+          wheel=$(find "$PUBLIC_ROOT/candidate-dist" -maxdepth 1 -name '*.whl' -print -quit)
+          python -m venv "$PUBLIC_ROOT/wheel-venv"
+          (
+            cd "$PUBLIC_ROOT"
+            env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+              "$PUBLIC_ROOT/wheel-venv/bin/python" -I -m pip install --isolated --no-input --only-binary=:all: --index-url https://pypi.org/simple --report "$PUBLIC_ROOT/evidence/wheel-install-report.json" "$wheel"
+            env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+              "$PUBLIC_ROOT/wheel-venv/bin/python" -I -m pip check
+            env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+              "$PUBLIC_ROOT/wheel-venv/bin/python" -I - "$PUBLIC_ROOT/evidence/wheel-install-report.json" "$wheel" "$PUBLIC_ROOT/evidence/wheel-module-origin.txt" "$PACKAGE_IMPORT" <<'PY'
+          import importlib
+          import json
+          import sys
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          report, candidate, output, module_name = sys.argv[1:]
+          allowed = Path(candidate).resolve().as_uri()
+          installations = json.loads(Path(report).read_text()).get('install')
+          if not isinstance(installations, list) or not installations:
+              raise SystemExit('public-only wheel install report is missing or empty')
+          for item in installations:
+              try:
+                  url = item['download_info']['url']
+              except (KeyError, TypeError):
+                  raise SystemExit('public-only wheel install report has no source URL')
+              if not isinstance(url, str) or not urlsplit(url).path.endswith('.whl') or (url != allowed and not url.startswith(('https://pypi.org/', 'https://files.pythonhosted.org/'))):
+                  raise SystemExit(f'public-only wheel install used a non-public wheel source: {url}')
+          module = importlib.import_module(module_name)
+          origin = Path(module.__file__).resolve()
+          prefix = Path(sys.prefix).resolve()
+          if prefix not in origin.parents:
+              raise SystemExit(f'{module_name} did not load from this virtual environment: {origin}')
+          Path(output).write_text(f'{module_name}={origin}\n')
+          PY
+          )
+
+      - name: Rebuild sdist with verified public PyPI build dependencies
+        env:
+          PUBLIC_ROOT: ${{ runner.temp }}/mountainash-public-verification
+        run: |
+          sdist=$(find "$PUBLIC_ROOT/candidate-dist" -maxdepth 1 -name '*.tar.gz' -print -quit)
+          mkdir "$PUBLIC_ROOT/rebuilt" "$PUBLIC_ROOT/sdist-source"
+          env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            "$PUBLIC_ROOT/build-tools-venv/bin/python" -I - "$sdist" "$PUBLIC_ROOT/sdist-source" "$PUBLIC_ROOT/rebuilt" "$PUBLIC_ROOT/evidence" <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          import tarfile
+          from pathlib import Path, PurePosixPath
+          from urllib.parse import urlsplit
+
+          from build import ProjectBuilder
+          from build.env import DefaultIsolatedEnv
+          from packaging.requirements import InvalidRequirement, Requirement
+
+          sdist, extraction, rebuilt, evidence = map(Path, sys.argv[1:])
+          public_prefixes = ('https://pypi.org/', 'https://files.pythonhosted.org/')
+
+          with tarfile.open(sdist) as archive:
+              for member in archive.getmembers():
+                  parts = PurePosixPath(member.name).parts
+                  if not parts or member.name.startswith('/') or '..' in parts or not (member.isdir() or member.isfile()):
+                      raise SystemExit(f'unsafe sdist member: {member.name}')
+              archive.extractall(extraction, filter='data')
+          roots = [path for path in extraction.iterdir() if path.is_dir()]
+          if len(roots) != 1 or any(path.is_file() for path in extraction.iterdir()):
+              raise SystemExit('sdist must extract to exactly one source directory')
+          source = roots[0]
+          evidence_path = evidence / 'build-requirements.json'
+
+          def write_requirements(static, dynamic=None):
+              evidence_path.write_text(json.dumps(
+                  {'static': sorted(static), 'dynamic': None if dynamic is None else sorted(dynamic)},
+                  indent=2,
+                  sort_keys=True,
+              ) + '\n')
+
+          def require_public(requirements, phase):
+              for requirement in requirements:
+                  try:
+                      parsed = Requirement(requirement)
+                  except InvalidRequirement as error:
+                      raise SystemExit(f'{phase} build requirement is invalid: {requirement}: {error}')
+                  if parsed.url:
+                      raise SystemExit(f'{phase} build requirement must not use a direct URL: {parsed.url}')
+
+          def verify_report(report, phase):
+              installations = json.loads(report.read_text()).get('install')
+              if not isinstance(installations, list) or not installations:
+                  raise SystemExit(f'{phase} build dependency install report is missing or empty')
+              for item in installations:
+                  try:
+                      url = item['download_info']['url']
+                  except (KeyError, TypeError):
+                      raise SystemExit(f'{phase} build dependency install report has no source URL')
+                  if not isinstance(url, str) or not urlsplit(url).path.endswith('.whl') or not url.startswith(public_prefixes):
+                      raise SystemExit(f'{phase} build dependency install used a non-public wheel source: {url}')
+
+          def install(requirements, report, interpreter, phase):
+              requirements = {
+                  requirement for requirement in requirements
+                  if (marker := Requirement(requirement).marker) is None or marker.evaluate()
+              }
+              if not requirements:
+                  return
+              subprocess.run(
+                  [
+                      sys.executable, '-I', '-m', 'pip', '--python', interpreter,
+                      'install', '--isolated', '--no-input',
+                      '--ignore-installed', '--no-cache-dir', '--only-binary=:all:', '--index-url', 'https://pypi.org/simple',
+                      '--report', str(report), *sorted(requirements),
+                  ],
+                  check=True,
+                  env={
+                      'PATH': os.environ['PATH'],
+                      'HOME': os.environ['HOME'],
+                      'PIP_CONFIG_FILE': '/dev/null',
+                      'PIP_DISABLE_PIP_VERSION_CHECK': '1',
+                  },
+              )
+              verify_report(report, phase)
+
+          with DefaultIsolatedEnv() as env:
+              builder = ProjectBuilder.from_isolated_env(env, str(source))
+              static = {str(requirement) for requirement in builder.build_system_requires}
+              write_requirements(static)
+              require_public(static, 'static')
+              install(static, evidence / 'build-static-install-report.json', env.python_executable, 'static')
+              dynamic = {str(requirement) for requirement in builder.get_requires_for_build('wheel')}
+              write_requirements(static, dynamic)
+              require_public(dynamic, 'dynamic')
+              install(dynamic, evidence / 'build-dynamic-install-report.json', env.python_executable, 'dynamic')
+              builder.build('wheel', str(rebuilt))
+          PY
+          test "$(find "$PUBLIC_ROOT/rebuilt" -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+
+      - name: Compare original and sdist-derived wheel metadata
+        env:
+          PUBLIC_ROOT: ${{ runner.temp }}/mountainash-public-verification
+        run: |
+          env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+            python -I - "$PUBLIC_ROOT/candidate-dist" "$PUBLIC_ROOT/rebuilt" "$PUBLIC_ROOT/evidence/sdist-metadata-comparison.json" <<'PY'
+          import json
+          import sys
+          import zipfile
+          from email.parser import Parser
+          from pathlib import Path
+
+          def metadata(directory):
+              wheel, = Path(directory).glob('*.whl')
+              with zipfile.ZipFile(wheel) as archive:
+                  name = next(item for item in archive.namelist() if item.endswith('.dist-info/METADATA'))
+                  parsed = Parser().parsestr(archive.read(name).decode())
+              result = {
+                  'filename': wheel.name,
+                  'name': parsed['Name'],
+                  'version': parsed['Version'],
+                  'requires_python': parsed['Requires-Python'],
+                  'requires_dist': sorted(parsed.get_all('Requires-Dist', [])),
+                  'provides_extra': sorted(parsed.get_all('Provides-Extra', [])),
+              }
+              if any('@' in requirement for requirement in result['requires_dist']):
+                  raise SystemExit(f'{wheel.name} contains a direct-reference dependency')
+              return result
+
+          original = metadata(sys.argv[1])
+          rebuilt = metadata(sys.argv[2])
+          keys = ('name', 'version', 'requires_python', 'requires_dist', 'provides_extra')
+          if {key: original[key] for key in keys} != {key: rebuilt[key] for key in keys}:
+              raise SystemExit(f'sdist wheel metadata differs: {original} != {rebuilt}')
+          Path(sys.argv[3]).write_text(json.dumps({'original': original, 'rebuilt': rebuilt}, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Verify sdist-derived wheel with public PyPI dependencies only
+        env:
+          PUBLIC_ROOT: ${{ runner.temp }}/mountainash-public-verification
+          PACKAGE_IMPORT: mountainash_auth_client
+        run: |
+          rebuilt=$(find "$PUBLIC_ROOT/rebuilt" -maxdepth 1 -name '*.whl' -print -quit)
+          python -m venv "$PUBLIC_ROOT/sdist-venv"
+          (
+            cd "$PUBLIC_ROOT"
+            env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+              "$PUBLIC_ROOT/sdist-venv/bin/python" -I -m pip install --isolated --no-input --only-binary=:all: --index-url https://pypi.org/simple --report "$PUBLIC_ROOT/evidence/sdist-install-report.json" "$rebuilt"
+            env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+              "$PUBLIC_ROOT/sdist-venv/bin/python" -I -m pip check
+            env -i PATH="$PATH" HOME="$PUBLIC_ROOT/home" PIP_CONFIG_FILE=/dev/null \
+              "$PUBLIC_ROOT/sdist-venv/bin/python" -I - "$PUBLIC_ROOT/evidence/sdist-install-report.json" "$rebuilt" "$PUBLIC_ROOT/evidence/sdist-module-origin.txt" "$PACKAGE_IMPORT" <<'PY'
+          import importlib
+          import json
+          import sys
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          report, candidate, output, module_name = sys.argv[1:]
+          allowed = Path(candidate).resolve().as_uri()
+          installations = json.loads(Path(report).read_text()).get('install')
+          if not isinstance(installations, list) or not installations:
+              raise SystemExit('public-only sdist install report is missing or empty')
+          for item in installations:
+              try:
+                  url = item['download_info']['url']
+              except (KeyError, TypeError):
+                  raise SystemExit('public-only sdist install report has no source URL')
+              if not isinstance(url, str) or not urlsplit(url).path.endswith('.whl') or (url != allowed and not url.startswith(('https://pypi.org/', 'https://files.pythonhosted.org/'))):
+                  raise SystemExit(f'public-only sdist install used a non-public wheel source: {url}')
+          module = importlib.import_module(module_name)
+          origin = Path(module.__file__).resolve()
+          prefix = Path(sys.prefix).resolve()
+          if prefix not in origin.parents:
+              raise SystemExit(f'{module_name} did not load from this virtual environment: {origin}')
+          Path(output).write_text(f'{module_name}={origin}\n')
+          PY
+          )
+
+      - name: Upload public-only verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: public-verification-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mountainash-public-verification/evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  preflight-pypi-environment:
+    name: Require protected PyPI environment
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    needs: build-and-verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - name: Fail closed unless PyPI requires reviewers and main only
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const parameters = {
+              owner: context.repo.owner, repo: context.repo.repo, environment_name: 'pypi'
+            };
+            const {data: environment} = await github.rest.repos.getEnvironment(parameters);
+            const reviewers = environment.protection_rules?.some(
+              rule => rule.type === 'required_reviewers' && rule.reviewers?.length > 0
+            );
+            const {data: policies} = await github.rest.repos.listDeploymentBranchPolicies(parameters);
+            const branch = policies.branch_policies[0];
+            if (!reviewers || !environment.deployment_branch_policy?.custom_branch_policies ||
+                policies.total_count !== 1 || branch?.name !== 'main' || branch?.type !== 'branch') {
+              core.setFailed('pypi must require reviewers and allow only the main branch.');
+            }
+
+  publish:
+    name: Publish approved artifacts to PyPI
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    needs: [build-and-verify, verify-public, preflight-pypi-environment]
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Download the exact approved distribution artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.build-and-verify.outputs.dist-artifact-id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/candidate-dist
+
+      - name: Download the exact approved evidence artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.build-and-verify.outputs.evidence-artifact-id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/approved-evidence
+
+      - name: Verify approved artifact hashes and isolate upload files
+        env:
+          CANDIDATE_DIST: ${{ runner.temp }}/candidate-dist
+          APPROVED_EVIDENCE: ${{ runner.temp }}/approved-evidence
+          PACKAGES_DIR: ${{ runner.temp }}/pypi-packages
+        run: |
+          python -I - "$CANDIDATE_DIST" "$APPROVED_EVIDENCE" "$PACKAGES_DIR" <<'PY'
+          import hashlib
+          import json
+          import shutil
+          import sys
+          from pathlib import Path
+
+          candidate, evidence, packages = map(Path, sys.argv[1:])
+          release = json.loads((evidence / 'release.json').read_text())
+          expected = release['files']
+          actual_paths = {path.name: path for path in candidate.iterdir() if path.is_file()}
+          if set(actual_paths) != set(expected) or len(actual_paths) != 2:
+              raise SystemExit(f'approved artifact set mismatch: expected {sorted(expected)}, got {sorted(actual_paths)}')
+          for name, expected_hash in expected.items():
+              if hashlib.sha256(actual_paths[name].read_bytes()).hexdigest() != expected_hash:
+                  raise SystemExit(f'hash mismatch for {name}')
+          dependencies = evidence / 'dependency-wheels'
+          actual_dependencies = {path.name: path for path in dependencies.glob('*.whl')}
+          if set(actual_dependencies) != set(release['dependency_files']):
+              raise SystemExit('approved sibling artifact set mismatch')
+          for name, expected_hash in release['dependency_files'].items():
+              if hashlib.sha256(actual_dependencies[name].read_bytes()).hexdigest() != expected_hash:
+                  raise SystemExit(f'sibling hash mismatch for {name}')
+          packages.mkdir()
+          for path in actual_paths.values():
+              shutil.copy2(path, packages / path.name)
+          PY
+
+      - name: Publish exactly the approved wheel and sdist
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: ${{ runner.temp }}/pypi-packages
+          skip-existing: false
+
+      - name: Confirm the public PyPI file set and hashes
+        env:
+          APPROVED_EVIDENCE: ${{ runner.temp }}/approved-evidence
+          PUBLIC_EVIDENCE: ${{ runner.temp }}/publication-evidence
+        run: |
+          mkdir -p "$PUBLIC_EVIDENCE"
+          python -I - "$APPROVED_EVIDENCE/release.json" <<'PY' > "$PUBLIC_EVIDENCE/public-request.txt"
+          import json
+          import sys
+          release = json.load(open(sys.argv[1]))
+          print(release['distribution'])
+          print(release['version'])
+          PY
+          distribution=$(sed -n '1p' "$PUBLIC_EVIDENCE/public-request.txt")
+          version=$(sed -n '2p' "$PUBLIC_EVIDENCE/public-request.txt")
+          curl --fail --silent --show-error "https://pypi.org/pypi/${distribution}/${version}/json" > "$PUBLIC_EVIDENCE/public-pypi.json"
+          python -I - "$APPROVED_EVIDENCE/release.json" "$PUBLIC_EVIDENCE/public-pypi.json" <<'PY'
+          import json
+          import sys
+          approved = json.load(open(sys.argv[1]))['files']
+          observed = {item['filename']: item['digests']['sha256'] for item in json.load(open(sys.argv[2]))['urls']}
+          if observed != approved:
+              raise SystemExit(f'public PyPI file set or hashes differ: expected {approved}, got {observed}')
+          PY
+
+      - name: Install public release from PyPI only
+        env:
+          APPROVED_EVIDENCE: ${{ runner.temp }}/approved-evidence
+          PUBLIC_EVIDENCE: ${{ runner.temp }}/publication-evidence
+          PUBLIC_VENV: ${{ runner.temp }}/public-release-venv
+          PACKAGE_IMPORT: mountainash_auth_client
+        run: |
+          distribution=$(python -I -c "import json; print(json.load(open('$APPROVED_EVIDENCE/release.json'))['distribution'])")
+          version=$(python -I -c "import json; print(json.load(open('$APPROVED_EVIDENCE/release.json'))['version'])")
+          mkdir -p "$PUBLIC_EVIDENCE/home"
+          python -m venv "$PUBLIC_VENV"
+          (
+            cd "$PUBLIC_EVIDENCE"
+            env -i PATH="$PATH" HOME="$PUBLIC_EVIDENCE/home" PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 \
+              "$PUBLIC_VENV/bin/python" -I -m pip install --isolated --no-input --only-binary=:all: --index-url https://pypi.org/simple --report "$PUBLIC_EVIDENCE/public-install-report.json" "${distribution}==${version}"
+            env -i PATH="$PATH" HOME="$PUBLIC_EVIDENCE/home" PIP_CONFIG_FILE=/dev/null \
+              "$PUBLIC_VENV/bin/python" -I -m pip check
+            env -i PATH="$PATH" HOME="$PUBLIC_EVIDENCE/home" PIP_CONFIG_FILE=/dev/null \
+              "$PUBLIC_VENV/bin/python" -I - "$PUBLIC_EVIDENCE/public-install-report.json" "$PUBLIC_EVIDENCE/public-module-origin.txt" "$PACKAGE_IMPORT" <<'PY'
+          import importlib
+          import json
+          import sys
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          report, output, module_name = sys.argv[1:]
+          installations = json.loads(Path(report).read_text()).get('install')
+          if not isinstance(installations, list) or not installations:
+              raise SystemExit('published release install report is missing or empty')
+          for item in installations:
+              try:
+                  url = item['download_info']['url']
+              except (KeyError, TypeError):
+                  raise SystemExit('published release install report has no source URL')
+              if not isinstance(url, str) or not urlsplit(url).path.endswith('.whl') or not url.startswith(('https://pypi.org/', 'https://files.pythonhosted.org/')):
+                  raise SystemExit(f'published release install used a non-public wheel source: {url}')
+          module = importlib.import_module(module_name)
+          origin = Path(module.__file__).resolve()
+          prefix = Path(sys.prefix).resolve()
+          if prefix not in origin.parents:
+              raise SystemExit(f'{module_name} did not load from this virtual environment: {origin}')
+          Path(output).write_text(f'{module_name}={origin}\n')
+          PY
+          )
+
+      - name: Upload publication confirmation evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: publication-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publication-evidence
+          if-no-files-found: error
+          retention-days: 30

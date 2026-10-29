@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from strenum import LowercaseStrEnum as StrEnum
 
-__all__ = ["CONST_AUTH_MODE"]
+__all__ = ["CONST_AUTH_PROFILES"]
 
 
-class CONST_AUTH_MODE(StrEnum):
+class CONST_AUTH_PROFILES(StrEnum):
     """Auth mode identifiers matching AUTH_REGISTRY keys."""
 
     NONE = "none"
@@ -16,7 +16,6 @@ class CONST_AUTH_MODE(StrEnum):
     JWT = "jwt"
     OAUTH1 = "oauth1"
     OAUTH2 = "oauth2"
-    OAUTH2_AUTHCODE = "oauth2_authcode"
     IAM = "iam"
     AZURE_AD = "azure_ad"
     WINDOWS = "windows"

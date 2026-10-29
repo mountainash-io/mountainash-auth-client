@@ -1,9 +1,16 @@
 """Microsoft-centric authentication: Windows integrated + Azure AD."""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from mountainash_settings import ParameterSpec, Profile, ProfileSpec
 
 from .registry import register
 
-__all__ = ["WindowsAuth", "AzureADAuth", "WINDOWS_SPEC", "AZURE_AD_SPEC"]
+if TYPE_CHECKING:
+    from pydantic import SecretStr
+
+__all__ = ["WindowsAuthProfile", "AzureADAuthProfile", "WINDOWS_SPEC", "AZURE_AD_SPEC"]
 
 WINDOWS_SPEC = ProfileSpec(
     name="windows",
@@ -16,7 +23,11 @@ WINDOWS_SPEC = ProfileSpec(
 
 
 @register
-class WindowsAuth(Profile):
+class WindowsAuthProfile(Profile):
+    if TYPE_CHECKING:
+        USERNAME: str | None
+        DOMAIN: str | None
+
     __spec__ = WINDOWS_SPEC
 
 
@@ -34,5 +45,12 @@ AZURE_AD_SPEC = ProfileSpec(
 
 
 @register
-class AzureADAuth(Profile):
+class AzureADAuthProfile(Profile):
+    if TYPE_CHECKING:
+        TENANT_ID: str | None
+        CLIENT_ID: str | None
+        CLIENT_SECRET: SecretStr | None
+        MANAGED_IDENTITY: bool
+        MSI_ENDPOINT: str | None
+
     __spec__ = AZURE_AD_SPEC
