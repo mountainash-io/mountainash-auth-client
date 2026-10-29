@@ -16,8 +16,7 @@ selects a matching source branch, falling back to the PR base branch or the manu
 `fallback_branch` input, and installs dependencies from `temp/`.
 
 Configure `CI_APP_ID` and `CI_APP_PRIVATE_KEY` for a GitHub App with read access to
-the sibling repositories, plus contents/pull-request write access to
-`mountainash-wheels` for release distribution. Fork PRs do not receive these secrets;
+the sibling repositories. Fork PRs do not receive these secrets;
 run their dependency-backed checks only after review on a trusted branch.
 
 PR checks run pytest/coverage, Ruff, Radon and installed typing on Python 3.12/3.13.
@@ -46,34 +45,29 @@ wheelhouse. Its rebuilt wheel is verification evidence and is never published.
 
 Public verification requires compatible PyPI wheels for dependencies and build tools. Source-only dependencies cannot pass and are not built implicitly; the candidate's own sdist is still rebuilt through the controlled path.
 
-| Trigger | GitHub release and wheels PR | PyPI |
-| --- | --- | --- |
-| Open or updated PR | No; build and verify only | No |
-| Merged PR | Yes | No |
-| Manual, default inputs | No; development rehearsal only | No |
-| Manual, `verify_public=true`, `release=false`, `publish=false` | No; public-only readiness rehearsal | No |
-| Manual, `release=true` | Yes | Only if separately enabled |
-| Manual on `main`, `publish=true` | Only if `release=true` | Yes, after public-only verification and approval |
+| Trigger | PyPI |
+| --- | --- |
+| Open or updated PR | No; build and verify only |
+| Merged PR | No |
+| Manual, default inputs | No; development rehearsal only |
+| Manual, `verify_public=true`, `publish=false` | No; public-only readiness rehearsal |
+| Manual on `main`, `publish=true` | Yes, after public-only verification and approval |
 
-Merged PRs to `main` use the reviewed source version; merges to `develop` produce
-`rc<run_number>` versions and merges to other configured branches produce
-`b<run_number>` versions. Manual MountainAsh releases select `release_type`
-(`production`, `rc`, or `beta`). Prerelease suffixes are applied only in the build
-checkout, never committed. GitHub releases contain the verified wheel, sdist, and
-SBOMs; the wheel-distribution workflow opens a release-branch PR targeting
-`mountainash-wheels/develop`, without pushing directly to `develop` or `main`.
+Merging a PR performs no release action: no tag, no GitHub release, and no push to any
+wheels repository. Manual runs select `release_type` (`production`, `rc`, or `beta`);
+PyPI publication requires `production` on `main`. Prerelease suffixes are applied only
+in the build checkout, never committed.
 
 To rehearse public-only readiness without publishing anything, dispatch on any
-allowed branch with `verify_public=true`, `release=false`, and `publish=false`:
+allowed branch with `verify_public=true` and `publish=false`:
 
 ```sh
 gh workflow run build-and-release-package.yml --repo mountainash-io/mountainash-auth-client \
-  --ref develop -f verify_public=true -f release=false -f publish=false \
+  --ref develop -f verify_public=true -f publish=false \
   -f release_type=production -f fallback_branch=develop
 ```
 
-To publish to both destinations, dispatch on `main` with `release=true`,
-`publish=true`, and `release_type=production`. The publish job requires both the
+To publish to PyPI, dispatch on `main` with `publish=true` and `release_type=production`. The publish job requires both the
 protected-environment preflight and a successful public-only gate, then consumes
 the same verified artifact IDs/hashes without rebuilding or overwriting existing
 releases. Post-publication installation uses only `distribution==version` from
