@@ -9,6 +9,9 @@ description: 'An intelligent textbook for the mountainash-auth-client type-safe 
 
 An intelligent textbook for the mountainash-auth-client type-safe multi-provider authentication library
 
+!!! warning "Experimental"
+    mountainash-auth-client 0.1.0 is experimental and not yet ready for production use. Its APIs can change between versions, and it is not yet published on PyPI.
+
 ## Getting Started
 
 This is an intelligent textbook built with MkDocs Material. Use the navigation
