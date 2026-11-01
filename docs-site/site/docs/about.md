@@ -5,6 +5,9 @@ description: 'Who this manual is for, what you need to know beforehand, and how 
 
 # About
 
+!!! warning "Experimental"
+    mountainash-auth-client 0.1.0 is experimental and not yet ready for production use. Its APIs can change between versions, and it is not yet published on PyPI.
+
 ## Who This Is For
 
 This manual is for Python developers integrating with OAuth 2.0 and OAuth 1.0a APIs who need declarative, type-safe authentication with automatic token lifecycle management and pluggable credential storage. You might be wiring up a new API client that needs an authorization-code-with-PKCE flow, replacing ad-hoc token-refresh code with something concurrent-safe, or designing a credential store that isn't tied to the filesystem. If any of that sounds familiar, this is for you.
