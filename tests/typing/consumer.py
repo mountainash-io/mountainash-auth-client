@@ -91,6 +91,8 @@ def profile_families(
     assert_type(certificate.PRIVATE_KEY, SecretStr | None)
     assert_type(certificate.PRIVATE_KEY_PATH, Path | None)
     assert_type(certificate.PASSPHRASE, SecretStr | None)
+    assert_type(certificate.CERTIFICATE, SecretStr | None)
+    assert_type(certificate.CERTIFICATE_PATH, Path | None)
     assert_type(service.INFO, SecretStr | None)
     assert_type(service.FILE, Path | None)
     assert_type(oauth1.CONSUMER_KEY, str)

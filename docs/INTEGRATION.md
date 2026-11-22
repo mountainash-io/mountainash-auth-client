@@ -44,7 +44,9 @@ the extra is safe — the optional dependency is only needed when you actually u
 ### Auth profiles
 
 Every credential type is a `Profile` subclass with `UPPER_CASE` fields and a stable name.
-Profiles carry **only credentials/config** — no I/O, no SDK clients. Construct them directly:
+Profiles carry **only credentials/config** — no SDK clients, and construction performs no I/O.
+Emission may read local credential files or create temporary material, as described for each
+renderer. Construct profiles directly:
 
 ```python
 from mountainash_auth_client import TokenAuthProfile, IAMAuthProfile, PasswordAuthProfile
@@ -63,7 +65,7 @@ auth-client knows how to inject credentials into:
 from mountainash_auth_client import TargetFamily
 TargetFamily.HTTP      # httpx clients   → Authorization headers, auth= param
 TargetFamily.BOTO      # boto3 clients   → aws_access_key_id / _secret / _session_token
-TargetFamily.PARAMIKO  # paramiko SSH    → password / key_filename / gss_* kwargs
+TargetFamily.PARAMIKO  # paramiko SSH    → password / key_filename / pkey / gss_* kwargs
 ```
 
 A given auth profile resolves to a **different strategy per family** — e.g. `PasswordAuthProfile`
@@ -155,13 +157,73 @@ neither an alias nor an adapter registration to the shared credential class.
 | `PasswordAuthProfile` | `USERNAME`, `PASSWORD` | HTTP / PARAMIKO | Basic header / `username`+`password` |
 | `IAMAuthProfile` | `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`, `SESSION_TOKEN`, `ROLE_ARN`, `PROFILE_NAME` | BOTO | `aws_access_key_id`/`_secret_access_key`/`_session_token` |
 | `KerberosAuthProfile` | `SERVICE_NAME`, `PRINCIPAL`, `KEYTAB` | PARAMIKO | `gss_auth`/`gss_host`/`gss_kex` |
-| `CertificateAuthProfile` | `PRIVATE_KEY`/`PRIVATE_KEY_PATH`, `PASSPHRASE` | PARAMIKO | `key_filename`/`pkey` + `passphrase` |
+| `CertificateAuthProfile` | `CERTIFICATE`/`CERTIFICATE_PATH`, `PRIVATE_KEY`/`PRIVATE_KEY_PATH`, `PASSPHRASE` | HTTP / PARAMIKO | loaded client-identity `SSLContext` in `verify` / `key_filename`/`pkey` + `passphrase` |
 | `OAuth1AuthProfile` | `CONSUMER_KEY`, `CONSUMER_SECRET`, `ACCESS_TOKEN`, `ACCESS_TOKEN_SECRET` | HTTP | authlib `auth=` (OAuth1 signing) |
 | `OAuth2AuthProfile` | `CLIENT_ID`, `CLIENT_SECRET`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `SCOPE` | HTTP | `Authorization: Bearer …` (from `ACCESS_TOKEN`) |
 
 `WindowsAuthProfile`, `AzureADAuthProfile` and `ServiceAccountAuthProfile` also
 describe credentials, but currently provide no built-in target renderers.
 Consumer-specific shapes should be rendered by consumer-owned adapters.
+
+### Client certificates for HTTP
+
+For `TargetFamily.HTTP`, `CertificateAuthProfile` loads the client identity into a
+new `ssl.SSLContext` and returns kwargs with `verify=<that context>`. Your application
+builds the HTTPX client from those kwargs. Client identity is separate from server
+trust: trust comes from the caller's `verify` input, not from the profile.
+
+```python
+import ssl
+from mountainash_auth_client import CertificateAuthProfile, TargetFamily
+
+# Path form
+profile = CertificateAuthProfile(
+    CERTIFICATE_PATH="alice.pem", PRIVATE_KEY_PATH="alice.key", PASSPHRASE="pp",
+)
+kwargs = profile.emit(TargetFamily.HTTP, base={"verify": "private-ca.pem", "timeout": 10})
+
+# In-memory (secret) form
+profile = CertificateAuthProfile(CERTIFICATE=cert_pem, PRIVATE_KEY=key_pem)
+kwargs = profile.emit(TargetFamily.HTTP, base={"verify": "private-ca.pem"})
+
+# Context factory: the factory is an emission input, not an HTTPX kwarg
+def make_context():
+    context = ssl.create_default_context(cafile="private-ca.pem")
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
+
+kwargs = profile.emit(TargetFamily.HTTP, base={
+    "verify": make_context, "trust_env": False, "timeout": 10,
+})
+# kwargs["verify"] is the newly created SSLContext, never the factory.
+```
+
+- **Ownership:** a `verify` factory MUST return a fresh, exclusively owned `SSLContext`
+  on each call. It is called once per emission and its TLS policy is preserved. Freshness
+  is a documented obligation, not checked at runtime.
+- **Existing context refused:** passing an `SSLContext` directly as `verify` raises
+  `TypeError`, because loading identity into a shared context would change every
+  other user of it. Pass a factory instead.
+- **CA settings:** `verify` may be omitted/`True` (SSL_CERT_FILE, then SSL_CERT_DIR when
+  `trust_env` is enabled, otherwise certifi), `False` (verification disabled), a string CA
+  file or CA directory path, or a factory.
+- **Source precedence:** `CERTIFICATE_PATH`/`PRIVATE_KEY_PATH` take precedence over the
+  in-memory `CERTIFICATE`/`PRIVATE_KEY` for the same role. A certificate containing its
+  key needs no separate key; an explicit separate key overrides that embedded key.
+  `PASSPHRASE` is supplied non-interactively, with an empty password when absent.
+- **Temporary lifecycle:** path inputs are loaded directly. In-memory inputs are written
+  to private standard-library temporary storage and deleted before successful emission.
+  Failure also triggers cleanup; if the OS refuses deletion, emission fails rather than
+  returning kwargs. This does not promise zeroization or that nothing touches disk.
+- **Errors:** missing or malformed material, wrong passphrase, mismatched key and
+  unreadable files raise `ValueError` without secret values. A failing factory raises a
+  static `ValueError` with no native cause or detail. A legacy `cert` entry in `base`
+  is dropped from the output; your original dict is not changed.
+- **Reuse:** the emitted context may be reused to recreate clients with the same identity.
+  Repeated emissions return separate contexts.
+- **Transport:** the `StorageFacade` transport does not yet support certificate
+  authentication; this is a planned follow-up, so use the emitted kwargs from your own
+  HTTPX client for now.
 
 Secret fields (`*_SECRET`, `PASSWORD`, …) are `SecretStr`. Built-in renderers
 unwrap them when needed; consumers using `emit()` need not unwrap fields first.
