@@ -25,6 +25,7 @@ from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
 from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
 from mountainash_auth_client.oauth.providers.oauth1 import OAuth1ProviderProfile
 from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
+from tests._error_surfaces import exception_surfaces
 
 
 def _provider(**overrides):
@@ -36,6 +37,26 @@ def _provider(**overrides):
     )
     base.update(overrides)
     return OAuth2ProviderProfile(**base)
+
+
+class _Wire:
+    """A real httpx.Client on MockTransport; the transport answer is the only double."""
+
+    def __init__(self, monkeypatch, handler):
+        self.requests = []
+        self.clients = []
+        real_client = httpx.Client
+
+        def dispatch(request):
+            self.requests.append(request)
+            return handler(request)
+
+        def make(**kwargs):
+            client = real_client(transport=httpx.MockTransport(dispatch), **kwargs)
+            self.clients.append(client)
+            return client
+
+        monkeypatch.setattr(httpx, "Client", make)
 
 
 class TestBuildAuthorizeUrl:
@@ -85,27 +106,19 @@ class TestBuildAuthorizeUrl:
 
 
 class TestExchangeCode:
-    def test_raises_token_exchange_error_on_http_error(self):
-        flow = OAuthFlow(_provider())
-        mock_response = MagicMock()
-        mock_response.status_code = 400
-        mock_response.text = "Bad Request"
-
-        with patch("httpx.Client") as MockClient:
-            mock_client_instance = MockClient.return_value.__enter__.return_value
-            mock_client_instance.post.side_effect = httpx.HTTPStatusError(
-                "error", request=MagicMock(), response=mock_response
+    def test_raises_token_exchange_error_on_http_error(self, monkeypatch):
+        wire = _Wire(monkeypatch, lambda request: httpx.Response(400, json={"error": "invalid_grant"}))
+        with pytest.raises(TokenExchangeError) as exc_info:
+            OAuthFlow(_provider()).exchange_code(
+                code="authcode",
+                redirect_uri="http://localhost/cb",
+                client_id="cid",
+                client_secret="csec",
             )
-
-            with pytest.raises(TokenExchangeError) as exc_info:
-                flow.exchange_code(
-                    code="authcode",
-                    redirect_uri="http://localhost/cb",
-                    client_id="cid",
-                    client_secret="csec",
-                )
-            assert exc_info.value.status_code == 400
-            assert exc_info.value.url == "https://auth.example.com/token"
+        assert len(wire.requests) == 1
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.url == "https://auth.example.com/token"
+        assert exc_info.value.error_code == "invalid_grant"
 
     def test_returns_token_dict_on_success(self):
         flow = OAuthFlow(_provider())
@@ -132,46 +145,22 @@ class TestExchangeCode:
         assert result["refresh_token"] == "refresh_tok"
         assert result["token_expires_at"] is not None
 
-    def test_raises_on_invalid_json_response(self):
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "utf-16", "utf-32"])
+    @pytest.mark.parametrize("operation", ["exchange", "refresh"])
+    def test_missing_access_token_with_recognised_error_keeps_only_the_code(self, monkeypatch, encoding, operation):
+        payload = json.dumps({"error": "invalid_grant", "error_description": "PROVIDER_SECRET"}).encode(encoding)
+        _Wire(monkeypatch, lambda request: httpx.Response(200, content=payload))
         flow = OAuthFlow(_provider())
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.text = "<html>not json</html>"
-        mock_response.json.side_effect = ValueError("no json")
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as MockClient:
-            mock_client_instance = MockClient.return_value.__enter__.return_value
-            mock_client_instance.post.return_value = mock_response
-
-            with pytest.raises(TokenExchangeError) as exc_info:
-                flow.exchange_code(
-                    code="code123",
-                    redirect_uri="http://localhost/cb",
-                    client_id="cid",
-                    client_secret="csec",
-                )
-            assert exc_info.value.body == ""  # response text is never echoed
-
-    def test_raises_when_access_token_missing(self):
-        flow = OAuthFlow(_provider())
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"error": "invalid_grant"}
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as MockClient:
-            mock_client_instance = MockClient.return_value.__enter__.return_value
-            mock_client_instance.post.return_value = mock_response
-
-            with pytest.raises(TokenExchangeError) as exc_info:
-                flow.exchange_code(
-                    code="code123",
-                    redirect_uri="http://localhost/cb",
-                    client_id="cid",
-                    client_secret="csec",
-                )
-            assert exc_info.value.body == '{"error": "invalid_grant"}'
+        error_type = TokenExchangeError if operation == "exchange" else TokenRefreshError
+        with pytest.raises(error_type) as exc_info:
+            if operation == "exchange":
+                flow.exchange_code("code123", "http://localhost/cb", client_id="cid", client_secret="csec")
+            else:
+                flow.refresh("refresh123", client_id="cid", client_secret="csec")
+        assert exc_info.value.status_code == 200
+        assert exc_info.value.error_code == "invalid_grant"
+        assert json.loads(exc_info.value.body) == {"error": "invalid_grant"}
+        assert "PROVIDER_SECRET" not in exception_surfaces(exc_info.value)
 
     def test_pkce_verifier_keyed_by_state_survives_second_authorize(self):
         flow = OAuthFlow(_provider(USE_PKCE=True))
@@ -221,26 +210,18 @@ class TestValidateCallbackState:
 
 
 class TestRefresh:
-    def test_raises_token_refresh_error_on_http_error(self):
-        flow = OAuthFlow(_provider())
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        mock_response.text = "Unauthorized"
-
-        with patch("httpx.Client") as MockClient:
-            mock_client_instance = MockClient.return_value.__enter__.return_value
-            mock_client_instance.post.side_effect = httpx.HTTPStatusError(
-                "error", request=MagicMock(), response=mock_response
+    def test_raises_token_refresh_error_on_http_error(self, monkeypatch):
+        wire = _Wire(monkeypatch, lambda request: httpx.Response(401, text="Unauthorized"))
+        with pytest.raises(TokenRefreshError) as exc_info:
+            OAuthFlow(_provider()).refresh(
+                refresh_token="old_refresh",
+                client_id="cid",
+                client_secret="csec",
             )
-
-            with pytest.raises(TokenRefreshError) as exc_info:
-                flow.refresh(
-                    refresh_token="old_refresh",
-                    client_id="cid",
-                    client_secret="csec",
-                )
-            assert exc_info.value.status_code == 401
-            assert exc_info.value.url == "https://auth.example.com/token"
+        assert len(wire.requests) == 1
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.url == "https://auth.example.com/token"
+        assert exc_info.value.error_code is None
 
 
 class TestIsExpired:
@@ -321,20 +302,27 @@ class TestAuthorizeInjection:
 
 
 class TestAuthorizeCallbackValidation:
-    def test_denied_raises(self, monkeypatch):
+    @pytest.mark.parametrize("error, expected", [
+        ("access_denied", "access_denied"), ("PROVIDER_SECRET_CODE", "unknown_error"),
+    ])
+    def test_state_valid_denial_keeps_only_recognised_code_and_never_exchanges(
+        self, monkeypatch, error, expected,
+    ):
         # A real denial carries `error` and NO `code`; this also proves the
         # `error` branch fires before the missing-`code` (MalformedCallbackError) path.
         class _Denied(_EchoServer):
             def obtain_callback(self, authorize_url):
                 state = parse_qs(urlparse(authorize_url).query)["state"][0]
-                return {"state": state, "error": "access_denied",
-                        "error_description": "user declined"}
+                return {"state": state, "error": error, "error_description": "PROVIDER_SECRET_DESC"}
 
+        wire = _Wire(monkeypatch, lambda request: httpx.Response(200, json={"access_token": "unexpected"}))
         flow = OAuthFlow(_provider())
         with pytest.raises(AuthorizationDeniedError) as ei:
             flow.authorize("cid", "csec", callback_server=lambda: _Denied())
-        assert ei.value.error == "access_denied"
-        assert ei.value.description == "user declined"
+        assert ei.value.error == expected
+        assert ei.value.description == ""
+        assert "PROVIDER_SECRET" not in exception_surfaces(ei.value)
+        assert wire.requests == []
 
     def test_missing_code_raises_malformed(self, monkeypatch):
         class _NoCode(_EchoServer):
@@ -505,33 +493,56 @@ class TestResolveAccessToken:
                 OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(
                     _Auth(), auto_authorize=True)
 
-    def test_transient_refresh_failure_keeps_record(self, rat_env):
+    @pytest.mark.parametrize("status, encoding", [(400, "utf-8"), (200, "utf-8-sig"), (200, "utf-16"), (200, "utf-32")])
+    @pytest.mark.parametrize("auto_authorize", [False, True])
+    @pytest.mark.parametrize("code", ["invalid_grant", "invalid_token"])
+    def test_recovery_codes_clear_record_and_follow_auto_authorize(
+        self, rat_env, monkeypatch, code, auto_authorize, status, encoding,
+    ):
         rat_env.tokens.set("rat.oauth2", {
             "access_token": "old", "refresh_token": "r_xyz",
             "token_expires_at": int(time.time()) - 1000,
         })
-        deleted = {"called": False}
-        real_delete = rat_env.store.delete
-        def spy_delete(key):
-            deleted["called"] = True
-            return real_delete(key)
-        rat_env.store.delete = spy_delete
-        with patch.object(OAuthFlow, "refresh", side_effect=httpx.ConnectError("down")):
-            with pytest.raises(httpx.ConnectError):
-                OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
-        assert deleted["called"] is False
-        assert rat_env.tokens.get("rat.oauth2")["refresh_token"] == "r_xyz"
+        payload = json.dumps({"error": code, "error_description": "PROVIDER_SECRET"}).encode(encoding)
+        wire = _Wire(monkeypatch, lambda request: httpx.Response(status, content=payload))
+        flow = OAuthFlow(_provider(), token_store=rat_env.store)
+        fresh = {"access_token": "new", "refresh_token": "", "token_expires_at": None}
+        with patch.object(OAuthFlow, "authorize", return_value=fresh) as authorize:
+            if auto_authorize:
+                assert flow.resolve_access_token(_Auth(), auto_authorize=True) == "new"
+                authorize.assert_called_once()
+                assert rat_env.tokens.get("rat.oauth2")["access_token"] == "new"
+            else:
+                with pytest.raises(AuthorizationRequired):
+                    flow.resolve_access_token(_Auth())
+                authorize.assert_not_called()
+                assert rat_env.tokens.get("rat.oauth2") is None
+        assert len(wire.requests) == 1
 
-    def test_invalid_grant_clears_record(self, rat_env):
-        rat_env.tokens.set("rat.oauth2", {
+    @pytest.mark.parametrize("failure", ["unknown_code", "transport", "malformed_success"])
+    def test_other_refresh_failures_retain_record_and_never_reauthorize(self, rat_env, monkeypatch, failure):
+        prior = {
             "access_token": "old", "refresh_token": "r_xyz",
             "token_expires_at": int(time.time()) - 1000,
-        })
-        err = TokenRefreshError(url="https://t", status_code=401, body='{"error":"invalid_grant"}')
-        with patch.object(OAuthFlow, "refresh", side_effect=err):
-            with pytest.raises(AuthorizationRequired):
-                OAuthFlow(_provider(), token_store=rat_env.store).resolve_access_token(_Auth())
-        assert rat_env.tokens.get("rat.oauth2") is None
+        }
+        rat_env.tokens.set("rat.oauth2", prior)
+
+        def endpoint(request):
+            if failure == "transport":
+                raise httpx.ConnectError("PROVIDER_SECRET down", request=request)
+            if failure == "malformed_success":
+                return httpx.Response(200, text="PROVIDER_SECRET")
+            return httpx.Response(400, json={"error": "PROVIDER_SECRET_CODE"})
+
+        _Wire(monkeypatch, endpoint)
+        flow = OAuthFlow(_provider(), token_store=rat_env.store)
+        with patch.object(OAuthFlow, "authorize") as authorize:
+            with pytest.raises(RuntimeError if failure == "transport" else TokenRefreshError) as caught:
+                flow.resolve_access_token(_Auth(), auto_authorize=True)
+            authorize.assert_not_called()
+        assert not isinstance(caught.value, AuthorizationRequired)
+        assert "PROVIDER_SECRET" not in exception_surfaces(caught.value)
+        assert rat_env.tokens.get("rat.oauth2") == prior
 
 
 def test_refresh_derives_expiry_from_jwt_when_no_expires_in():
@@ -854,7 +865,9 @@ def test_public_client_supplied_identity_reaches_token_endpoint(monkeypatch, enc
         requests.append(request)
         return httpx.Response(200, json={"access_token": "accepted", "scope": "openid"})
 
-    monkeypatch.setattr(httpx, "Client", lambda: real_client(transport=httpx.MockTransport(endpoint)))
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kwargs: real_client(transport=httpx.MockTransport(endpoint), **kwargs),
+    )
     flow = OAuthFlow(_provider(TOKEN_ENDPOINT_AUTH_METHOD="none", TOKEN_REQUEST_CONTENT_TYPE=encoding))
     if operation == "exchange":
         tokens = flow.exchange_code("code", "http://127.0.0.1/callback",
@@ -886,7 +899,9 @@ def test_managed_refresh_preserves_effective_grant_and_identity(monkeypatch, rat
         requests.append(parse_qs(request.content.decode()))
         return httpx.Response(200, json={"access_token": "new", "refresh_token": "rotated", "expires_in": 3600, **returned})
 
-    monkeypatch.setattr(httpx, "Client", lambda: real_client(transport=httpx.MockTransport(endpoint)))
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kwargs: real_client(transport=httpx.MockTransport(endpoint), **kwargs),
+    )
     flow = OAuthFlow(_provider(TOKEN_ENDPOINT_AUTH_METHOD="none"), token_store=rat_env.store)
     assert flow.resolve_access_token(_Auth()) == "new"
     saved = rat_env.tokens.get("rat.oauth2")
@@ -903,9 +918,11 @@ def test_managed_refresh_preserves_effective_grant_and_identity(monkeypatch, rat
 ])
 def test_exchange_uses_response_scope_without_truthy_fallback(monkeypatch, requested, response_scope, expected):
     real_client = httpx.Client
-    monkeypatch.setattr(httpx, "Client", lambda: real_client(transport=httpx.MockTransport(
-        lambda request: httpx.Response(200, json={"access_token": "accepted", **response_scope}),
-    )))
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: real_client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"access_token": "accepted", **response_scope}),
+        ), **kwargs,
+    ))
     tokens = OAuthFlow(_provider()).exchange_code("code", "http://localhost/callback", scope=requested)
     assert tokens["scope"] == expected
 

@@ -14,6 +14,7 @@ import pytest
 from mountainash_auth_client.errors import CallbackTimeoutError
 from mountainash_auth_client.oauth.server import LocalCallbackServer, prompt_for_code
 from mountainash_auth_client.oauth.server.manual import extract_code_from_input
+from tests._error_surfaces import exception_surfaces
 
 
 class TestLocalCallbackServer:
@@ -171,3 +172,13 @@ def test_incomplete_http_request_cannot_extend_callback_deadline():
         finally:
             stop.set()
             sending.result(timeout=3)
+
+
+@pytest.mark.parametrize("host", [
+    "user:SENTINEL-host-7b@evil.example", "SENTINEL-host-7b.example", "[::1]", "192.0.2.1", "::ffff:8.8.8.8",
+])
+def test_invalid_host_is_rejected_without_native_echo_or_context(host):
+    with pytest.raises(ValueError) as caught:
+        LocalCallbackServer(host=host)
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+    assert "SENTINEL-host-7b" not in exception_surfaces(caught.value)

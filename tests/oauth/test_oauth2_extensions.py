@@ -1,6 +1,8 @@
 """Consumer-owned OAuth2 adaptation at public wire and acquisition boundaries."""
 from __future__ import annotations
 
+import errno
+import os
 import socket
 from urllib.parse import parse_qs, urlsplit
 
@@ -8,12 +10,18 @@ import httpx
 import pytest
 from mountainash_settings.secrets import MemorySecretStore, NamespacedSecretStore
 
-from mountainash_auth_client.errors import AuthorizationDeniedError
+from mountainash_auth_client.errors import (
+    AuthorizationDeniedError,
+    AuthorizationRequired,
+    MalformedCallbackError,
+    TokenRefreshError,
+)
 from mountainash_auth_client.oauth.lifecycle.oauth2 import OAuth2TokenManager
 from mountainash_auth_client.oauth.lifecycle.status import TokenState
 from mountainash_auth_client.oauth.oauth2.flow import OAuthFlow
 from mountainash_auth_client.oauth.providers.oauth2 import OAuth2ProviderProfile
 from mountainash_auth_client.oauth.server import LocalCallbackServer
+from tests._error_surfaces import exception_surfaces
 
 
 def provider(**overrides):
@@ -25,7 +33,7 @@ def provider(**overrides):
 
 
 class Auth:
-    CLIENT_ID = "bootstrap"
+    CLIENT_ID: str | None = "bootstrap"
     CLIENT_SECRET = None
     SCOPE = "openid invoke"
 
@@ -55,7 +63,36 @@ class ConsumerFlow(OAuthFlow):
 
 def install_endpoint(monkeypatch, endpoint):
     client = httpx.Client
-    monkeypatch.setattr(httpx, "Client", lambda: client(transport=httpx.MockTransport(endpoint)))
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kwargs: client(transport=httpx.MockTransport(endpoint), **kwargs),
+    )
+
+
+MARKER = "SENTINEL-hook-8a1c"
+
+
+class Wire:
+    """A real httpx.Client on MockTransport, recording the requests it served."""
+
+    def __init__(self, monkeypatch, handler):
+        self.requests = []
+        real_client = httpx.Client
+
+        def dispatch(request):
+            self.requests.append(request)
+            return handler(request)
+
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kwargs: real_client(transport=httpx.MockTransport(dispatch), **kwargs),
+        )
+
+
+class MarkedError(Exception):
+    """A consumer hook failure whose message carries credential-like text."""
+
+    def __init__(self):
+        super().__init__("hook rejected " + MARKER)
+        self.detail = MARKER
 
 
 def test_callback_issued_identity_nonce_and_raw_response_reach_adapter(monkeypatch):
@@ -118,9 +155,12 @@ def test_token_extensions_cannot_override_protocol_fields(monkeypatch, field, gr
     assert calls == []
 
 
-@pytest.mark.parametrize("invalid", ["state", "error"])
-def test_invalid_callback_never_reaches_registration_hook(invalid):
+@pytest.mark.parametrize("invalid, expected", [
+    ("state", ValueError), ("denial", AuthorizationDeniedError), ("missing_code", MalformedCallbackError),
+])
+def test_invalid_callback_never_reaches_registration_hook_or_token_endpoint(monkeypatch, invalid, expected):
     registrations = []
+    wire = Wire(monkeypatch, lambda request: httpx.Response(200, json={"access_token": "unexpected"}))
 
     class Flow(OAuthFlow):
         def process_callback(self, params, context):
@@ -132,24 +172,78 @@ def test_invalid_callback_never_reaches_registration_hook(invalid):
 
         def obtain_callback(self, url):
             state = parse_qs(urlsplit(url).query)["state"][0]
-            return {"state": "wrong" if invalid == "state" else state, "error": "access_denied"}
+            if invalid == "state":
+                return {"state": "wrong", "error": "access_denied", "error_description": MARKER, "code": "c"}
+            if invalid == "denial":
+                return {"state": state, "error": "access_denied", "error_description": MARKER}
+            return {"state": state}
 
-    with pytest.raises(ValueError if invalid == "state" else AuthorizationDeniedError):
-        Flow(provider(), callback_server=Callback).authorize("client", None)
-    assert registrations == []
+    try:
+        raise RuntimeError(MARKER)  # a caller's active exception must not become context
+    except RuntimeError:
+        with pytest.raises(expected) as caught:
+            Flow(provider(), callback_server=Callback).authorize("client", None)
+    assert type(caught.value) is expected
+    assert caught.value.__context__ is None
+    assert MARKER not in exception_surfaces(caught.value)
+    assert registrations == [] and wire.requests == []
 
 
-def test_response_trust_failure_retains_accepted_record(monkeypatch):
+class ReplyingServer(LocalCallbackServer):
+    def obtain_callback(self, url):
+        return {"state": parse_qs(urlsplit(url).query)["state"][0], "code": "accepted"}
+
+
+@pytest.mark.parametrize("hook, entry", [
+    ("authorization_parameters", "build_authorize_url"),
+    ("authorization_parameters", "authorize"),
+    ("process_callback", "authorize"),
+])
+def test_callback_hook_failure_is_safe_and_keeps_cleanup(monkeypatch, hook, entry):
+    wire = Wire(monkeypatch, lambda request: httpx.Response(200, json={"access_token": "unexpected"}))
+
+    class Flow(OAuthFlow):
+        def authorization_parameters(self, context):
+            if hook == "authorization_parameters":
+                raise MarkedError()
+            return {}
+
+        def process_callback(self, params, context):
+            raise MarkedError()
+
+    server = ReplyingServer(host="127.0.0.1")
+    port = server.port
+    flow = Flow(provider(), callback_server=lambda: server)
+    try:
+        with pytest.raises(Exception) as caught:
+            if entry == "build_authorize_url":
+                flow.build_authorize_url("client", "http://localhost/callback")
+            else:
+                flow.authorize("client", None)
+        observed = exception_surfaces(caught.value)
+        assert MARKER not in observed and "hook rejected" not in observed
+        assert flow._pending_contexts == {} and flow._pending_verifiers == {}
+        assert wire.requests == []
+        if entry == "authorize":
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", port))
+    finally:
+        server._server.server_close()
+
+
+def test_response_trust_failure_is_safe_and_retains_accepted_record(monkeypatch):
     store = MemorySecretStore()
     records = NamespacedSecretStore(store, "oauth")
     prior = {"access_token": "old", "refresh_token": "renewable", "token_expires_at": 1,
              "client_id": "issued", "scope": "openid invoke", "registration": {"subject": "account"}}
     records.set(Auth().persist_key(), prior)
-    install_endpoint(monkeypatch, lambda request: httpx.Response(200, json={
+    Wire(monkeypatch, lambda request: httpx.Response(200, json={
         "access_token": "untrusted", "refresh_token": "replacement", "id_token": "wrong-account",
     }))
-    with pytest.raises(ValueError, match="Identity rejected"):
+    with pytest.raises(TokenRefreshError) as caught:
         ConsumerFlow(provider(), token_store=store).resolve_access_token(Auth(), force=True)
+    assert (caught.value.status_code, caught.value.error_code, caught.value.body) == (200, None, "")
+    assert "Identity rejected" not in exception_surfaces(caught.value)
     assert records.get(Auth().persist_key()) == prior
 
 
@@ -170,7 +264,15 @@ def test_overlapping_wire_attempts_keep_their_own_nonce(monkeypatch):
 class RequiresInvoke(OAuthFlow):
     def validate_credential(self, credential):
         if "invoke" not in (credential.scope or "").split():
-            raise PermissionError("Missing invoke permission")
+            raise PermissionError("Missing invoke permission " + MARKER)
+
+
+def assert_policy_denial_is_safe(error):
+    """Consumer policy keeps its PermissionError category but none of its text or chains."""
+    assert type(error) is PermissionError
+    assert error.__cause__ is None
+    observed = exception_surfaces(error)
+    assert MARKER not in observed and "Missing invoke" not in observed
 
 
 @pytest.mark.parametrize("api, forced", [
@@ -200,8 +302,9 @@ def test_acquisition_policy_cannot_be_bypassed_and_rotation_survives_rejection(m
         owner = RequiresInvoke(provider(), token_store=store)
         def operation():
             return getattr(owner, api)(Auth())
-    with pytest.raises(PermissionError, match="Missing invoke"):
+    with pytest.raises(PermissionError) as caught:
         operation()
+    assert_policy_denial_is_safe(caught.value)
     saved = records.get(Auth().persist_key())
     assert saved["scope"] == "openid"
     assert saved["refresh_token"] == ("rotated" if forced else "renewable")
@@ -225,12 +328,13 @@ def test_new_limited_authorization_persists_before_operation_policy(monkeypatch,
     manager = OAuth2TokenManager(provider(), Auth(), token_store=store, callback_server=Callback, flow_factory=RequiresInvoke)
     if api == "authorize":
         assert manager.authorize().state is TokenState.VALID
-        with pytest.raises(PermissionError):
+        with pytest.raises(PermissionError) as caught:
             manager.acquire()
     else:
         flow = RequiresInvoke(provider(), token_store=store, callback_server=Callback)
-        with pytest.raises(PermissionError):
+        with pytest.raises(PermissionError) as caught:
             getattr(flow, api)(Auth(), auto_authorize=True)
+    assert_policy_denial_is_safe(caught.value)
     saved = records.get(Auth().persist_key())
     assert saved["access_token"] == "limited"
     assert saved["refresh_token"] == "renewable"
@@ -280,3 +384,69 @@ def test_authorization_parameter_failure_releases_bound_listener():
             probe.bind(("127.0.0.1", port))
     finally:
         server._server.server_close()
+
+
+def test_policy_oserror_keeps_only_errno_and_strerror():
+    store = MemorySecretStore()
+    NamespacedSecretStore(store, "oauth").set(Auth().persist_key(), {
+        "access_token": "cached", "token_expires_at": 4102444800,
+    })
+
+    class Denying(OAuthFlow):
+        def validate_credential(self, credential):
+            raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), "/private/" + MARKER)
+
+    with pytest.raises(PermissionError) as caught:
+        Denying(provider(), token_store=store).resolve_credential(Auth())
+    assert type(caught.value) is PermissionError
+    assert caught.value.errno == errno.EACCES
+    assert caught.value.strerror == os.strerror(errno.EACCES)
+    assert caught.value.filename is None and caught.value.__cause__ is None
+    assert MARKER not in exception_surfaces(caught.value)
+
+
+def test_other_policy_failure_is_safe_after_persistence_and_never_a_recovery_signal(monkeypatch):
+    store = MemorySecretStore()
+    records = NamespacedSecretStore(store, "oauth")
+    records.set(Auth().persist_key(), {
+        "access_token": "old", "refresh_token": "renewable", "token_expires_at": 1, "client_id": "issued",
+    })
+    Wire(monkeypatch, lambda request: httpx.Response(200, json={
+        "access_token": "fresh", "refresh_token": "rotated", "expires_in": 3600,
+    }))
+
+    class Failing(OAuthFlow):
+        def validate_credential(self, credential):
+            raise MarkedError()
+
+    with pytest.raises(Exception) as caught:
+        Failing(provider(), token_store=store).resolve_credential(Auth())
+    assert not isinstance(caught.value, (TokenRefreshError, AuthorizationRequired, PermissionError))
+    assert MARKER not in exception_surfaces(caught.value)
+    saved = records.get(Auth().persist_key())
+    assert (saved["access_token"], saved["refresh_token"]) == ("fresh", "rotated")
+
+
+class Anonymous(Auth):
+    CLIENT_ID = None
+
+
+@pytest.mark.parametrize("entry", ["build_authorize_url", "authorize", "resolve_credential"])
+def test_missing_client_identity_keeps_value_error_category_without_caller_context(entry):
+    flow = OAuthFlow(provider(), token_store=MemorySecretStore())
+
+    def attempt():
+        if entry == "build_authorize_url":
+            flow.build_authorize_url("", "http://localhost/callback")
+        elif entry == "authorize":
+            flow.authorize("", None)
+        else:
+            flow.resolve_credential(Anonymous(), auto_authorize=True)
+
+    try:
+        raise RuntimeError(MARKER)  # a caller's active exception must not become context
+    except RuntimeError:
+        with pytest.raises(ValueError) as caught:
+            attempt()
+    assert caught.value.__context__ is None
+    assert MARKER not in exception_surfaces(caught.value)

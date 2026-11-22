@@ -19,6 +19,7 @@ from mountainash_auth_client.errors import (
     TokenExchangeError,
 )
 from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
+from tests._error_surfaces import exception_surfaces
 from mountainash_auth_client.oauth.providers.oauth1 import OAuth1ProviderProfile
 
 
@@ -234,30 +235,153 @@ def test_http_rejection_is_redacted(oauth_http, stage, status, kind):
     assert env.clients[0].is_closed
 
 
-@pytest.mark.parametrize("stage", ["request", "access"])
-@pytest.mark.parametrize("failure", ["connect", "timeout", "body"])
-def test_transport_failure_propagates_and_closes_client(oauth_http, stage, failure):
-    error_type = {
-        "connect": httpx.ConnectError,
-        "timeout": httpx.ReadTimeout,
-        "body": httpx.ReadError,
-    }[failure]
-    sentinel = error_type("synthetic transport failure")
-    stream = _ResponseStream("partial response", failure=sentinel)
+_SENTINEL = "P7_" + "PROVIDER_SECRET"
 
-    def deliver(request):
-        if failure != "body":
-            raise sentinel
-        return httpx.Response(401, stream=stream)
 
-    env = oauth_http(deliver)
-    with pytest.raises(error_type) as caught:
-        _fetch_token(env.flow, stage)
-    assert caught.value is sentinel
+def _assert_safe(error, env, stage):
+    surfaces = exception_surfaces(error)
+    assert _SENTINEL not in surfaces
+    assert "PROVIDER_SECRET" not in surfaces
     assert len(env.requests) == 1
     assert env.clients[0].is_closed
-    if failure == "body":
-        assert stream.closed
+
+
+@pytest.mark.parametrize("stage", ["request", "access"])
+def test_malformed_success_keeps_status_without_provider_prose(oauth_http, stage):
+    env = oauth_http(lambda request: httpx.Response(200, text="oauth_problem=" + _SENTINEL))
+    with pytest.raises(TokenExchangeError) as caught:
+        _fetch_token(env.flow, stage)
+    assert caught.value.status_code == 200
+    assert caught.value.error_code is None
+    assert caught.value.body == ""
+    _assert_safe(caught.value, env, stage)
+
+
+@pytest.mark.parametrize("stage", ["request", "access"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "oauth_token_secret=" + _SENTINEL,
+        _SENTINEL,
+    ],
+)
+def test_missing_oauth_token_is_response_backed_failure(oauth_http, stage, text):
+    env = oauth_http(lambda request: httpx.Response(200, text=text))
+    with pytest.raises(TokenExchangeError) as caught:
+        _fetch_token(env.flow, stage)
+    assert caught.value.status_code == 200
+    assert caught.value.body == ""
+    _assert_safe(caught.value, env, stage)
+
+
+@pytest.mark.parametrize("stage", ["request", "access"])
+def test_empty_oauth_token_is_present_and_preserved(oauth_http, stage):
+    env = oauth_http(lambda request: httpx.Response(200, text="oauth_token=&oauth_token_secret=S"))
+    result = _fetch_token(env.flow, stage)
+    assert result["oauth_token"] == ""
+    assert env.clients[0].is_closed
+
+
+def test_request_token_without_secret_keeps_token_only_mapping(oauth_http):
+    env = oauth_http(lambda request: httpx.Response(200, text="oauth_token=AT"))
+    assert env.flow.request_token("ck", "cs") == {"oauth_token": "AT"}
+    assert env.clients[0].is_closed
+
+
+def test_exchange_verifier_without_secret_is_safe_status_200(oauth_http):
+    env = oauth_http(lambda request: httpx.Response(200, text="oauth_token=AT&x=" + _SENTINEL))
+    with pytest.raises(TokenExchangeError) as caught:
+        env.flow.exchange_verifier("ck", "cs", "RT", "RTS", "VERIFIER")
+    assert caught.value.status_code == 200
+    assert caught.value.body == ""
+    _assert_safe(caught.value, env, "access")
+
+
+@pytest.mark.parametrize("stage", ["request", "access"])
+@pytest.mark.parametrize("status", [200, 401])
+def test_stream_failure_after_headers_is_safe_response_backed(oauth_http, stage, status):
+    stream = _ResponseStream("partial response", failure=httpx.ReadError(_SENTINEL))
+    env = oauth_http(lambda request: httpx.Response(status, stream=stream))
+    with pytest.raises(TokenExchangeError) as caught:
+        _fetch_token(env.flow, stage)
+    assert caught.value.status_code == status
+    assert caught.value.body == ""
+    assert stream.closed
+    _assert_safe(caught.value, env, stage)
+
+
+@pytest.mark.parametrize("stage", ["request", "access"])
+@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.ReadTimeout])
+def test_no_response_transport_failure_is_safe_runtime_error(oauth_http, stage, error_type):
+    sentinel = error_type(_SENTINEL)
+
+    def deliver(request):
+        raise sentinel
+
+    env = oauth_http(deliver)
+    with pytest.raises(RuntimeError) as caught:
+        _fetch_token(env.flow, stage)
+    assert not isinstance(caught.value, TokenExchangeError)
+    assert caught.value is not sentinel
+    _assert_safe(caught.value, env, stage)
+
+
+@pytest.mark.parametrize("stage", ["request", "access"])
+def test_recursive_chain_stays_clean(oauth_http, stage):
+    inner = ValueError(_SENTINEL)
+    outer = httpx.ConnectError("wrapped")
+    outer.__cause__ = inner
+    inner.__context__ = outer  # cycle
+
+    def deliver(request):
+        raise outer
+
+    env = oauth_http(deliver)
+    with pytest.raises(RuntimeError) as caught:
+        _fetch_token(env.flow, stage)
+    _assert_safe(caught.value, env, stage)
+
+
+@pytest.mark.parametrize("stage", ["request", "access"])
+def test_client_construction_failure_is_safe(oauth_http, stage, monkeypatch):
+    def construct(*args, **kwargs):
+        raise OSError(_SENTINEL)
+
+    oauth_http(lambda request: httpx.Response(200, text=""))
+    env_flow = OAuth1Flow(_provider())
+    monkeypatch.setattr(flow_module, "require_authlib", lambda *attrs: construct)
+    with pytest.raises(RuntimeError) as caught:
+        _fetch_token(env_flow, stage)
+    assert not isinstance(caught.value, TokenExchangeError)
+    assert _SENTINEL not in exception_surfaces(caught.value)
+
+
+@pytest.mark.parametrize("stage", ["request", "access"])
+def test_client_exit_failure_after_response_keeps_status(stage, monkeypatch):
+    from authlib.integrations.httpx_client import OAuth1Client  # type: ignore[import-untyped]
+
+    requests = []
+
+    class FailingExit(OAuth1Client):
+        def __exit__(self, *exc):
+            super().__exit__(*exc)
+            raise OSError(_SENTINEL)
+
+    def deliver(request):
+        requests.append(request)
+        return httpx.Response(200, text="oauth_token=AT&oauth_token_secret=ATS")
+
+    monkeypatch.setattr(
+        flow_module,
+        "require_authlib",
+        lambda *attrs: lambda *a, **kw: FailingExit(*a, transport=httpx.MockTransport(deliver), **kw),
+    )
+    with pytest.raises(TokenExchangeError) as caught:
+        _fetch_token(OAuth1Flow(_provider()), stage)
+    assert caught.value.status_code == 200
+    assert caught.value.body == ""
+    assert _SENTINEL not in exception_surfaces(caught.value)
+    assert len(requests) == 1
 
 
 class _OAuth1Echo:
@@ -326,6 +450,84 @@ class TestOAuth1Authorize:
                 "csec",
                 callback_server=lambda: _OAuth1Echo(params={"oauth_verifier": "V", "oauth_token": "WRONG"}),
             )
+
+    def test_safe_token_failure_keeps_status_through_authorize(self, monkeypatch):
+        flow = OAuth1Flow(_provider())
+        failure = TokenExchangeError(url="https://auth.example.com/x", status_code=429, body="")
+        monkeypatch.setattr(flow, "request_token", lambda *a, **kw: (_ for _ in ()).throw(failure))
+        with pytest.raises(TokenExchangeError) as caught:
+            flow.authorize("ckey", "csec", callback_server=lambda: _OAuth1Echo())
+        assert caught.value.status_code == 429
+
+    def test_server_factory_failure_is_safe(self):
+        flow = OAuth1Flow(_provider())
+
+        def factory():
+            raise OSError(_SENTINEL)
+
+        with pytest.raises(RuntimeError) as caught:
+            flow.authorize("ckey", "csec", callback_server=factory)
+        assert _SENTINEL not in exception_surfaces(caught.value)
+
+    def test_callback_failure_is_safe_and_not_trusted_subclass(self, monkeypatch):
+        flow = OAuth1Flow(_provider())
+        _stub_oauth1(flow, monkeypatch, {})
+
+        class PluginError(MalformedCallbackError):
+            pass
+
+        class Server(_OAuth1Echo):
+            def obtain_callback(self, authorize_url):
+                raise PluginError(_SENTINEL)
+
+        with pytest.raises(Exception) as caught:
+            flow.authorize("ckey", "csec", callback_server=Server)
+        assert not isinstance(caught.value, PluginError)
+        assert _SENTINEL not in exception_surfaces(caught.value)
+
+    def test_plain_callback_failure_is_safe(self, monkeypatch):
+        flow = OAuth1Flow(_provider())
+        _stub_oauth1(flow, monkeypatch, {})
+
+        class Server(_OAuth1Echo):
+            def obtain_callback(self, authorize_url):
+                raise RuntimeError(_SENTINEL)
+
+        with pytest.raises(RuntimeError) as caught:
+            flow.authorize("ckey", "csec", callback_server=Server)
+        assert _SENTINEL not in exception_surfaces(caught.value)
+
+    @pytest.mark.parametrize(
+        ("params", "category"),
+        [
+            ({"oauth_verifier": "V", "oauth_token": "WRONG"}, ValueError),
+            ({"oauth_token": "REQTOKEN"}, MalformedCallbackError),
+        ],
+    )
+    def test_explicit_callback_failures_clear_active_context(self, monkeypatch, params, category):
+        flow = OAuth1Flow(_provider())
+        _stub_oauth1(flow, monkeypatch, {})
+        try:
+            raise RuntimeError(_SENTINEL)
+        except RuntimeError:
+            with pytest.raises(category) as caught:
+                flow.authorize("ckey", "csec", callback_server=lambda: _OAuth1Echo(params=params))
+        assert type(caught.value) is category
+        assert caught.value.__context__ is None
+        assert _SENTINEL not in exception_surfaces(caught.value)
+
+    def test_malformed_callback_params_are_safe(self, monkeypatch):
+        flow = OAuth1Flow(_provider())
+        sink = {}
+        _stub_oauth1(flow, monkeypatch, sink)
+        with pytest.raises(RuntimeError) as caught:
+            flow.authorize(
+                "ckey",
+                "csec",
+                callback_server=lambda: _OAuth1Echo(params={"oauth_verifier": "V", "oauth_token": _SENTINEL + "\ud800"}),
+            )
+        assert _SENTINEL not in exception_surfaces(caught.value)
+        assert "verifier" not in sink
 
 
 class _Auth1:

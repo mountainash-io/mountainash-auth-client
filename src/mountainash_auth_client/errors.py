@@ -46,12 +46,6 @@ def _recognized_token_code(raw: object) -> str | None:
     return code if isinstance(code, str) and code in _TOKEN_CODES else None
 
 
-def safe_error_body(raw: object) -> str:
-    """Reduce a token-endpoint error payload to its recognised ``error`` code as JSON, else ``""``."""
-    code = _recognized_token_code(raw)
-    return "" if code is None else _json.dumps({"error": code})
-
-
 class _TokenError(Exception):
     _operation = ""
 

@@ -56,7 +56,7 @@ def seed(store, **overrides):
 
 def endpoint(monkeypatch, handler):
     client = httpx.Client
-    monkeypatch.setattr(httpx, "Client", lambda: client(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs))
 
 
 class Callback:
