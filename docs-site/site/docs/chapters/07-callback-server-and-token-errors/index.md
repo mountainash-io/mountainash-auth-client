@@ -161,7 +161,7 @@ The flow logic for choosing between modes is straightforward: the `OAuthFlow.aut
 
 ## Token Error Types
 
-When token operations fail, the library raises typed exceptions that carry diagnostic information. Rather than catching generic HTTP errors and re-raising them with string messages, the library defines two specific exception classes that preserve the URL, status code, and response body.
+Token operations retain a safe endpoint display, the actual HTTP response status, and a recognised protocol error code. Public constructors enforce this contract even when called directly. Failures before a response use `RuntimeError`; no synthetic HTTP status is assigned.
 
 <!-- concept:80 -->
 ### TokenExchangeError
@@ -169,26 +169,32 @@ When token operations fail, the library raises typed exceptions that carry diagn
 `TokenExchangeError` is raised when the authorization code exchange fails -- typically because the code has expired, the redirect URI does not match, or the client credentials are invalid.
 
 ```python
-class TokenExchangeError(Exception):
-    def __init__(self, *, url: str, status_code: int, body: str) -> None:
-        self.url = url
-        self.status_code = status_code
-        self.body = body
-        super().__init__(f"Token exchange failed: HTTP {status_code} POST {url}")
+import json
+from mountainash_auth_client import TokenExchangeError
+
+error = TokenExchangeError(
+    url="https://user:password@issuer.example/token?signature=secret#fragment",
+    status_code=400,
+    body='{"error":"invalid_grant","error_description":"private material"}',
+)
+assert error.url == "https://issuer.example/token"
+assert error.error_code == "invalid_grant"
+assert json.loads(error.body) == {"error": "invalid_grant"}
 ```
 
-The exception carries three structured attributes:
+The structured attributes are:
 
-- **`url`** -- the token endpoint URL that was called (the Token Exchange URL)
-- **`status_code`** -- the HTTP response status code (e.g., 400 for invalid grant, 401 for bad credentials)
-- **`body`** -- a sanitized JSON string holding only the provider's `error` and `error_description` fields (empty when the response had neither). Raw response text is never retained
+- **`url`** — display-only location, with userinfo, query and fragment removed from hierarchical URLs. Other schemes display as `***`; local paths remain visible.
+- **`status_code`** — the actual integer HTTP response status, including a successful status when response parsing or validation fails.
+- **`error_code`** — one of `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `unsupported_grant_type`, `invalid_scope`, or `invalid_token`; otherwise `None`.
+- **`body`** — reconstructed JSON containing only that recognised `error`, or `""`. Provider descriptions, unknown codes and raw response bodies are not retained.
 
 <!-- concept:81 -->
 ### Token Exchange URL
 
 The `url` attribute on `TokenExchangeError` serves a specific diagnostic purpose. When a token exchange fails, knowing which URL was called helps determine whether the issue is a misconfigured endpoint (wrong URL), a network problem (connection refused), or a provider-side error. The same URL is used for both initial exchange and refresh, so the error message includes the HTTP method (`POST`) for clarity.
 
-The error message is constructed to be safe in logs: `"Token exchange failed: HTTP 400 POST https://oauth.provider.com/token"`. It carries the status code and URL only; the provider's error fields are available on `exc.body` and `exc.error_code`.
+The error message carries the safe location and status, not provider prose. Hostnames and path segments remain visible: applications must not place credentials there. Display strings are diagnostic values, not URLs to use for retries.
 
 <!-- concept:82 -->
 ### TokenRefreshError
@@ -196,28 +202,20 @@ The error message is constructed to be safe in logs: `"Token exchange failed: HT
 `TokenRefreshError` has an identical structure to `TokenExchangeError` but represents a different failure context: the refresh token exchange failed, meaning the refresh token may be expired or revoked.
 
 ```python
-class TokenRefreshError(Exception):
-    def __init__(self, *, url: str, status_code: int, body: str) -> None:
-        self.url = url
-        self.status_code = status_code
-        self.body = body
-        super().__init__(f"Token refresh failed: HTTP {status_code} POST {url}")
+from mountainash_auth_client import TokenRefreshError
+
+try:
+    tokens = flow.refresh(refresh_token=refresh_token, client_id=client_id)
+except TokenRefreshError as error:
+    print(error.url, error.status_code, error.error_code)
 ```
 
 <!-- concept:83 -->
 ### Refresh Status Code
 
-The `status_code` attribute on `TokenRefreshError` is particularly important for determining the correct recovery action. Different status codes indicate different failure modes.
+Status describes the HTTP response; it does not alone determine whether credentials should be deleted. The acquisition flow clears a stored credential only for recognised `invalid_grant` or `invalid_token` refresh errors. It then follows the existing `auto_authorize` setting. Unknown codes, other token errors and no-response failures propagate without that recovery action.
 
-| Status Code | Meaning | Recommended Action |
-|---|---|---|
-| 400 | Invalid grant (expired or revoked refresh token) | Clear credentials, require re-authorization |
-| 401 | Invalid client credentials | Check client_id/client_secret configuration |
-| 403 | Scope or permission denied | Review requested scopes |
-| 429 | Rate limited | Retry after delay |
-| 500+ | Provider server error | Retry with exponential backoff |
-
-The connection mixin (Chapter 8) uses the presence of a `TokenRefreshError` to trigger credential clearing and, if `auto_authorize` is enabled, a full re-authorization flow. The status code can be inspected by upstream code for more nuanced error handling.
+The package does not add retries. A consumer may apply its own retry policy without treating every HTTP 400 or refresh failure as a revoked credential.
 
 #### Diagram: Token Error Hierarchy and Recovery
 <iframe src="../../sims/token-error-recovery/main.html" width="100%" height="450px" scrolling="no"></iframe>
@@ -230,13 +228,13 @@ Type: workflow
 
 **Purpose:** Show how TokenExchangeError and TokenRefreshError are raised, caught, and used to determine recovery actions in the connection mixin.
 
-**Components:** Two source nodes (exchange_code method, refresh method) each connect to their respective error types when HTTP errors occur. Each error type connects to decision nodes based on status_code, leading to different recovery actions (re-authorize, clear credentials, retry, check config). A "Connection Mixin" node shows how it catches these errors and decides between clear+re-auth and propagation.
+**Components:** Exchange and refresh operations lead to their respective response-backed token errors. Refresh recovery branches on recognised `invalid_grant`/`invalid_token`, then on `auto_authorize`; other failures propagate without deleting the credential.
 
-**Interactions:** Click on a status code to see the recovery path highlight. Toggle between "Exchange Error" and "Refresh Error" contexts to see how the same status codes lead to different actions. Click "Show Code" on any node to see the relevant exception handling code.
+**Interactions:** Compare exchange and refresh contexts, then inspect the recognised-code recovery branch. HTTP status remains diagnostic data rather than a credential-deletion rule.
 
 **Colors:** Error types=Crimson, Recovery actions=DarkGreen, Decision nodes=Gold, Source methods=SteelBlue.
 
-**Learning Objective:** Evaluate (Bloom Level 5) which recovery strategy is appropriate for different token error status codes and how the connection mixin uses these errors to manage token lifecycle.
+**Learning Objective:** Distinguish diagnostic HTTP status from the protocol codes that trigger credential recovery.
 </details>
 
 ## Error Design Philosophy
@@ -247,11 +245,17 @@ The token error types in mountainash-auth-client follow several design principle
 
 **Keyword-only constructors.** Both error classes use `*` in their `__init__` signatures, forcing callers to use named arguments: `TokenExchangeError(url=..., status_code=..., body=...)`. This prevents a common bug where positional arguments are accidentally swapped (passing the body as the URL, for example).
 
-**Sanitized body for safety.** Raw token-endpoint response text can echo credentials (tokens, codes, secrets), so it is never stored. At the raise site only the RFC 6749 `error` and `error_description` strings are kept, as JSON (`safe_error_body`); non-JSON or malformed responses yield an empty body. The stored `body` attribute is therefore safe to log or display.
+**Constructor-owned safety.** Both public constructors recognise the documented token codes and reconstruct the body. Flow callers cannot bypass that boundary by supplying raw provider text. Unknown codes and malformed JSON produce an empty body.
 
 **Separation of exchange and refresh errors.** Despite having identical structures, `TokenExchangeError` and `TokenRefreshError` are separate classes. This allows `except` clauses to catch them independently, enabling different recovery strategies. An exchange failure during initial authorization has different implications than a refresh failure during background token renewal.
 
-**Exception chaining.** Both errors are raised with `from exc` to preserve the original `httpx.HTTPStatusError`. This means that `exc.__cause__` contains the full HTTP response object, headers, and request details for deep debugging without polluting the primary exception's interface.
+**Exception chaining.** OAuth boundaries remove unsafe native causes and contexts. An OSError with an errno may contribute a fresh cause containing only its errno and strerror, never its filenames or custom attributes. Other native failures contribute only their class name; original HTTPX/Authlib exception objects and response/request objects are not retained.
+
+**Callback denial.** `AuthorizationDeniedError.error` retains only `invalid_request`, `unauthorized_client`, `access_denied`, `unsupported_response_type`, `invalid_scope`, `server_error`, or `temporarily_unavailable`. Other values become `unknown_error`; `description` is always `""`. State validation still precedes provider denial handling.
+
+**Consumer policy.** Credential-bearing hook failures are sanitized. An operation-policy `PermissionError` retains that category without arbitrary prose. Trust validation still precedes persistence; operation-policy validation follows persistence, including after refresh-token rotation and on cached acquisition.
+
+**HTTP logging.** Importing either OAuth flow installs idempotent filters on the emitting HTTPX/httpcore loggers. These filters apply process-wide without changing log levels or handlers. HTTPX retains method, safe URL and numeric status; httpcore retains event identity only. Reason phrases, headers and native exception repr are discarded. Successful authorization URLs shown intentionally to the user are not replaced with diagnostic display strings.
 
 ## How the Components Work Together
 
@@ -263,16 +267,16 @@ During authorization, the flow is:
 2. If `local_server`: `LocalCallbackServer` starts, browser opens, callback is captured
 3. If `manual`: `prompt_for_code` prints URL and reads user input
 4. `OAuthFlow.exchange_code()` sends the code to the token endpoint
-5. If the endpoint returns an error: `TokenExchangeError` is raised with full context
+5. Response-backed failures raise `TokenExchangeError` with safe diagnostic fields; failures before a response raise a safe `RuntimeError`
 
 During token refresh (triggered by the connection mixin):
 
 1. `OAuthFlow.refresh()` sends the refresh token to the token endpoint
 2. If the endpoint returns an error: `TokenRefreshError` is raised
-3. The connection mixin catches `TokenRefreshError`, clears stored credentials, and either re-authorizes or raises `AuthorizationRequired`
+3. For `invalid_grant` or `invalid_token`, acquisition clears the stored credential and either re-authorizes or raises `AuthorizationRequired`; other failures preserve the record and propagate
 
 !!! tip "Debugging Token Errors"
-    When encountering a `TokenExchangeError` or `TokenRefreshError`, the `body` attribute is your primary diagnostic tool. Most OAuth providers include an `error` field (`"invalid_grant"`, `"invalid_client"`, `"unauthorized_client"`) and an `error_description` field with human-readable details. Check the `body` first before investigating network-level issues.
+    Inspect `error_code`, the actual `status_code` and the safe endpoint location. Provider descriptions are deliberately unavailable, including through exception chains. A missing code means no recognised protocol code was retained, not that the stored credential is invalid.
 
 ## Security Considerations for the Callback Server
 
@@ -291,7 +295,7 @@ For high-security environments where even local-host callbacks are unacceptable,
 - **Callback capture** blocks until a request arrives or the timeout (default 120 seconds) expires. The server is closed in a `finally` block to guarantee cleanup.
 - **`prompt_for_code`** is the fallback for environments without local port access. It accepts both full redirect URLs and bare authorization codes as user input.
 - **Manual redirect mode** uses the `urn:ietf:wg:oauth:2.0:oob` URI to signal that the provider should display the code on-screen rather than performing an HTTP redirect.
-- **`TokenExchangeError`** carries the token endpoint URL, HTTP status code, and sanitized provider error fields (`error`/`error_description`) for diagnostics when authorization code exchange fails.
-- **`TokenRefreshError`** has the same structure and is raised when refresh token exchange fails, typically indicating an expired or revoked refresh token.
-- **The status code** on both error types enables structured recovery logic: 400 means clear and re-authorize, 401 means check configuration, 429/5xx means retry.
+- **`TokenExchangeError`** carries the safe endpoint location, actual HTTP status and recognised code-only body.
+- **`TokenRefreshError`** has the same contract for refresh; a pre-response native failure instead raises safe `RuntimeError`.
+- **Recovery** uses recognised `invalid_grant`/`invalid_token`, not HTTP status alone; unknown failures do not delete credentials.
 - Both errors use **keyword-only constructors** (`*, url, status_code, body`) for clarity at the call site, preventing argument ordering mistakes.

@@ -203,7 +203,7 @@ def exchange_code(
 
 The `grant_type` parameter is always `"authorization_code"` for this flow. The `redirect_uri` must exactly match the one used in the authorization URL -- providers reject mismatches as a security measure.
 
-The method uses `httpx.Client` to make the POST request. If the provider returns an HTTP error status, the method raises a `TokenExchangeError` (covered in Chapter 7) with the URL, status code, and the provider's sanitized `error`/`error_description` fields for diagnostics.
+The method uses `httpx.Client` for the POST request. Response-backed HTTP, parsing, conversion and validation failures raise `TokenExchangeError` (Chapter 7) with a safe endpoint location and the actual status. Only recognised token error codes survive in `error_code` and the reconstructed code-only `body`; provider prose is discarded. Failures before a response raise safe `RuntimeError`.
 
 ### Token Exchange Response Processing
 
@@ -279,7 +279,7 @@ return {
 
 The expression `token_data.get("refresh_token", refresh_token)` says: use the new refresh token if the provider sent one, otherwise keep the existing one. This handles both rotating and non-rotating providers without configuration.
 
-If the refresh fails (expired refresh token, revoked credentials, provider error), the method raises a `TokenRefreshError`. The connection mixin (Chapter 8) uses this signal to clear the stored credentials and either trigger re-authorization or raise `AuthorizationRequired`.
+Response-backed refresh failures raise `TokenRefreshError`; no-response native failures raise safe `RuntimeError`. Acquisition clears stored credentials only for recognised `invalid_grant` or `invalid_token`, then follows the existing re-authorization policy. Unknown codes and other failures propagate without deleting the prior record.
 
 <!-- concept:43 -->
 ## Token Expiry Check

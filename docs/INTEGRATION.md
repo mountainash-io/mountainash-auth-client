@@ -231,10 +231,11 @@ For OAuth 1.0a, `OAuth1TokenManager(provider, auth_profile, token_store=store).a
 `RequestCreds(auth=…)` — OAuth1 is per-request signing, not a Bearer header, so the signer is
 passed directly rather than emitted as headers.
 
-**Error contract:** a use-time auth failure raises `AuthorizationRequired` (no usable token and
-interactive authorize is disabled) or `TokenRefreshError` (refresh call failed). When surfaced
-through http-client's request path these arrive as `SourceAuthenticationError`; the consumer
-maps `__cause__` to detect which domain error triggered reauth (Phase 3 §6 / Phase 4).
+**Error contract:** acquisition may raise `AuthorizationRequired` when no usable token exists
+and interactive authorization is disabled, or a response-backed `TokenRefreshError`.
+Native failures before a response raise safe `RuntimeError`; operation-policy rejection
+retains safe `PermissionError`. When a consumer translates these errors, it should inspect
+their types and structured fields rather than provider prose or native HTTPX/Authlib chains.
 
 `TokenCredential` exposes the effective `scope` and canonical `client_id` as well
 as owned `registration` and `session_metadata` JSON dictionaries. Response scope
@@ -323,6 +324,12 @@ permission for a particular operation. A valid narrowed refresh and rotated
 refresh token are saved **before** an operation-permission error is raised.
 Consumers should override `validate_token_response` for trust policy, not use
 operation acceptance as a substitute for identity validation.
+
+Hook failures are sanitized at these boundaries. A `validate_token_response` failure
+after a response retains the actual status in the corresponding token error and does
+not replace the accepted record. `validate_credential` rejection preserves the
+`PermissionError` category, including for errno-less errors, but discards arbitrary
+exception prose and unsafe chains. Token rotation still persists before that rejection.
 
 ### Selected token store and ownership
 
@@ -452,6 +459,40 @@ from mountainash_auth_client import (
     CallbackTimeoutError,      # callback wait timed out (also a TimeoutError)
 )
 ```
+
+`TokenExchangeError` and `TokenRefreshError` enforce safe attributes in their constructors:
+
+| Attribute | Retained value |
+|---|---|
+| `url` | Safe display location, not the original request URL |
+| `status_code` | Actual integer HTTP response status, including 200 for malformed successful responses |
+| `error_code` | Recognised token code, or `None` |
+| `body` | JSON containing only that recognised `error`, or `""` |
+
+Recognised token codes are `invalid_request`, `invalid_client`, `invalid_grant`,
+`unauthorized_client`, `unsupported_grant_type`, `invalid_scope`, and `invalid_token`.
+Only the last recovery-specific codes `invalid_grant` and `invalid_token` trigger
+credential clearing during acquisition; unknown errors preserve the prior record.
+There is no synthetic status for a pre-response failure: that path raises `RuntimeError`.
+
+`AuthorizationDeniedError.error` retains `invalid_request`, `unauthorized_client`,
+`access_denied`, `unsupported_response_type`, `invalid_scope`, `server_error`, or
+`temporarily_unavailable`; otherwise it is `unknown_error`. Its `description` is
+always empty. Provider descriptions and unknown error strings are not available
+through token or denial exceptions.
+
+Hierarchical display locations omit userinfo, query and fragment. Hostnames and
+paths remain visible; do not put credentials there. OAuth error boundaries discard
+unsafe native causes and contexts. OSError errno/strerror may survive through a
+fresh cause without filenames; other native details are limited to class names.
+Missing optional Authlib remains an actionable `ImportError`.
+
+Importing an OAuth flow installs process-wide HTTPX/httpcore emitter filters without
+changing handlers or levels. HTTPX keeps method, safe URL and numeric status;
+httpcore keeps event identity only. Reason phrases, headers and native exception
+repr are not retained. Root/profile-only imports do not install those filters.
+
+Environment ingestion, blank/custom prefixes and credential emission are unchanged.
 
 If your layer exposes its own exception hierarchy, **translate at the boundary** (catch
 auth-client's, re-raise yours) rather than leaking auth-client's types — this is what transport

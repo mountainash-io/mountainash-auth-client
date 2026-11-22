@@ -7,7 +7,7 @@ import httpx
 import pytest
 from mountainash_settings.secrets import MemorySecretStore
 
-from mountainash_auth_client.errors import AuthorizationRequired
+from mountainash_auth_client.errors import AuthorizationDeniedError, AuthorizationRequired
 from mountainash_auth_client.oauth.lifecycle.credential import TokenCredential
 from mountainash_auth_client.oauth.lifecycle.oauth2 import OAuth2TokenManager
 from mountainash_auth_client.oauth.oauth1.flow import OAuth1Flow
@@ -36,24 +36,20 @@ def provider(method="none"):
     )
 
 
-class Captured(Exception):
-    pass
-
-
 class CaptureCallback:
     redirect_uri = "https://app.example/callback"
     url = ""
 
     def obtain_callback(self, url: str) -> dict[str, str]:
         self.url = url
-        raise Captured
+        return {"state": parse_qs(urlsplit(url).query)["state"][0], "error": "access_denied"}
 
 
 @pytest.mark.parametrize("owner", ["manager", "flow"])
 def test_none_auth_preserves_authorization_identity(owner):
     callback = CaptureCallback()
     store = MemorySecretStore()
-    with pytest.raises(Captured):
+    with pytest.raises(AuthorizationDeniedError):
         if owner == "manager":
             OAuth2TokenManager(provider(), Credentials(), token_store=store,
                                callback_server=lambda: callback).authorize()
@@ -103,7 +99,7 @@ def test_authorization_token_endpoint_auth_contract(monkeypatch, method):
             return {"code": "code", "state": query["state"][0]}
 
     client = httpx.Client
-    monkeypatch.setattr(httpx, "Client", lambda: client(transport=httpx.MockTransport(endpoint)))
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: client(transport=httpx.MockTransport(endpoint), **kwargs))
     result = OAuthFlow(provider(method), callback_server=Callback).authorize(
         "actual-client-id", None if method == "none" else "secret",
     )

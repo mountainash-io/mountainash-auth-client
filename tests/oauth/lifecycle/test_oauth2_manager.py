@@ -53,7 +53,7 @@ def _authorization_endpoint(monkeypatch):
         requests.append(parse_qs(request.content.decode()))
         return httpx.Response(200, json={"access_token": "new", "refresh_token": "r", "expires_in": 3600})
 
-    monkeypatch.setattr(httpx, "Client", lambda: client(transport=httpx.MockTransport(endpoint)))
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: client(transport=httpx.MockTransport(endpoint), **kwargs))
     return requests
 
 

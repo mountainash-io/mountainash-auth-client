@@ -7,20 +7,23 @@ import secrets
 import time
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Literal, NoReturn, cast, overload
 from urllib.parse import urlencode
 
 import httpx
 
+from mountainash_auth_client._safe_errors import raise_safe, safe_detail
 from mountainash_auth_client.errors import (
     AuthorizationCancelled,
     AuthorizationDeniedError,
     AuthorizationRequired,
+    CallbackTimeoutError,
     MalformedCallbackError,
     TokenExchangeError,
-    safe_error_body,
     TokenRefreshError,
+    _raise_token_failure,
 )
+from mountainash_auth_client.oauth._log_safety import install_log_filters
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
 from mountainash_auth_client.oauth.persistence import token_store as oauth_token_store
 from mountainash_auth_client.oauth.records import read_oauth2_record, token_record
@@ -32,6 +35,36 @@ if TYPE_CHECKING:
     from mountainash_auth_client.oauth.records import OAuth2Tokens
     from mountainash_auth_client.oauth.providers.protocols import OAuth2ProviderProfileProtocol
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
+
+install_log_filters()
+
+
+def _raise_callback_failure(native: Exception, what: str = "OAuth2 callback") -> NoReturn:
+    """Re-raise a controlled built-in callback failure cleanly; anything else is opaque."""
+    kind = type(native)
+    if kind is AuthorizationCancelled:
+        remote = native.remote_confirmed  # type: ignore[attr-defined]
+        raise_safe(AuthorizationCancelled(remote_confirmed=remote if isinstance(remote, bool) else False), native)
+    if kind is AuthorizationDeniedError:
+        raise_safe(AuthorizationDeniedError(error=native.error), native)  # type: ignore[attr-defined]
+    if kind is CallbackTimeoutError:
+        raise_safe(CallbackTimeoutError("OAuth2 callback timed out"), native)
+    if kind is MalformedCallbackError:
+        raise_safe(MalformedCallbackError("OAuth2 callback was malformed"), native)
+    raise_safe(RuntimeError(f"{what} failed: {safe_detail(native)}"), native)
+
+
+def _raise_policy_failure(native: Exception) -> NoReturn:
+    """Keep a consumer policy PermissionError's category without its text, chains or filename."""
+    if isinstance(native, PermissionError):
+        if native.errno is not None:
+            raise_safe(PermissionError(native.errno, native.strerror))
+        raise_safe(PermissionError("PermissionError"))
+    raise_safe(RuntimeError(f"OAuth2 credential validation failed: {safe_detail(native)}"), native)
+
+
+class _UnsupportedAuthMethod(Exception):
+    """Internal signal: the configured token-endpoint auth method is not supported."""
 
 
 @dataclass(frozen=True)
@@ -129,7 +162,7 @@ class OAuthFlow:
             "response_type", "refresh_token",
         }
         if reserved.intersection(extra):
-            raise ValueError("OAuth extension parameter collides with a generated field")
+            raise_safe(ValueError("OAuth extension parameter collides with a generated field"))
         params.update(extra)
 
     def build_authorize_url(
@@ -142,7 +175,7 @@ class OAuthFlow:
     ) -> tuple[str, str]:
         """Build the authorization URL and generate state token."""
         if not isinstance(client_id, str) or not client_id:
-            raise ValueError("OAuth2 authorization requires a non-empty client_id")
+            raise_safe(ValueError("OAuth2 authorization requires a non-empty client_id"))
         state = secrets.token_urlsafe(32)
         prior = read_oauth2_record(token_record(previous)) if previous is not None else None
         params: dict[str, str] = {
@@ -164,7 +197,11 @@ class OAuthFlow:
             params["code_challenge_method"] = "S256"
 
         context = self._context("authorization_code", client_id, redirect_uri, effective_scope, state, prior)
-        self._extend_parameters(params, self.authorization_parameters(context))
+        try:
+            extra = self.authorization_parameters(context)
+        except Exception as exc:  # noqa: BLE001 - consumer hook text is never shown
+            _raise_callback_failure(exc, "OAuth2 authorization parameters")
+        self._extend_parameters(params, extra)
         self._pending_contexts[state] = replace(context, scope=params.get("scope"))
         if self.use_pkce:
             self._pending_verifiers[state] = verifier
@@ -180,7 +217,7 @@ class OAuthFlow:
         if not isinstance(received, str) or not secrets.compare_digest(
             received.encode(), expected_state.encode()
         ):
-            raise ValueError("OAuth state mismatch — possible CSRF attack")
+            raise_safe(ValueError("OAuth state mismatch — possible CSRF attack"))
 
     def _build_token_request(self, base_data: dict, client_id, client_secret) -> dict:
         """Return kwargs for httpx post: shaped by the provider's client-auth config.
@@ -204,7 +241,7 @@ class OAuthFlow:
             if client_id is not None:
                 data["client_id"] = client_id
         else:
-            raise ValueError(f"unknown TOKEN_ENDPOINT_AUTH_METHOD: {method}")
+            raise _UnsupportedAuthMethod
         kwargs: dict = {}
         if content_type == "application/json":
             kwargs["json"] = data
@@ -213,6 +250,60 @@ class OAuthFlow:
         if headers:
             kwargs["headers"] = headers
         return kwargs
+
+    def _token_request(
+        self,
+        error_type: type[TokenExchangeError] | type[TokenRefreshError],
+        base_data: dict[str, str],
+        client_id: str | None,
+        client_secret: str | None,
+    ) -> dict[str, Any]:
+        """Build the post kwargs; an unsupported auth method keeps its ValueError, other failures are safe."""
+        try:
+            return self._build_token_request(base_data, client_id, client_secret)
+        except _UnsupportedAuthMethod:
+            raise_safe(ValueError("Unsupported TOKEN_ENDPOINT_AUTH_METHOD"))
+        except Exception as exc:  # noqa: BLE001 - provider configuration text is never shown
+            _raise_token_failure(error_type, url=self.token_url, status_code=None, native=exc)
+
+    def _token_parameters(
+        self, error_type: type[TokenExchangeError] | type[TokenRefreshError], context: OAuth2Context,
+    ) -> dict[str, str]:
+        try:
+            return self.token_parameters(context)
+        except Exception as exc:  # noqa: BLE001 - provider hook text is never shown
+            _raise_token_failure(error_type, url=self.token_url, status_code=None, native=exc)
+
+    def _post_token(
+        self,
+        error_type: type[TokenExchangeError] | type[TokenRefreshError],
+        post_kwargs: dict[str, Any],
+        accept: Callable[[dict[str, Any]], OAuth2Tokens],
+    ) -> OAuth2Tokens:
+        """Post to the token endpoint and accept its JSON, leaving only safe failures."""
+        status_code: int | None = None
+
+        def observe_response(response: httpx.Response) -> None:
+            nonlocal status_code
+            status_code = response.status_code
+
+        try:
+            with httpx.Client(event_hooks={"response": [observe_response]}) as client:
+                try:
+                    resp = client.post(self.token_url, **post_kwargs)
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise error_type(
+                        url=self.token_url, status_code=exc.response.status_code, body=exc.response.text,
+                    ) from None
+                token_data = resp.json()
+            if not isinstance(token_data, dict) or "access_token" not in token_data:
+                raise error_type(
+                    url=self.token_url, status_code=resp.status_code, body=json.dumps(token_data),
+                )
+            return accept(token_data)
+        except Exception as exc:  # noqa: BLE001 - every failure leaves only its safe form
+            _raise_token_failure(error_type, url=self.token_url, status_code=status_code, native=exc)
 
     def exchange_code(
         self,
@@ -245,52 +336,30 @@ class OAuthFlow:
         if self.use_pkce and lookup_state and lookup_state in self._pending_verifiers:
             base_data["code_verifier"] = self._pending_verifiers.pop(lookup_state)
 
-        self._extend_parameters(base_data, self.token_parameters(context))
-        post_kwargs = self._build_token_request(base_data, context.client_id, client_secret)
-        with httpx.Client() as client:
-            try:
-                resp = client.post(self.token_url, **post_kwargs)
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                raise TokenExchangeError(
-                    url=self.token_url,
-                    status_code=exc.response.status_code,
-                    body=safe_error_body(exc.response.text),
-                ) from exc
-            try:
-                token_data = resp.json()
-            except (ValueError, json.JSONDecodeError) as exc:
-                raise TokenExchangeError(
-                    url=self.token_url,
-                    status_code=resp.status_code,
-                    body="",
-                ) from exc
+        self._extend_parameters(base_data, self._token_parameters(TokenExchangeError, context))
+        post_kwargs = self._token_request(TokenExchangeError, base_data, context.client_id, client_secret)
 
-        if not isinstance(token_data, dict) or "access_token" not in token_data:
-            raise TokenExchangeError(
-                url=self.token_url,
-                status_code=resp.status_code,
-                body=safe_error_body(token_data),
-            )
+        def accept(token_data: dict[str, Any]) -> OAuth2Tokens:
+            expires_at: int | None = None
+            if "expires_in" in token_data:
+                expires_at = int(time.time()) + int(token_data["expires_in"])
+            if expires_at is None:
+                from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
+                expires_at = jwt_exp(token_data["access_token"])
 
-        expires_at: int | None = None
-        if "expires_in" in token_data:
-            expires_at = int(time.time()) + int(token_data["expires_in"])
-        if expires_at is None:
-            from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
-            expires_at = jwt_exp(token_data["access_token"])
+            candidate: OAuth2Tokens = {
+                "access_token": token_data["access_token"],
+                "refresh_token": token_data.get("refresh_token", ""),
+                "token_expires_at": expires_at,
+                "scope": token_data.get("scope", context.scope),
+                "client_id": context.client_id,
+                "registration": deepcopy(context.registration),
+                "session_metadata": {},
+            }
+            approved = self.validate_token_response(token_data, context, prior, candidate)
+            return read_oauth2_record(token_record(approved))
 
-        candidate: OAuth2Tokens = {
-            "access_token": token_data["access_token"],
-            "refresh_token": token_data.get("refresh_token", ""),
-            "token_expires_at": expires_at,
-            "scope": token_data.get("scope", context.scope),
-            "client_id": context.client_id,
-            "registration": deepcopy(context.registration),
-            "session_metadata": {},
-        }
-        approved = self.validate_token_response(token_data, context, prior, candidate)
-        return read_oauth2_record(token_record(approved))
+        return self._post_token(TokenExchangeError, post_kwargs, accept)
 
     def refresh(
         self,
@@ -306,51 +375,31 @@ class OAuthFlow:
             client_id = prior.get("client_id")
         context = self._context("refresh_token", client_id, None, prior.get("scope") if prior else None, None, prior)
         base_data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
-        self._extend_parameters(base_data, self.token_parameters(context))
-        post_kwargs = self._build_token_request(base_data, client_id, client_secret)
-        with httpx.Client() as client:
-            try:
-                resp = client.post(self.token_url, **post_kwargs)
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                raise TokenRefreshError(
-                    url=self.token_url,
-                    status_code=exc.response.status_code,
-                    body=safe_error_body(exc.response.text),
-                ) from exc
-            try:
-                token_data = resp.json()
-            except (ValueError, json.JSONDecodeError) as exc:
-                raise TokenRefreshError(
-                    url=self.token_url,
-                    status_code=resp.status_code,
-                    body="",
-                ) from exc
+        self._extend_parameters(base_data, self._token_parameters(TokenRefreshError, context))
+        post_kwargs = self._token_request(TokenRefreshError, base_data, client_id, client_secret)
 
-        if not isinstance(token_data, dict) or "access_token" not in token_data:
-            raise TokenRefreshError(
-                url=self.token_url,
-                status_code=resp.status_code,
-                body=safe_error_body(token_data),
+        def accept(token_data: dict[str, Any]) -> OAuth2Tokens:
+            expires_at: int | None = None
+            if "expires_in" in token_data:
+                expires_at = int(time.time()) + int(token_data["expires_in"])
+            if expires_at is None:
+                from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
+                expires_at = jwt_exp(token_data["access_token"])
+
+            candidate: OAuth2Tokens = (
+                deepcopy(prior) if prior is not None else {"access_token": token_data["access_token"]}
             )
+            candidate.update({
+                "access_token": token_data["access_token"],
+                "refresh_token": token_data.get("refresh_token", refresh_token),
+                "token_expires_at": expires_at,
+                "scope": token_data.get("scope", prior.get("scope") if prior else None),
+                "client_id": client_id,
+            })
+            approved = self.validate_token_response(token_data, context, prior, candidate)
+            return read_oauth2_record(token_record(approved))
 
-        expires_at: int | None = None
-        if "expires_in" in token_data:
-            expires_at = int(time.time()) + int(token_data["expires_in"])
-        if expires_at is None:
-            from mountainash_auth_client.oauth.lifecycle.status import jwt_exp
-            expires_at = jwt_exp(token_data["access_token"])
-
-        candidate: OAuth2Tokens = deepcopy(prior) if prior is not None else {"access_token": token_data["access_token"]}
-        candidate.update({
-            "access_token": token_data["access_token"],
-            "refresh_token": token_data.get("refresh_token", refresh_token),
-            "token_expires_at": expires_at,
-            "scope": token_data.get("scope", prior.get("scope") if prior else None),
-            "client_id": client_id,
-        })
-        approved = self.validate_token_response(token_data, context, prior, candidate)
-        return read_oauth2_record(token_record(approved))
+        return self._post_token(TokenRefreshError, post_kwargs, accept)
 
     @staticmethod
     def is_expired(token_expires_at: int | None, buffer_seconds: int = 300) -> bool:
@@ -469,7 +518,10 @@ class OAuthFlow:
             )
         if credential is None or not credential.access_token:
             raise AuthorizationRequired(provider=provider, user="default")
-        self.validate_credential(credential)
+        try:
+            self.validate_credential(credential)
+        except Exception as exc:  # noqa: BLE001 - consumer policy text is never shown
+            _raise_policy_failure(exc)
         return credential
 
     @staticmethod
@@ -494,7 +546,7 @@ class OAuthFlow:
             previous = read_oauth2_record(record) if record else None
             client_id = (previous.get("client_id") if previous else None) or auth_profile.CLIENT_ID
             if not isinstance(client_id, str) or not client_id:
-                raise ValueError("OAuth2 authorization requires a non-empty client_id")
+                raise_safe(ValueError("OAuth2 authorization requires a non-empty client_id"))
             epoch = self._epoch(record)
             if epoch is None:
                 epoch = secrets.token_urlsafe(32)
@@ -573,39 +625,52 @@ class OAuthFlow:
         from mountainash_auth_client.oauth.server.callback import LocalCallbackServer
 
         if not isinstance(client_id, str) or not client_id:
-            raise ValueError("OAuth2 authorization requires a non-empty client_id")
+            raise_safe(ValueError("OAuth2 authorization requires a non-empty client_id"))
         factory = resolve_callback_factory(
             redirect_mode=redirect_mode,
             callback_server=callback_server,
             instance_default=self._callback_server,
             callback_port=self._provider.CALLBACK_PORT,
         )
-        server = factory()
+        try:
+            server = factory()
+        except Exception as exc:  # noqa: BLE001 - plugin failure text is never shown
+            _raise_callback_failure(exc)
         state: str | None = None
         try:
+            try:
+                redirect_uri = server.redirect_uri
+            except Exception as exc:  # noqa: BLE001 - plugin failure text is never shown
+                _raise_callback_failure(exc)
             url, state = self.build_authorize_url(
                 client_id=client_id,
-                redirect_uri=server.redirect_uri,
+                redirect_uri=redirect_uri,
                 scope=scope,
                 previous=previous,
             )
-            params = server.obtain_callback(url)
+            try:
+                params = server.obtain_callback(url)
+            except Exception as exc:  # noqa: BLE001 - plugin failure text is never shown
+                _raise_callback_failure(exc)
             self._validate_callback_state(params, state)
             if "error" in params:
-                raise AuthorizationDeniedError(
+                raise_safe(AuthorizationDeniedError(
                     error=params["error"],
                     description=params.get("error_description", ""),
-                )
+                ))
             if not params.get("code"):
-                raise MalformedCallbackError("OAuth2 callback missing 'code'")
+                raise_safe(MalformedCallbackError("OAuth2 callback missing 'code'"))
             context = self._pending_contexts[state]
-            effective_id, registration = self.process_callback(params, context)
+            try:
+                effective_id, registration = self.process_callback(params, context)
+            except Exception as exc:  # noqa: BLE001 - plugin failure text is never shown
+                _raise_callback_failure(exc)
             self._pending_contexts[state] = replace(
                 context, client_id=effective_id, registration=deepcopy(registration),
             )
             return self.exchange_code(
                 code=params["code"],
-                redirect_uri=server.redirect_uri,
+                redirect_uri=redirect_uri,
                 client_id=effective_id,
                 client_secret=client_secret,
                 scope=scope,
