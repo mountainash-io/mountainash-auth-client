@@ -358,7 +358,7 @@ def test_client_construction_failure_is_safe(oauth_http, stage, monkeypatch):
 
 @pytest.mark.parametrize("stage", ["request", "access"])
 def test_client_exit_failure_after_response_keeps_status(stage, monkeypatch):
-    from authlib.integrations.httpx_client import OAuth1Client  # type: ignore[import-untyped]
+    from authlib.integrations.httpx_client import OAuth1Client
 
     requests = []
 
