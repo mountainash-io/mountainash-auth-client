@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from mountainash_auth_client.errors import (
     AuthorizationRequired,
     TokenExchangeError,
@@ -9,50 +11,28 @@ from mountainash_auth_client.errors import (
 )
 
 
-class TestTokenExchangeError:
-    def test_attributes_stored(self):
-        err = TokenExchangeError(url="https://example.com/token", status_code=400, body='{"error":"invalid_grant"}')
+@pytest.mark.parametrize("kind", [TokenExchangeError, TokenRefreshError])
+class TestTokenErrors:
+    def test_attributes_stored(self, kind):
+        err = kind(url="https://example.com/token", status_code=400, body='{"error":"invalid_grant"}')
         assert err.url == "https://example.com/token"
         assert err.status_code == 400
-        assert err.body == '{"error":"invalid_grant"}'
+        assert err.error_code == "invalid_grant"
 
-    def test_str_contains_status_code(self):
-        err = TokenExchangeError(url="https://example.com/token", status_code=401, body="Unauthorized")
+    def test_str_contains_status_code(self, kind):
+        err = kind(url="https://example.com/token", status_code=401, body="")
         assert "401" in str(err)
 
-    def test_str_contains_url(self):
-        err = TokenExchangeError(url="https://example.com/token", status_code=400, body="bad")
+    def test_str_contains_safe_url(self, kind):
+        err = kind(url="https://example.com/token", status_code=400, body="")
         assert "https://example.com/token" in str(err)
 
-    def test_is_exception(self):
-        err = TokenExchangeError(url="https://example.com/token", status_code=400, body="err")
-        assert isinstance(err, Exception)
+    def test_str_excludes_body(self, kind):
+        err = kind(url="https://example.com/token", status_code=401, body='{"error":"invalid_grant"}')
+        assert "invalid_grant" not in str(err)
 
-
-class TestTokenRefreshError:
-    def test_attributes_stored(self):
-        err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="expired")
-        assert err.url == "https://example.com/refresh"
-        assert err.status_code == 401
-        assert err.body == "expired"
-
-    def test_str_contains_status_code(self):
-        err = TokenRefreshError(url="https://example.com/refresh", status_code=403, body="forbidden")
-        assert "403" in str(err)
-
-    def test_str_contains_url(self):
-        err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="expired")
-        assert "https://example.com/refresh" in str(err)
-
-    def test_str_excludes_body_but_attr_keeps_it(self):
-        err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="token_expired")
-        assert "token_expired" not in str(err)
-        assert err.body == "token_expired"
-        assert err.error_code is None  # non-JSON body
-
-    def test_is_exception(self):
-        err = TokenRefreshError(url="https://example.com/refresh", status_code=401, body="err")
-        assert isinstance(err, Exception)
+    def test_is_exception(self, kind):
+        assert isinstance(kind(url="https://example.com/token", status_code=400, body=""), Exception)
 
 
 class TestAuthorizationRequired:

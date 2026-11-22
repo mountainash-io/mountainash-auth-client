@@ -9,6 +9,7 @@ from threading import Timer
 from urllib.parse import parse_qs, urlparse
 
 from mountainash_auth_client.errors import CallbackTimeoutError
+from mountainash_auth_client._safe_errors import raise_safe
 
 
 class _CallbackHTTPServer(HTTPServer):
@@ -74,10 +75,15 @@ class LocalCallbackServer:
         self, port: int = 0, timeout: int = 120, *,
         host: str = "localhost", path: str = "/callback",
     ) -> None:
-        if host != "localhost" and not ipaddress.ip_address(host).is_loopback:
-            raise ValueError("Callback host must be a loopback address or localhost")
+        if host != "localhost":
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:  # the native error echoes the rejected host
+                loopback = False
+            if not loopback:
+                raise_safe(ValueError("Callback host must be a loopback address or localhost"))
         if not path.startswith("/") or urlparse(path).path != path:
-            raise ValueError("Callback path must be an absolute URL path without query or fragment")
+            raise_safe(ValueError("Callback path must be an absolute URL path without query or fragment"))
         server_type = _IPv6CallbackHTTPServer if ":" in host else _CallbackHTTPServer
         self._server = server_type((host, port), _CallbackHandler)
         self._server._callback_params = None

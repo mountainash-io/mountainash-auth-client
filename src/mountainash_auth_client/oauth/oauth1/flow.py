@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import secrets
-from functools import partial
-from typing import TYPE_CHECKING, Literal, cast, overload
+from typing import TYPE_CHECKING, Literal, NoReturn, cast, overload
 from urllib.parse import urlencode
 
+from mountainash_auth_client._optional import require_authlib
+from mountainash_auth_client._safe_errors import raise_safe, safe_detail
 from mountainash_auth_client.errors import (
     AuthorizationCancelled,
+    AuthorizationDeniedError,
     AuthorizationRequired,
+    CallbackTimeoutError,
     MalformedCallbackError,
-    safe_error_body,
     TokenExchangeError,
+    _raise_token_failure,
 )
-from mountainash_auth_client._optional import require_authlib
+from mountainash_auth_client.oauth._log_safety import install_log_filters
 from mountainash_auth_client.oauth.server.factory import resolve_callback_factory
 from mountainash_auth_client.oauth.persistence import token_store as oauth_token_store
 from mountainash_auth_client.oauth.records import token_record, token_string
@@ -27,16 +30,29 @@ if TYPE_CHECKING:
     from mountainash_auth_client.oauth.providers.protocols import OAuth1ProviderProfileProtocol
     from mountainash_auth_client.oauth.protocols import CallbackServerFactory
 
+install_log_filters()
+
 
 def _raise_token_endpoint_error(response: Response, *, url: str) -> None:
     """Reject HTTP token failures before Authlib creates a body-bearing error."""
     if response.status_code >= 400:
         response.read()
-        raise TokenExchangeError(
-            url=url,
-            status_code=response.status_code,
-            body=safe_error_body(response.text),
-        )
+        raise TokenExchangeError(url=url, status_code=response.status_code, body=response.text)
+
+
+def _raise_callback_failure(native: Exception) -> NoReturn:
+    """Re-raise a controlled built-in callback failure cleanly; anything else is opaque."""
+    kind = type(native)
+    if kind is AuthorizationCancelled:
+        remote = native.remote_confirmed  # type: ignore[attr-defined]
+        raise_safe(AuthorizationCancelled(remote_confirmed=remote if isinstance(remote, bool) else False), native)
+    if kind is AuthorizationDeniedError:
+        raise_safe(AuthorizationDeniedError(error=native.error), native)  # type: ignore[attr-defined]
+    if kind is CallbackTimeoutError:
+        raise_safe(CallbackTimeoutError("OAuth1 callback timed out"), native)
+    if kind is MalformedCallbackError:
+        raise_safe(MalformedCallbackError("OAuth1 callback was malformed"), native)
+    raise_safe(RuntimeError(f"OAuth1 callback failed: {safe_detail(native)}"), native)
 
 
 class OAuth1Flow:
@@ -75,14 +91,24 @@ class OAuth1Flow:
         callback_url: str = "oob",
     ) -> OAuth1Tokens:
         OAuth1Client = require_authlib("OAuth1Client")
-        hook = partial(_raise_token_endpoint_error, url=self.request_token_url)
-        with OAuth1Client(
-            client_id=consumer_key,
-            client_secret=consumer_secret,
-            redirect_uri=callback_url,
-            event_hooks={"response": [hook]},
-        ) as client:
-            return client.fetch_request_token(self.request_token_url)
+        url = self.request_token_url
+        status_code: int | None = None
+
+        def observe_response(response: Response) -> None:
+            nonlocal status_code
+            status_code = response.status_code
+            _raise_token_endpoint_error(response, url=url)
+
+        try:
+            with OAuth1Client(
+                client_id=consumer_key,
+                client_secret=consumer_secret,
+                redirect_uri=callback_url,
+                event_hooks={"response": [observe_response]},
+            ) as client:
+                return client.fetch_request_token(url)
+        except Exception as exc:  # noqa: BLE001 - every failure leaves only its safe form
+            _raise_token_failure(TokenExchangeError, url=url, status_code=status_code, native=exc)
 
     def exchange_verifier(
         self,
@@ -93,20 +119,29 @@ class OAuth1Flow:
         verifier: str,
     ) -> OAuth1Tokens:
         OAuth1Client = require_authlib("OAuth1Client")
+        url = self.access_token_url
+        status_code: int | None = None
 
-        hook = partial(_raise_token_endpoint_error, url=self.access_token_url)
-        with OAuth1Client(
-            client_id=consumer_key,
-            client_secret=consumer_secret,
-            token=oauth_token,
-            token_secret=oauth_token_secret,
-            event_hooks={"response": [hook]},
-        ) as client:
-            token = client.fetch_access_token(self.access_token_url, verifier=verifier)
-        return {
-            "oauth_token": token["oauth_token"],
-            "oauth_token_secret": token["oauth_token_secret"],
-        }
+        def observe_response(response: Response) -> None:
+            nonlocal status_code
+            status_code = response.status_code
+            _raise_token_endpoint_error(response, url=url)
+
+        try:
+            with OAuth1Client(
+                client_id=consumer_key,
+                client_secret=consumer_secret,
+                token=oauth_token,
+                token_secret=oauth_token_secret,
+                event_hooks={"response": [observe_response]},
+            ) as client:
+                token = client.fetch_access_token(url, verifier=verifier)
+                return {
+                    "oauth_token": token["oauth_token"],
+                    "oauth_token_secret": token["oauth_token_secret"],
+                }
+        except Exception as exc:  # noqa: BLE001 - every failure leaves only its safe form
+            _raise_token_failure(TokenExchangeError, url=url, status_code=status_code, native=exc)
 
     @overload
     def resolve_token_pair(
@@ -216,22 +251,32 @@ class OAuth1Flow:
             callback_port=self._provider.CALLBACK_PORT,
             manual_redirect_uri="oob",
         )
-        server = factory()
+        try:
+            server = factory()
+            redirect_uri = server.redirect_uri
+        except Exception as exc:  # noqa: BLE001 - plugin failure text is never shown
+            _raise_callback_failure(exc)
 
-        request_token = self.request_token(consumer_key, consumer_secret, server.redirect_uri)
+        request_token = self.request_token(consumer_key, consumer_secret, redirect_uri)
         url = self.build_authorize_url(request_token["oauth_token"])
-        params = server.obtain_callback(url)
+        try:
+            params = server.obtain_callback(url)
+        except Exception as exc:  # noqa: BLE001 - plugin failure text is never shown
+            _raise_callback_failure(exc)
 
-        returned_token = params.get("oauth_token")
-        if returned_token is not None and not secrets.compare_digest(
-            returned_token.encode(), request_token["oauth_token"].encode()
-        ):
-            raise ValueError("OAuth1 token mismatch — possible CSRF")
-
-        # Bare manual paste lands the verifier in "code"; accept it as a fallback.
-        verifier = params.get("oauth_verifier") or params.get("code")
+        try:
+            returned_token = params.get("oauth_token")
+            mismatch = returned_token is not None and not secrets.compare_digest(
+                returned_token.encode(), request_token["oauth_token"].encode()
+            )
+            # Bare manual paste lands the verifier in "code"; accept it as a fallback.
+            verifier = params.get("oauth_verifier") or params.get("code")
+        except Exception as exc:  # noqa: BLE001 - malformed callback values are never shown
+            raise_safe(RuntimeError(f"OAuth1 callback interpretation failed: {safe_detail(exc)}"), exc)
+        if mismatch:
+            raise_safe(ValueError("OAuth1 token mismatch — possible CSRF"))
         if not verifier:
-            raise MalformedCallbackError("OAuth1 callback missing 'oauth_verifier'")
+            raise_safe(MalformedCallbackError("OAuth1 callback missing 'oauth_verifier'"))
 
         return self.exchange_verifier(
             consumer_key=consumer_key,
