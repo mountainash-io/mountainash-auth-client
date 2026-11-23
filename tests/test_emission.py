@@ -193,6 +193,16 @@ class TestCertificate:
         ).emit(TargetFamily.PARAMIKO)
         assert out == {"key_filename": "/home/u/.ssh/id_rsa", "passphrase": "pp"}
 
+    def test_paramiko_key_path_ignores_http_certificate_fields(self):
+        from mountainash_auth_client import CertificateAuthProfile
+        out = CertificateAuthProfile(
+            CERTIFICATE="HTTP_CERT_PEM",
+            CERTIFICATE_PATH="/home/u/client.pem",
+            PRIVATE_KEY_PATH="/home/u/.ssh/id_rsa",
+            PASSPHRASE="pp",
+        ).emit(TargetFamily.PARAMIKO)
+        assert out == {"key_filename": "/home/u/.ssh/id_rsa", "passphrase": "pp"}
+
     def test_paramiko_key_path_no_passphrase(self):
         from mountainash_auth_client import CertificateAuthProfile
         out = CertificateAuthProfile(

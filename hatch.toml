@@ -64,6 +64,7 @@ dependencies = [
     "mountainash-settings @ {root:uri}/../mountainash-settings",
     "authlib>=1.9.1",
     "paramiko>=5.0.0",
+    "cryptography",
 ]
 
 [envs.test.scripts]
@@ -112,6 +113,7 @@ dependencies = [
     "mountainash-settings @ {root:uri}/temp/mountainash-settings",
     "authlib>=1.9.1",
     "paramiko>=5.0.0",
+    "cryptography",
 ]
 
 [envs.test_github.scripts]
@@ -161,6 +163,7 @@ dependencies = [
     "mountainash-settings @ {root:uri}/../mountainash-settings",
     "authlib>=1.9.1",
     "paramiko>=5.0.0",
+    "cryptography",
 ]
 
 [envs.mypy.scripts]

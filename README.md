@@ -26,7 +26,8 @@ the client and chooses how to use the credentials.
 
 Available credential schemas do not imply every target has a built-in renderer.
 See the [profile catalogue](docs/INTEGRATION.md#auth-profile-catalogue) for supported
-targets. Consumer-specific credential shapes belong in the consumer's adapter.
+targets, and [client certificates for HTTP](docs/INTEGRATION.md#client-certificates-for-http)
+for certificate-based HTTP rendering. Consumer-specific credential shapes belong in the consumer's adapter.
 
 ## Installation
 
