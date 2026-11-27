@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- HTTP mTLS certificate emission (#56): `CertificateAuthProfile.emit(TargetFamily.HTTP)` returns a loaded `SSLContext` in `verify`, supporting certificate/key paths and secret PEM material. Temporary PEM files are removed before return; caller-owned contexts are rejected in favour of fresh-context factories.
+- Added the runtime dependency `certifi` for the default HTTP CA bundle. Explicit CA paths, `verify=False`, and `trust_env`-controlled environment CA settings remain supported.
+
+### Fixed
+
+- Missing HTTP client certificates now report the required `CERTIFICATE_PATH` or `CERTIFICATE` inputs directly, rather than replacing the requirement with a generic loading error.
+
 ### Security
 
 - Token-error constructors now retain safe display locations and recognised OAuth error codes only. `body` contains code-only JSON or an empty string; unknown codes become `None`. Provider descriptions and raw bodies are discarded, including on direct construction.
@@ -14,4 +23,4 @@
 
 Inspect `error_code` and `status_code`, not provider descriptions or original native causes. `invalid_grant` and `invalid_token` still drive existing refresh recovery; unknown failures do not clear the stored credential. Display locations retain hostnames and paths, so applications must not put credentials there.
 
-Environment ingestion, blank/custom prefixes, credential emission, successful OAuth behavior and optional Authlib loading remain unchanged. No dependency floor or package version changes are included.
+Environment ingestion, blank/custom prefixes, successful OAuth behavior and optional Authlib loading remain unchanged. No existing dependency floor or package version changes are included.

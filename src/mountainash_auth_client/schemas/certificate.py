@@ -93,6 +93,8 @@ def _http_context(verify: object, trust_env: bool) -> ssl.SSLContext:
 def _http_certificate(value: Profile, kw: dict[str, Any]) -> dict[str, Any]:
     """Load client identity before handing the context to the consumer."""
     profile = cast(CertificateAuthProfile, value)
+    if profile.CERTIFICATE_PATH is None and profile.CERTIFICATE is None:
+        raise_safe(ValueError("HTTP client identity requires CERTIFICATE_PATH or CERTIFICATE"))
     try:
         context = _http_context(kw.get("verify", True), kw.get("trust_env", True))
         with ExitStack() as resources:
@@ -117,8 +119,7 @@ def _http_certificate(value: Profile, kw: dict[str, Any]) -> dict[str, Any]:
                 return filename
 
             certfile = source(profile.CERTIFICATE_PATH, profile.CERTIFICATE)
-            if certfile is None:
-                raise ValueError("HTTP client identity requires CERTIFICATE_PATH or CERTIFICATE")
+            assert certfile is not None
             keyfile = source(profile.PRIVATE_KEY_PATH, profile.PRIVATE_KEY)
             password = profile.PASSPHRASE.get_secret_value() if profile.PASSPHRASE is not None else ""
             context.load_cert_chain(certfile, keyfile, password=password)
